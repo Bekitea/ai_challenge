@@ -1,22 +1,27 @@
 import json
-import logging
 import sys
-from typing import Optional
+import time
+from typing import List, Optional
 
+import openai
 from openai import OpenAI
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
+    QTabWidget,
+    QTextBrowser,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -26,14 +31,71 @@ from config import API_KEY, BASE_URL, FOLDER_ID, YANDEX_CLOUD_MODEL
 
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL, project=FOLDER_ID)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("app.log", encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
+
+class InterruptionRequestedError(Exception):
+    pass
+
+
+def call_llm_with_retry(
+    worker: QThread,
+    messages: list,
+    response_format: Optional[dict] = None,
+    model_class: Optional[type] = None,
+    max_retries: int = 3,
+    timeout: int = 20,
+) -> str:
+    for attempt in range(max_retries):
+        if worker.isInterruptionRequested():
+            raise InterruptionRequestedError()
+
+        kwargs = {
+            "model": f"gpt://{FOLDER_ID}/{YANDEX_CLOUD_MODEL}",
+            "messages": messages,
+            "temperature": 0.3,
+            "max_tokens": 1500,
+            "timeout": timeout,
+        }
+        if response_format:
+            kwargs["response_format"] = response_format
+
+        try:
+            response = client.chat.completions.create(**kwargs)
+            raw_content = response.choices[0].message.content or ""
+
+            if model_class:
+                try:
+                    model_class.model_validate_json(raw_content)
+                except ValidationError as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    time.sleep(1)
+                    continue
+
+            return raw_content
+
+        except openai.APITimeoutError as e:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(1)
+            continue
+        except openai.APIError as e:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(1)
+            continue
+
+
+class AdvisorRole(BaseModel):
+    role: str = Field(
+        description="Краткое название роли советника (например, 'Критик', 'Инвестор', 'Оптимист')."
+    )
+    perspective: str = Field(
+        description="Описание точки зрения или подхода, с которой советник будет рассматривать задачу."
+    )
+
+
+class CouncilRoles(BaseModel):
+    advisors: List[AdvisorRole] = Field(description="Список подобранных советников.")
 
 
 def parse_pydantic_code(code_str: str) -> type:
@@ -98,13 +160,7 @@ class ModelWorker(QThread):
             messages.append({"role": "system", "content": self.system_prompt})
         messages.append({"role": "user", "content": self.user_prompt})
 
-        kwargs = {
-            "model": f"gpt://{FOLDER_ID}/{YANDEX_CLOUD_MODEL}",
-            "messages": messages,
-            "temperature": 0.3,
-            "max_tokens": 1500,
-        }
-
+        schema_dict = None
         if self.model_class:
             schema_dict = {
                 "type": "json_schema",
@@ -114,31 +170,22 @@ class ModelWorker(QThread):
                     "schema": self.model_class.model_json_schema(),
                 },
             }
-            kwargs["response_format"] = schema_dict
-
-        if self.stop_sequences:
-            kwargs["stop"] = self.stop_sequences
-
-        log_kwargs = {k: v for k, v in kwargs.items() if k != "response_format"}
-        logging.info(f"API Request DTO: {json.dumps(log_kwargs, ensure_ascii=False)}")
-        if "response_format" in kwargs:
-            logging.info(f"Response Format Schema: {kwargs['response_format']}")
 
         try:
-            response = client.chat.completions.create(**kwargs)
-            raw_content = response.choices[0].message.content or ""
-
-            logging.info(f"API Response DTO: {raw_content}")
+            raw_content = call_llm_with_retry(
+                self,
+                messages,
+                response_format=schema_dict,
+                model_class=self.model_class,
+            )
 
             is_valid = None
-
             if self.model_class:
                 try:
                     self.model_class.model_validate_json(raw_content)
                     is_valid = True
                 except ValidationError as e:
                     is_valid = False
-                    logging.error(f"Validation error: {e}")
 
             display_text = raw_content
             try:
@@ -149,11 +196,13 @@ class ModelWorker(QThread):
 
             self.response_ready.emit(ResponseDTO(display_text, is_valid))
 
+        except InterruptionRequestedError:
+            self.error_occurred.emit("Запрос прерван пользователем.")
         except Exception as e:
             self.error_occurred.emit(f"Произошла ошибка при обращении к API: {e}")
 
 
-class ChatWindow(QMainWindow):
+class StandardChatTab(QWidget):
     def __init__(self):
         super().__init__()
         self.worker = None
@@ -171,8 +220,6 @@ class ChatWindow(QMainWindow):
         return label
 
     def init_ui(self):
-        self.setWindowTitle("Yandex Cloud AI Chat")
-
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
@@ -223,37 +270,46 @@ class ChatWindow(QMainWindow):
         self.input_field.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         layout.addWidget(self.input_field)
 
+        btn_layout = QHBoxLayout()
+
         self.send_button = QPushButton("Отправить")
         self.send_button.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.send_button.setStyleSheet("""
-            QPushButton {
-                background-color: #0078D4;
-                color: #FFFFFF;
-                border: none;
-                border-radius: 10px;
-                padding: 15px 40px;
-                font-weight: bold;
-            }
+            QPushButton { background-color: #0078D4; color: #FFFFFF; border: none; border-radius: 10px; padding: 15px 40px; font-weight: bold; }
             QPushButton:hover { background-color: #1084D8; }
-            QPushButton:pressed { background-color: #006CBE; }
             QPushButton:disabled { background-color: #3E3E42; color: #808080; }
         """)
         self.send_button.clicked.connect(self.send_prompt)
-        layout.addWidget(self.send_button)
+        btn_layout.addWidget(self.send_button)
+
+        self.stop_button = QPushButton("Стоп")
+        self.stop_button.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.stop_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.stop_button.setStyleSheet(
+            "background-color: #D83B01; color: #FFFFFF; border: none; border-radius: 10px; padding: 15px 40px;"
+        )
+        self.stop_button.setVisible(False)
+        self.stop_button.clicked.connect(self.stop_generation)
+        btn_layout.addWidget(self.stop_button)
+
+        self.clear_button = QPushButton("Очистить")
+        self.clear_button.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.clear_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_button.setStyleSheet(
+            "background-color: #3E3E42; color: #FFFFFF; border: none; border-radius: 10px; padding: 15px 40px;"
+        )
+        self.clear_button.setVisible(False)
+        self.clear_button.clicked.connect(self.clear_tab)
+        btn_layout.addWidget(self.clear_button)
+
+        layout.addLayout(btn_layout)
 
         self.settings_button = QPushButton("Дополнительные настройки")
         self.settings_button.setCheckable(True)
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.settings_button.setStyleSheet("""
-            QPushButton {
-                background-color: #2D2D30;
-                color: #E0E0E0;
-                border: 1px solid #3E3E42;
-                border-radius: 8px;
-                padding: 10px;
-                font-weight: bold;
-            }
+            QPushButton { background-color: #2D2D30; color: #E0E0E0; border: 1px solid #3E3E42; border-radius: 8px; padding: 10px; font-weight: bold; }
             QPushButton:hover { background-color: #3E3E42; }
         """)
         self.settings_button.clicked.connect(self.toggle_settings)
@@ -262,12 +318,7 @@ class ChatWindow(QMainWindow):
         self.settings_frame = QFrame()
         self.settings_frame.setVisible(False)
         self.settings_frame.setStyleSheet("""
-            QFrame {
-                background-color: #252526;
-                border: 1px solid #3E3E42;
-                border-radius: 10px;
-                padding: 15px;
-            }
+            QFrame { background-color: #252526; border: 1px solid #3E3E42; border-radius: 10px; padding: 15px; }
         """)
 
         settings_layout = QVBoxLayout(self.settings_frame)
@@ -276,13 +327,9 @@ class ChatWindow(QMainWindow):
         self.use_schema_checkbox = QCheckBox(
             "Использовать структурированный вывод (Pydantic схема)"
         )
-        self.use_schema_checkbox.setStyleSheet("""
-            QCheckBox {
-                color: #E0E0E0;
-                spacing: 10px;
-                font-size: 13px;
-            }
-        """)
+        self.use_schema_checkbox.setStyleSheet(
+            "QCheckBox { color: #E0E0E0; spacing: 10px; font-size: 13px; }"
+        )
         self.use_schema_checkbox.toggled.connect(self.toggle_schema_input)
         settings_layout.addWidget(self.use_schema_checkbox)
 
@@ -292,7 +339,6 @@ class ChatWindow(QMainWindow):
             "#B0B0B0",
             bold=False,
         )
-        self.schema_label.setStyleSheet("color: #B0B0B0; padding-top: 10px;")
         self.schema_label.setEnabled(False)
         settings_layout.addWidget(self.schema_label)
 
@@ -318,7 +364,6 @@ class ChatWindow(QMainWindow):
             "#B0B0B0",
             bold=False,
         )
-        stop_label.setStyleSheet("color: #B0B0B0; padding-top: 10px;")
         settings_layout.addWidget(stop_label)
 
         self.stop_field = QTextEdit()
@@ -363,9 +408,11 @@ class ChatWindow(QMainWindow):
         layout.addWidget(self.response_field)
 
         layout.addStretch()
-
         scroll_area.setWidget(central_widget)
-        self.setCentralWidget(scroll_area)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(scroll_area)
 
         self.system_prompt_field.document().contentsChanged.connect(
             lambda: self.update_text_edit_height(self.system_prompt_field)
@@ -379,29 +426,15 @@ class ChatWindow(QMainWindow):
         self.stop_field.document().contentsChanged.connect(
             lambda: self.update_text_edit_height(self.stop_field)
         )
-
-        self.update_text_edit_height(self.system_prompt_field)
-        self.update_text_edit_height(self.input_field)
-        self.update_text_edit_height(self.schema_field)
-        self.update_text_edit_height(self.stop_field)
-        self.update_text_edit_height(self.response_field)
+        self.response_field.document().contentsChanged.connect(
+            lambda: self.update_text_edit_height(self.response_field)
+        )
 
     def _get_text_edit_style(self) -> str:
         return """
-            QTextEdit {
-                background-color: #2D2D30;
-                color: #FFFFFF;
-                border: 2px solid #3E3E42;
-                border-radius: 12px;
-                padding: 15px;
-                selection-background-color: #0078D4;
-            }
-            QTextEdit:focus {
-                border: 2px solid #0078D4;
-            }
-            QTextEdit::placeholder {
-                color: #808080;
-            }
+            QTextEdit { background-color: #2D2D30; color: #FFFFFF; border: 2px solid #3E3E42; border-radius: 12px; padding: 15px; selection-background-color: #0078D4; }
+            QTextEdit:focus { border: 2px solid #0078D4; }
+            QTextEdit::placeholder { color: #808080; }
         """
 
     def update_text_edit_height(self, edit: QTextEdit):
@@ -462,12 +495,13 @@ class ChatWindow(QMainWindow):
             try:
                 model_class = parse_pydantic_code(schema_code)
             except Exception as e:
-                logging.error(f"Schema parsing/validation error: {e}")
                 QMessageBox.critical(self, "Ошибка", "Схема не прошла валидацию.")
                 return
 
-        self.send_button.setEnabled(False)
-        self.send_button.setText("Обработка...")
+        self.send_button.setVisible(False)
+        self.stop_button.setVisible(True)
+        self.clear_button.setVisible(False)
+
         self.response_field.clear()
         self.update_text_edit_height(self.response_field)
 
@@ -497,17 +531,379 @@ class ChatWindow(QMainWindow):
         else:
             self.validation_label.hide()
 
-        self.send_button.setEnabled(True)
-        self.send_button.setText("Отправить")
+        self.send_button.setVisible(True)
+        self.stop_button.setVisible(False)
+        self.clear_button.setVisible(True)
 
     def on_error_occurred(self, error: str):
-        logging.error(f"API Error: {error}")
-        QMessageBox.critical(self, "Ошибка", error)
+        if "прерван пользователем" not in error:
+            QMessageBox.critical(self, "Ошибка", error)
         self.response_field.setText(error)
         self.update_text_edit_height(self.response_field)
         self.validation_label.hide()
-        self.send_button.setEnabled(True)
-        self.send_button.setText("Отправить")
+
+        self.send_button.setVisible(True)
+        self.stop_button.setVisible(False)
+        self.clear_button.setVisible(True)
+
+    def stop_generation(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.requestInterruption()
+            self.stop_button.setEnabled(False)
+            self.stop_button.setText("Останавливаем...")
+
+    def clear_tab(self):
+        self.input_field.clear()
+        self.system_prompt_field.clear()
+        self.response_field.clear()
+        self.validation_label.hide()
+
+        self.update_text_edit_height(self.input_field)
+        self.update_text_edit_height(self.system_prompt_field)
+        self.update_text_edit_height(self.response_field)
+
+        self.clear_button.setVisible(False)
+
+
+class CouncilWorker(QThread):
+    status_updated = pyqtSignal(str)
+    advisor_responded = pyqtSignal(str, str)
+    judge_responded = pyqtSignal(str)
+    error_occurred = pyqtSignal(str)
+    finished_successfully = pyqtSignal()
+
+    def __init__(self, user_task: str, num_advisors: int):
+        super().__init__()
+        self.user_task = user_task
+        self.num_advisors = num_advisors
+
+    def run(self):
+        try:
+            self.status_updated.emit("Шаг 1/3: Подбираем роли советников...")
+
+            s1_system = "Ты — эксперт по организации мозговых штурмов. Твоя задача — подобрать идеальный состав совета для решения задачи пользователя."
+            s1_user = f"Задача пользователя: {self.user_task}\n\nПодбери ровно {self.num_advisors} советников, которые рассмотрят эту задачу с максимально разных и полезных точек зрения. Верни JSON со списком их ролей."
+
+            schema_dict = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "council_roles",
+                    "strict": True,
+                    "schema": CouncilRoles.model_json_schema(),
+                },
+            }
+
+            raw_roles_json = call_llm_with_retry(
+                self,
+                [
+                    {"role": "system", "content": s1_system},
+                    {"role": "user", "content": s1_user},
+                ],
+                response_format=schema_dict,
+                model_class=CouncilRoles,
+            )
+
+            council = CouncilRoles.model_validate_json(raw_roles_json)
+
+            advisors_responses = []
+
+            for i, advisor in enumerate(council.advisors):
+                if self.isInterruptionRequested():
+                    raise InterruptionRequestedError()
+
+                self.status_updated.emit(
+                    f"Шаг 2/3: Опрашиваем советника {i+1} из {len(council.advisors)} ({advisor.role})..."
+                )
+
+                s2_system = f"Ты участвуешь в совете. Твоя роль: {advisor.role}. Твоя точка зрения: {advisor.perspective}. Отвечай подробно и аргументированно."
+                s2_user = f"Задача, которую мы обсуждаем: {self.user_task}\n\nДай свой совет и анализ, исходя из своей роли."
+
+                a_response = call_llm_with_retry(
+                    self,
+                    [
+                        {"role": "system", "content": s2_system},
+                        {"role": "user", "content": s2_user},
+                    ],
+                )
+                advisors_responses.append(
+                    {"role": advisor.role, "response": a_response}
+                )
+                self.advisor_responded.emit(advisor.role, a_response)
+
+            self.status_updated.emit("Шаг 3/3: Судья выносит финальный вердикт...")
+
+            formatted_responses = "\n\n".join(
+                [
+                    f"--- Мнение советника '{r['role']}' ---\n{r['response']}"
+                    for r in advisors_responses
+                ]
+            )
+
+            s3_system = "Ты — мудрый и объективный судья. Твоя задача — проанализировать мнения всех советников, отбросить слабые идеи и синтезировать лучшие в итоговый вердикт."
+            s3_user = f"Задача: {self.user_task}\n\nМнения советников:\n{formatted_responses}\n\nВынеси свой финальный вердикт."
+
+            j_response = call_llm_with_retry(
+                self,
+                [
+                    {"role": "system", "content": s3_system},
+                    {"role": "user", "content": s3_user},
+                ],
+            )
+
+            self.judge_responded.emit(j_response)
+            self.finished_successfully.emit()
+
+        except InterruptionRequestedError:
+            self.error_occurred.emit("Генерация совета прервана пользователем.")
+        except Exception as e:
+            self.error_occurred.emit(f"Ошибка при проведении совета: {e}")
+
+
+class CouncilTab(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.worker = None
+        self.init_ui()
+
+    def _make_label(
+        self, text: str, size: int, color: str, bold: bool = True
+    ) -> QLabel:
+        label = QLabel(text)
+        label.setFont(
+            QFont("Segoe UI", size, QFont.Weight.Bold if bold else QFont.Weight.Normal)
+        )
+        label.setStyleSheet(f"color: {color};")
+        label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        return label
+
+    def init_ui(self):
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setStyleSheet(
+            "QScrollArea { border: none; background-color: transparent; }"
+        )
+
+        central_widget = QWidget()
+        layout = QVBoxLayout(central_widget)
+        layout.setSpacing(15)
+        layout.setContentsMargins(40, 40, 40, 40)
+
+        task_label = self._make_label("Задача или вопрос для совета:", 14, "#E0E0E0")
+        layout.addWidget(task_label)
+
+        self.task_field = QTextEdit()
+        self.task_field.setPlaceholderText("Опишите проблему, которую нужно решить...")
+        self.task_field.setFont(QFont("Segoe UI", 12))
+        self.task_field.setStyleSheet(self._get_text_edit_style())
+        self.task_field.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.task_field.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.task_field.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        layout.addWidget(self.task_field)
+
+        count_layout = QHBoxLayout()
+        count_label = self._make_label("Количество советников:", 12, "#A0A0A0")
+        self.count_spin = QSpinBox()
+        self.count_spin.setRange(2, 10)
+        self.count_spin.setValue(3)
+        self.count_spin.setStyleSheet("""
+            QSpinBox { background-color: #2D2D30; color: #FFFFFF; border: 2px solid #3E3E42; border-radius: 8px; padding: 5px; font-size: 14px; }
+            QSpinBox:focus { border: 2px solid #0078D4; }
+        """)
+        count_layout.addWidget(count_label)
+        count_layout.addWidget(self.count_spin)
+        count_layout.addStretch()
+        layout.addLayout(count_layout)
+
+        btn_layout = QHBoxLayout()
+
+        self.start_button = QPushButton("Запустить совет")
+        self.start_button.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.start_button.setStyleSheet("""
+            QPushButton { background-color: #0078D4; color: #FFFFFF; border: none; border-radius: 10px; padding: 15px 40px; font-weight: bold; }
+            QPushButton:hover { background-color: #1084D8; }
+            QPushButton:disabled { background-color: #3E3E42; color: #808080; }
+        """)
+        self.start_button.clicked.connect(self.start_council)
+        btn_layout.addWidget(self.start_button)
+
+        self.stop_button = QPushButton("Стоп")
+        self.stop_button.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.stop_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.stop_button.setStyleSheet(
+            "background-color: #D83B01; color: #FFFFFF; border: none; border-radius: 10px; padding: 15px 40px;"
+        )
+        self.stop_button.setVisible(False)
+        self.stop_button.clicked.connect(self.stop_council)
+        btn_layout.addWidget(self.stop_button)
+
+        self.clear_button = QPushButton("Очистить")
+        self.clear_button.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.clear_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_button.setStyleSheet(
+            "background-color: #3E3E42; color: #FFFFFF; border: none; border-radius: 10px; padding: 15px 40px;"
+        )
+        self.clear_button.setVisible(False)
+        self.clear_button.clicked.connect(self.clear_tab)
+        btn_layout.addWidget(self.clear_button)
+
+        layout.addLayout(btn_layout)
+
+        self.status_label = QLabel("")
+        self.status_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        self.status_label.setStyleSheet("color: #0078D4; padding-top: 10px;")
+        layout.addWidget(self.status_label)
+
+        self.result_browser = QTextBrowser()
+        self.result_browser.setOpenExternalLinks(False)
+        self.result_browser.setFont(QFont("Segoe UI", 12))
+        self.result_browser.setStyleSheet("""
+            QTextBrowser { background-color: #2D2D30; color: #FFFFFF; border: 2px solid #3E3E42; border-radius: 12px; padding: 15px; }
+            QTextBrowser:focus { border: 2px solid #0078D4; }
+        """)
+        self.result_browser.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        layout.addWidget(self.result_browser)
+
+        scroll_area.setWidget(central_widget)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(scroll_area)
+
+        self.task_field.document().contentsChanged.connect(
+            lambda: self.update_text_edit_height(self.task_field)
+        )
+
+    def _get_text_edit_style(self) -> str:
+        return """
+            QTextEdit { background-color: #2D2D30; color: #FFFFFF; border: 2px solid #3E3E42; border-radius: 12px; padding: 15px; selection-background-color: #0078D4; }
+            QTextEdit:focus { border: 2px solid #0078D4; }
+            QTextEdit::placeholder { color: #808080; }
+        """
+
+    def update_text_edit_height(self, edit: QTextEdit):
+        edit.document().adjustSize()
+        height = int(edit.document().size().height())
+        edit.setFixedHeight(max(height + 42, 60))
+
+    def append_html(self, html: str):
+        self.result_browser.append(html)
+        sb = self.result_browser.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def start_council(self):
+        task = self.task_field.toPlainText().strip()
+        if not task:
+            QMessageBox.warning(
+                self, "Предупреждение", "Пожалуйста, введите задачу для совета!"
+            )
+            return
+
+        self.start_button.setVisible(False)
+        self.stop_button.setVisible(True)
+        self.stop_button.setEnabled(True)
+        self.stop_button.setText("Стоп")
+        self.clear_button.setVisible(False)
+
+        self.result_browser.clear()
+        self.status_label.setText("Запуск...")
+
+        self.worker = CouncilWorker(task, self.count_spin.value())
+        self.worker.status_updated.connect(self.on_status_updated)
+        self.worker.advisor_responded.connect(self.on_advisor_responded)
+        self.worker.judge_responded.connect(self.on_judge_responded)
+        self.worker.error_occurred.connect(self.on_error_occurred)
+        self.worker.finished_successfully.connect(self.on_finished)
+        self.worker.start()
+
+    def on_status_updated(self, text: str):
+        self.status_label.setText(text)
+        self.append_html(f"<p style='color: #808080; font-style: italic;'>{text}</p>")
+
+    def on_advisor_responded(self, role: str, text: str):
+        safe_text = text.replace("\n", "<br>")
+        html = f"<h3 style='color: #4CAF50; margin-top: 15px;'>Советник: {role}</h3><p>{safe_text}</p><hr style='border: 1px solid #3E3E42;'>"
+        self.append_html(html)
+
+    def on_judge_responded(self, text: str):
+        safe_text = text.replace("\n", "<br>")
+        html = f"<h2 style='color: #FFC107; margin-top: 20px;'>Вердикт Судьи</h2><p style='font-size: 14px; font-weight: 500;'>{safe_text}</p>"
+        self.append_html(html)
+
+    def on_error_occurred(self, error: str):
+        self.status_label.setText(f"Статус: {error}")
+        self.status_label.setStyleSheet("color: #F44336;")
+        self.append_html(f"<p style='color: #F44336; font-weight: bold;'>{error}</p>")
+
+        self.start_button.setVisible(True)
+        self.stop_button.setVisible(False)
+        self.clear_button.setVisible(True)
+
+    def on_finished(self):
+        self.status_label.setText("Совет успешно завершен!")
+        self.status_label.setStyleSheet("color: #4CAF50;")
+        self.append_html(
+            "<p style='color: #4CAF50; font-weight: bold; margin-top: 20px;'>Процесс завершен.</p>"
+        )
+
+        self.start_button.setVisible(True)
+        self.stop_button.setVisible(False)
+        self.clear_button.setVisible(True)
+
+    def stop_council(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.requestInterruption()
+            self.stop_button.setEnabled(False)
+            self.stop_button.setText("Останавливаем...")
+            self.status_label.setText("Останавливаем процесс...")
+
+    def clear_tab(self):
+        self.task_field.clear()
+        self.result_browser.clear()
+        self.status_label.setText("")
+        self.status_label.setStyleSheet("color: #0078D4; padding-top: 10px;")
+        self.clear_button.setVisible(False)
+        self.update_text_edit_height(self.task_field)
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Yandex Cloud AI Chat")
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(StandardChatTab(), "Обычный режим")
+        self.tabs.addTab(CouncilTab(), "Режим совета")
+
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane { border: 1px solid #3E3E42; background-color: #131314; }
+            QTabBar::tab {
+                background: #252526;
+                color: #E0E0E0;
+                padding: 12px 20px;
+                border: 1px solid #3E3E42;
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QTabBar::tab:selected {
+                background: #131314;
+                color: #0078D4;
+                border-bottom: 2px solid #0078D4;
+            }
+            QTabBar::tab:hover {
+                background: #2D2D30;
+            }
+        """)
+
+        self.setCentralWidget(self.tabs)
 
 
 def main():
@@ -526,7 +922,7 @@ def main():
     dark_palette.setColor(dark_palette.ColorRole.HighlightedText, QColor(255, 255, 255))
     app.setPalette(dark_palette)
 
-    window = ChatWindow()
+    window = MainWindow()
     window.showMaximized()
 
     sys.exit(app.exec())

@@ -1,7 +1,8 @@
 import sys
 
 from openai import OpenAI
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QLabel,
@@ -12,9 +13,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QColor
-import sys
 
 from config import API_KEY, BASE_URL, FOLDER_ID, YANDEX_CLOUD_MODEL
 
@@ -50,7 +48,6 @@ class ChatWindow(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("Yandex Cloud AI Chat")
-        self.showMaximized()
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -170,7 +167,7 @@ class ChatWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    
+
     dark_palette = app.palette()
     dark_palette.setColor(dark_palette.ColorRole.Window, QColor(19, 19, 20))
     dark_palette.setColor(dark_palette.ColorRole.WindowText, QColor(255, 255, 255))
@@ -184,7 +181,7 @@ def main():
     app.setPalette(dark_palette)
 
     window = ChatWindow()
-    window.show()
+    window.showMaximized()
 
     sys.exit(app.exec())
 

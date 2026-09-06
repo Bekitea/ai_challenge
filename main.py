@@ -1,16 +1,17 @@
+import sys
+
 from openai import OpenAI
+from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QTextEdit,
-    QPushButton,
     QLabel,
+    QMainWindow,
     QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-import sys
 
 from config import API_KEY, BASE_URL, FOLDER_ID, YANDEX_CLOUD_MODEL
 
@@ -52,34 +53,27 @@ class ChatWindow(QMainWindow):
         self.setWindowTitle("Yandex Cloud AI Chat")
         self.setGeometry(100, 100, 800, 600)
 
-        # Центральный виджет
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # Основной layout
         layout = QVBoxLayout()
         central_widget.setLayout(layout)
 
-        # Метка для поля ввода
         input_label = QLabel("Введите ваш вопрос:")
         layout.addWidget(input_label)
 
-        # Поле ввода пользовательского промпта (только один ввод)
         self.input_field = QTextEdit()
         self.input_field.setPlaceholderText("Введите ваш промпт здесь...")
         self.input_field.setMaximumHeight(150)
         layout.addWidget(self.input_field)
 
-        # Кнопка отправки
         self.send_button = QPushButton("Отправить")
         self.send_button.clicked.connect(self.send_prompt)
         layout.addWidget(self.send_button)
 
-        # Метка для ответа
         response_label = QLabel("Ответ модели:")
         layout.addWidget(response_label)
 
-        # Поле для отображения ответа
         self.response_field = QTextEdit()
         self.response_field.setReadOnly(True)
         self.response_field.setPlaceholderText("Здесь появится ответ модели...")
@@ -90,15 +84,15 @@ class ChatWindow(QMainWindow):
         user_prompt = self.input_field.toPlainText().strip()
 
         if not user_prompt:
-            QMessageBox.warning(self, "Предупреждение", "Пожалуйста, введите текст промпта!")
+            QMessageBox.warning(
+                self, "Предупреждение", "Пожалуйста, введите текст промпта!"
+            )
             return
 
-        # Блокируем кнопку во время запроса
         self.send_button.setEnabled(False)
         self.send_button.setText("Обработка...")
         self.response_field.clear()
 
-        # Запускаем worker в отдельном потоке
         self.worker = ModelWorker(user_prompt)
         self.worker.response_ready.connect(self.on_response_ready)
         self.worker.error_occurred.connect(self.on_error_occurred)
@@ -121,7 +115,6 @@ class ChatWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
 
-    # Устанавливаем стиль приложения
     app.setStyle("Fusion")
 
     window = ChatWindow()

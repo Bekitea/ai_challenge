@@ -11,6 +11,7 @@ from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
@@ -45,24 +46,36 @@ def call_llm_with_retry(
     max_retries: int = 3,
     timeout: int = 20,
     temperature: float = 0.3,
-) -> str:
+    model_id: Optional[str] = None,
+) -> tuple:
+    if model_id is None:
+        model_id = YANDEX_CLOUD_MODEL
+
     for attempt in range(max_retries):
         if worker.isInterruptionRequested():
             raise InterruptionRequestedError()
 
         kwargs = {
-            "model": f"gpt://{FOLDER_ID}/{YANDEX_CLOUD_MODEL}",
+            "model": f"gpt://{FOLDER_ID}/{model_id}",
             "messages": messages,
             "temperature": temperature,
             "max_tokens": 1500,
             "timeout": timeout,
         }
+
+        if model_id == "qwen3.6-35b-a3b/latest":
+            kwargs["reasoning_effort"] = "none"
+
         if response_format:
             kwargs["response_format"] = response_format
 
         try:
             response = client.chat.completions.create(**kwargs)
-            raw_content = response.choices[0].message.content or ""
+            message = response.choices[0].message
+            raw_content = message.content or ""
+            reasoning_text = getattr(message, "reasoning_content", None) or getattr(
+                message, "reasoning", None
+            )
 
             if model_class:
                 try:
@@ -73,7 +86,7 @@ def call_llm_with_retry(
                     time.sleep(1)
                     continue
 
-            return raw_content
+            return raw_content, reasoning_text
 
         except openai.APITimeoutError as e:
             if attempt == max_retries - 1:
@@ -134,9 +147,58 @@ def parse_pydantic_code(code_str: str) -> type:
 
 
 class ResponseDTO:
-    def __init__(self, text: str, is_valid: Optional[bool]):
+    def __init__(
+        self, text: str, is_valid: Optional[bool], reasoning: Optional[str] = None
+    ):
         self.text = text
         self.is_valid = is_valid
+        self.reasoning = reasoning
+
+
+class CollapsibleReasoningBox(QWidget):
+    def __init__(self, reasoning_text: str, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        self.toggle_btn = QPushButton("Внутренние рассуждения модели")
+        self.toggle_btn.setCheckable(True)
+        self.toggle_btn.setChecked(False)
+        self.toggle_btn.setStyleSheet("""
+            QPushButton { background-color: #3E3E42; color: #E0E0E0; border: 1px solid #555; border-radius: 8px; padding: 10px; text-align: left; font-weight: bold; }
+            QPushButton:hover { background-color: #4E4E52; }
+        """)
+        self.toggle_btn.clicked.connect(self.toggle_content)
+        layout.addWidget(self.toggle_btn)
+
+        self.content_box = QTextEdit()
+        self.content_box.setReadOnly(True)
+        self.content_box.setFont(QFont("Consolas", 11))
+        self.content_box.setStyleSheet("""
+            QTextEdit { background-color: #252526; color: #B0B0B0; border: 1px solid #3E3E42; border-radius: 8px; padding: 10px; }
+        """)
+        self.content_box.setText(reasoning_text)
+        self.content_box.setVisible(False)
+        layout.addWidget(self.content_box)
+
+        self.adjust_size()
+
+    def toggle_content(self, checked):
+        self.content_box.setVisible(checked)
+        if checked:
+            self.toggle_btn.setText("Скрыть внутренние рассуждения")
+        else:
+            self.toggle_btn.setText("Внутренние рассуждения модели")
+        self.adjust_size()
+
+    def adjust_size(self):
+        if self.content_box.isVisible():
+            self.content_box.document().adjustSize()
+            height = int(self.content_box.document().size().height())
+            self.content_box.setFixedHeight(max(height + 20, 60))
+        else:
+            self.content_box.setFixedHeight(0)
 
 
 class ModelWorker(QThread):
@@ -150,6 +212,7 @@ class ModelWorker(QThread):
         model_class: Optional[type],
         stop_sequences: Optional[list] = None,
         temperature: float = 0.3,
+        model_id: Optional[str] = None,
     ):
         super().__init__()
         self.user_prompt = user_prompt
@@ -157,6 +220,7 @@ class ModelWorker(QThread):
         self.model_class = model_class
         self.stop_sequences = stop_sequences or []
         self.temperature = temperature
+        self.model_id = model_id if model_id else YANDEX_CLOUD_MODEL
 
     def run(self):
         messages = []
@@ -176,12 +240,13 @@ class ModelWorker(QThread):
             }
 
         try:
-            raw_content = call_llm_with_retry(
+            raw_content, reasoning_text = call_llm_with_retry(
                 self,
                 messages,
                 response_format=schema_dict,
                 model_class=self.model_class,
                 temperature=self.temperature,
+                model_id=self.model_id,
             )
 
             is_valid = None
@@ -199,7 +264,9 @@ class ModelWorker(QThread):
             except json.JSONDecodeError:
                 pass
 
-            self.response_ready.emit(ResponseDTO(display_text, is_valid))
+            self.response_ready.emit(
+                ResponseDTO(display_text, is_valid, reasoning_text)
+            )
 
         except InterruptionRequestedError:
             self.error_occurred.emit("Запрос прерван пользователем.")
@@ -310,6 +377,24 @@ class StandardChatTab(QWidget):
 
         layout.addLayout(btn_layout)
 
+        model_label = self._make_label("Выбор модели:", 12, "#B0B0B0", bold=False)
+        layout.addWidget(model_label)
+
+        self.model_combobox = QComboBox()
+        self.model_combobox.addItems(
+            [
+                "GPT OSS 120B (gpt-oss-120b/latest)",
+                "Qwen3.6-35B (qwen3.6-35b-a3b/latest)",
+                "Alice AI LLM Flash (aliceai-llm-flash/latest)",
+            ]
+        )
+        self.model_combobox.setStyleSheet("""
+            QComboBox { background-color: #2D2D30; color: #FFFFFF; border: 2px solid #3E3E42; border-radius: 8px; padding: 5px; font-size: 13px; }
+            QComboBox::drop-down { border: none; }
+            QComboBox::down-arrow { image: none; }
+        """)
+        layout.addWidget(self.model_combobox)
+
         self.settings_button = QPushButton("Дополнительные настройки")
         self.settings_button.setCheckable(True)
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -390,7 +475,7 @@ class StandardChatTab(QWidget):
         settings_layout.addWidget(stop_label)
 
         self.stop_field = QTextEdit()
-        self.stop_field.setPlaceholderText("Например:\nEND\n###")
+        self.stop_field.setPlaceholderText("Например:\nEND\n---")
         self.stop_field.setFont(QFont("Consolas", 11))
         self.stop_field.setStyleSheet(self._get_text_edit_style())
         self.stop_field.setVerticalScrollBarPolicy(
@@ -416,6 +501,14 @@ class StandardChatTab(QWidget):
         self.validation_label.hide()
         layout.addWidget(self.validation_label)
 
+        self.response_container = QWidget()
+        self.response_container_layout = QVBoxLayout(self.response_container)
+        self.response_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.response_container_layout.setSpacing(10)
+        layout.addWidget(self.response_container)
+
+        self.reasoning_box = None
+
         self.response_field = QTextEdit()
         self.response_field.setReadOnly(True)
         self.response_field.setPlaceholderText("Здесь появится ответ модели...")
@@ -428,7 +521,7 @@ class StandardChatTab(QWidget):
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         self.response_field.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        layout.addWidget(self.response_field)
+        self.response_container_layout.addWidget(self.response_field)
 
         layout.addStretch()
         scroll_area.setWidget(central_widget)
@@ -509,6 +602,14 @@ class StandardChatTab(QWidget):
         ]
         temperature = self.temp_spinbox.value()
 
+        selected_model_text = self.model_combobox.currentText()
+        if "gpt-oss-120b/latest" in selected_model_text:
+            selected_model_id = "gpt-oss-120b/latest"
+        elif "qwen3.6-35b-a3b/latest" in selected_model_text:
+            selected_model_id = "qwen3.6-35b-a3b/latest"
+        else:
+            selected_model_id = "aliceai-llm-flash/latest"
+
         model_class = None
         if use_schema:
             if not schema_code:
@@ -529,18 +630,37 @@ class StandardChatTab(QWidget):
         self.response_field.clear()
         self.update_text_edit_height(self.response_field)
 
+        if self.reasoning_box is not None:
+            self.response_container_layout.removeWidget(self.reasoning_box)
+            self.reasoning_box.deleteLater()
+            self.reasoning_box = None
+
         self.validation_label.setText("Ожидание ответа...")
         self.validation_label.setStyleSheet("color: #808080;")
         self.validation_label.show()
 
         self.worker = ModelWorker(
-            user_prompt, system_prompt, model_class, stop_sequences, temperature
+            user_prompt,
+            system_prompt,
+            model_class,
+            stop_sequences,
+            temperature,
+            selected_model_id,
         )
         self.worker.response_ready.connect(self.on_response_ready)
         self.worker.error_occurred.connect(self.on_error_occurred)
         self.worker.start()
 
     def on_response_ready(self, response_dto: ResponseDTO):
+        if self.reasoning_box is not None:
+            self.response_container_layout.removeWidget(self.reasoning_box)
+            self.reasoning_box.deleteLater()
+            self.reasoning_box = None
+
+        if response_dto.reasoning:
+            self.reasoning_box = CollapsibleReasoningBox(response_dto.reasoning)
+            self.response_container_layout.insertWidget(0, self.reasoning_box)
+
         self.response_field.setText(response_dto.text)
         self.update_text_edit_height(self.response_field)
 
@@ -582,6 +702,11 @@ class StandardChatTab(QWidget):
         self.response_field.clear()
         self.validation_label.hide()
 
+        if self.reasoning_box is not None:
+            self.response_container_layout.removeWidget(self.reasoning_box)
+            self.reasoning_box.deleteLater()
+            self.reasoning_box = None
+
         self.update_text_edit_height(self.input_field)
         self.update_text_edit_height(self.system_prompt_field)
         self.update_text_edit_height(self.response_field)
@@ -617,7 +742,7 @@ class CouncilWorker(QThread):
                 },
             }
 
-            raw_roles_json = call_llm_with_retry(
+            raw_roles_json, _ = call_llm_with_retry(
                 self,
                 [
                     {"role": "system", "content": s1_system},
@@ -642,7 +767,7 @@ class CouncilWorker(QThread):
                 s2_system = f"Ты участвуешь в совете. Твоя роль: {advisor.role}. Твоя точка зрения: {advisor.perspective}. Отвечай подробно и аргументированно."
                 s2_user = f"Задача, которую мы обсуждаем: {self.user_task}\n\nДай свой совет и анализ, исходя из своей роли."
 
-                a_response = call_llm_with_retry(
+                a_response, _ = call_llm_with_retry(
                     self,
                     [
                         {"role": "system", "content": s2_system},
@@ -666,7 +791,7 @@ class CouncilWorker(QThread):
             s3_system = "Ты — мудрый и объективный судья. Твоя задача — проанализировать мнения всех советников, отбросить слабые идеи и синтезировать лучшие в итоговый вердикт."
             s3_user = f"Задача: {self.user_task}\n\nМнения советников:\n{formatted_responses}\n\nВынеси свой финальный вердикт."
 
-            j_response = call_llm_with_retry(
+            j_response, _ = call_llm_with_retry(
                 self,
                 [
                     {"role": "system", "content": s3_system},

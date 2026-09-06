@@ -80,12 +80,17 @@ class ModelWorker(QThread):
     error_occurred = pyqtSignal(str)
 
     def __init__(
-        self, user_prompt: str, system_prompt: str, model_class: Optional[type]
+        self,
+        user_prompt: str,
+        system_prompt: str,
+        model_class: Optional[type],
+        stop_sequences: Optional[list] = None,
     ):
         super().__init__()
         self.user_prompt = user_prompt
         self.system_prompt = system_prompt
         self.model_class = model_class
+        self.stop_sequences = stop_sequences or []
 
     def run(self):
         messages = []
@@ -110,6 +115,9 @@ class ModelWorker(QThread):
                 },
             }
             kwargs["response_format"] = schema_dict
+
+        if self.stop_sequences:
+            kwargs["stop"] = self.stop_sequences
 
         log_kwargs = {k: v for k, v in kwargs.items() if k != "response_format"}
         logging.info(f"API Request DTO: {json.dumps(log_kwargs, ensure_ascii=False)}")
@@ -304,6 +312,28 @@ class ChatWindow(QMainWindow):
         self.schema_field.setEnabled(False)
         settings_layout.addWidget(self.schema_field)
 
+        stop_label = self._make_label(
+            "Stop-последовательности (по одной на строку, опционально):",
+            11,
+            "#B0B0B0",
+            bold=False,
+        )
+        stop_label.setStyleSheet("color: #B0B0B0; padding-top: 10px;")
+        settings_layout.addWidget(stop_label)
+
+        self.stop_field = QTextEdit()
+        self.stop_field.setPlaceholderText("Например:\nEND\n###")
+        self.stop_field.setFont(QFont("Consolas", 11))
+        self.stop_field.setStyleSheet(self._get_text_edit_style())
+        self.stop_field.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.stop_field.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.stop_field.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        settings_layout.addWidget(self.stop_field)
+
         layout.addWidget(self.settings_frame)
 
         response_label = self._make_label("Ответ модели:", 14, "#E0E0E0")
@@ -346,10 +376,14 @@ class ChatWindow(QMainWindow):
         self.schema_field.document().contentsChanged.connect(
             lambda: self.update_text_edit_height(self.schema_field)
         )
+        self.stop_field.document().contentsChanged.connect(
+            lambda: self.update_text_edit_height(self.stop_field)
+        )
 
         self.update_text_edit_height(self.system_prompt_field)
         self.update_text_edit_height(self.input_field)
         self.update_text_edit_height(self.schema_field)
+        self.update_text_edit_height(self.stop_field)
         self.update_text_edit_height(self.response_field)
 
     def _get_text_edit_style(self) -> str:
@@ -383,6 +417,8 @@ class ChatWindow(QMainWindow):
             self.update_text_edit_height(self.input_field)
         if hasattr(self, "schema_field"):
             self.update_text_edit_height(self.schema_field)
+        if hasattr(self, "stop_field"):
+            self.update_text_edit_height(self.stop_field)
         if hasattr(self, "response_field"):
             self.update_text_edit_height(self.response_field)
 
@@ -410,6 +446,11 @@ class ChatWindow(QMainWindow):
         system_prompt = self.system_prompt_field.toPlainText().strip()
         use_schema = self.use_schema_checkbox.isChecked()
         schema_code = self.schema_field.toPlainText().strip()
+        stop_sequences = [
+            line.strip()
+            for line in self.stop_field.toPlainText().split("\n")
+            if line.strip()
+        ]
 
         model_class = None
         if use_schema:
@@ -434,7 +475,9 @@ class ChatWindow(QMainWindow):
         self.validation_label.setStyleSheet("color: #808080;")
         self.validation_label.show()
 
-        self.worker = ModelWorker(user_prompt, system_prompt, model_class)
+        self.worker = ModelWorker(
+            user_prompt, system_prompt, model_class, stop_sequences
+        )
         self.worker.response_ready.connect(self.on_response_ready)
         self.worker.error_occurred.connect(self.on_error_occurred)
         self.worker.start()

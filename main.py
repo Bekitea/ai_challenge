@@ -11,6 +11,7 @@ from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -43,6 +44,7 @@ def call_llm_with_retry(
     model_class: Optional[type] = None,
     max_retries: int = 3,
     timeout: int = 20,
+    temperature: float = 0.3,
 ) -> str:
     for attempt in range(max_retries):
         if worker.isInterruptionRequested():
@@ -51,7 +53,7 @@ def call_llm_with_retry(
         kwargs = {
             "model": f"gpt://{FOLDER_ID}/{YANDEX_CLOUD_MODEL}",
             "messages": messages,
-            "temperature": 0.3,
+            "temperature": temperature,
             "max_tokens": 1500,
             "timeout": timeout,
         }
@@ -147,12 +149,14 @@ class ModelWorker(QThread):
         system_prompt: str,
         model_class: Optional[type],
         stop_sequences: Optional[list] = None,
+        temperature: float = 0.3,
     ):
         super().__init__()
         self.user_prompt = user_prompt
         self.system_prompt = system_prompt
         self.model_class = model_class
         self.stop_sequences = stop_sequences or []
+        self.temperature = temperature
 
     def run(self):
         messages = []
@@ -177,6 +181,7 @@ class ModelWorker(QThread):
                 messages,
                 response_format=schema_dict,
                 model_class=self.model_class,
+                temperature=self.temperature,
             )
 
             is_valid = None
@@ -323,6 +328,24 @@ class StandardChatTab(QWidget):
 
         settings_layout = QVBoxLayout(self.settings_frame)
         settings_layout.setContentsMargins(15, 15, 15, 15)
+
+        temp_label = self._make_label(
+            "Температура модели (0.0 - 2.0):",
+            11,
+            "#B0B0B0",
+            bold=False,
+        )
+        settings_layout.addWidget(temp_label)
+
+        self.temp_spinbox = QDoubleSpinBox()
+        self.temp_spinbox.setRange(0.0, 2.0)
+        self.temp_spinbox.setSingleStep(0.1)
+        self.temp_spinbox.setValue(0.3)
+        self.temp_spinbox.setStyleSheet("""
+            QDoubleSpinBox { background-color: #2D2D30; color: #FFFFFF; border: 2px solid #3E3E42; border-radius: 8px; padding: 5px; font-size: 13px; }
+            QDoubleSpinBox:focus { border: 2px solid #0078D4; }
+        """)
+        settings_layout.addWidget(self.temp_spinbox)
 
         self.use_schema_checkbox = QCheckBox(
             "Использовать структурированный вывод (Pydantic схема)"
@@ -484,6 +507,7 @@ class StandardChatTab(QWidget):
             for line in self.stop_field.toPlainText().split("\n")
             if line.strip()
         ]
+        temperature = self.temp_spinbox.value()
 
         model_class = None
         if use_schema:
@@ -510,7 +534,7 @@ class StandardChatTab(QWidget):
         self.validation_label.show()
 
         self.worker = ModelWorker(
-            user_prompt, system_prompt, model_class, stop_sequences
+            user_prompt, system_prompt, model_class, stop_sequences, temperature
         )
         self.worker.response_ready.connect(self.on_response_ready)
         self.worker.error_occurred.connect(self.on_error_occurred)

@@ -1,13 +1,16 @@
+import sys
+
 from openai import OpenAI
+from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QTextEdit,
-    QPushButton,
     QLabel,
+    QMainWindow,
     QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
@@ -138,7 +141,9 @@ class ChatWindow(QMainWindow):
         user_prompt = self.input_field.toPlainText().strip()
 
         if not user_prompt:
-            QMessageBox.warning(self, "Предупреждение", "Пожалуйста, введите текст промпта!")
+            QMessageBox.warning(
+                self, "Предупреждение", "Пожалуйста, введите текст промпта!"
+            )
             return
 
         self.send_button.setEnabled(False)

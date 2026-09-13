@@ -1,7 +1,7 @@
 import json
 import sys
 import time
-from typing import List, Optional
+from typing import Optional
 
 import openai
 from openai import OpenAI
@@ -29,9 +29,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from config import API_KEY, BASE_URL, FOLDER_ID, YANDEX_CLOUD_MODEL
+from config import (
+    YANDEX_API_KEY,
+    YANDEX_BASE_URL,
+    YANDEX_DEFAULT_MODEL,
+    YANDEX_FOLDER_ID,
+)
 
-client = OpenAI(api_key=API_KEY, base_url=BASE_URL, project=FOLDER_ID)
+client = OpenAI(api_key=YANDEX_API_KEY, base_url=YANDEX_BASE_URL, project=YANDEX_FOLDER_ID)
 
 
 class InterruptionRequestedError(Exception):
@@ -41,22 +46,22 @@ class InterruptionRequestedError(Exception):
 def call_llm_with_retry(
     worker: QThread,
     messages: list,
-    response_format: Optional[dict] = None,
-    model_class: Optional[type] = None,
+    response_format: dict | None = None,
+    model_class: type | None = None,
     max_retries: int = 3,
     timeout: int = 20,
     temperature: float = 0.3,
-    model_id: Optional[str] = None,
+    model_id: str | None = None,
 ) -> tuple:
     if model_id is None:
-        model_id = YANDEX_CLOUD_MODEL
+        model_id = YANDEX_DEFAULT_MODEL
 
     for attempt in range(max_retries):
         if worker.isInterruptionRequested():
             raise InterruptionRequestedError()
 
         kwargs = {
-            "model": f"gpt://{FOLDER_ID}/{model_id}",
+            "model": f"gpt://{YANDEX_FOLDER_ID}/{model_id}",
             "messages": messages,
             "temperature": temperature,
             "max_tokens": 1500,
@@ -80,7 +85,7 @@ def call_llm_with_retry(
             if model_class:
                 try:
                     model_class.model_validate_json(raw_content)
-                except ValidationError as e:
+                except ValidationError:
                     if attempt == max_retries - 1:
                         raise
                     time.sleep(1)
@@ -88,12 +93,12 @@ def call_llm_with_retry(
 
             return raw_content, reasoning_text
 
-        except openai.APITimeoutError as e:
+        except openai.APITimeoutError:
             if attempt == max_retries - 1:
                 raise
             time.sleep(1)
             continue
-        except openai.APIError as e:
+        except openai.APIError:
             if attempt == max_retries - 1:
                 raise
             time.sleep(1)
@@ -110,7 +115,7 @@ class AdvisorRole(BaseModel):
 
 
 class CouncilRoles(BaseModel):
-    advisors: List[AdvisorRole] = Field(description="Список подобранных советников.")
+    advisors: list[AdvisorRole] = Field(description="Список подобранных советников.")
 
 
 def parse_pydantic_code(code_str: str) -> type:
@@ -148,7 +153,7 @@ def parse_pydantic_code(code_str: str) -> type:
 
 class ResponseDTO:
     def __init__(
-        self, text: str, is_valid: Optional[bool], reasoning: Optional[str] = None
+        self, text: str, is_valid: bool | None, reasoning: str | None = None
     ):
         self.text = text
         self.is_valid = is_valid
@@ -209,10 +214,10 @@ class ModelWorker(QThread):
         self,
         user_prompt: str,
         system_prompt: str,
-        model_class: Optional[type],
-        stop_sequences: Optional[list] = None,
+        model_class: type | None,
+        stop_sequences: list | None = None,
         temperature: float = 0.3,
-        model_id: Optional[str] = None,
+        model_id: str | None = None,
     ):
         super().__init__()
         self.user_prompt = user_prompt
@@ -220,7 +225,7 @@ class ModelWorker(QThread):
         self.model_class = model_class
         self.stop_sequences = stop_sequences or []
         self.temperature = temperature
-        self.model_id = model_id if model_id else YANDEX_CLOUD_MODEL
+        self.model_id = model_id if model_id else YANDEX_DEFAULT_MODEL
 
     def run(self):
         messages = []
@@ -254,7 +259,7 @@ class ModelWorker(QThread):
                 try:
                     self.model_class.model_validate_json(raw_content)
                     is_valid = True
-                except ValidationError as e:
+                except ValidationError:
                     is_valid = False
 
             display_text = raw_content
@@ -619,7 +624,7 @@ class StandardChatTab(QWidget):
                 return
             try:
                 model_class = parse_pydantic_code(schema_code)
-            except Exception as e:
+            except Exception:
                 QMessageBox.critical(self, "Ошибка", "Схема не прошла валидацию.")
                 return
 

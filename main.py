@@ -40,6 +40,15 @@ def check_model():
             response_format=schema_dict,
         )
 
+        # 🆕 Выводим полный дамп usage в консоль
+        if response.usage:
+            print("📊 --- Usage Dump ---")
+            # Можно использовать .model_dump_json(indent=2) для красивого JSON
+            print(response.usage.model_dump_json(indent=2))
+            # Или .model_dump() для вывода словаря Python
+            # print(response.usage.model_dump())
+            print("-------------------\n")
+
         raw_content = response.choices[0].message.content
 
         validated_data = ModelInfo.model_validate_json(
@@ -53,6 +62,7 @@ def check_model():
 
     except ValidationError as e:
         print(f"❌ Модель вернула JSON, но он не соответствует схеме:\n{e}")
+        print(response)
     except Exception as e:
         print(f"❌ Ошибка API: {e}")
 

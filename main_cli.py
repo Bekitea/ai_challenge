@@ -414,6 +414,52 @@ class CLIChat:
             print("  Саммари: доступно")
         print("=" * 60)
 
+    def create_branch(self):
+        """Создаёт ветку текущего чата."""
+        if not self.current_agent:
+            print("\n[WARN] Сначала выберите или создайте чат!")
+            return
+
+        print(f"\n--- СОЗДАНИЕ ВЕТКИ ОТ '{self.current_agent.name}' ---")
+
+        # Запрашиваем имя для новой ветки
+        default_name = f"{self.current_agent.name} (branch)"
+        new_name = input(f"Введите название для ветки (Enter для '{default_name}'): ").strip()
+        if not new_name:
+            new_name = default_name
+
+        try:
+            # Создаём ветку через репозиторий
+            branched_agent = self.repository.branch_agent(
+                parent_agent=self.current_agent,
+                new_name=new_name,
+            )
+
+            print(f"\n[OK] Ветка '{branched_agent.name}' создана!")
+            print(f"  ID: {branched_agent.agent_id[:8]}...")
+            print(f"  Сообщений скопировано: {branched_agent.message_count}")
+            print(f"  Стратегия: {branched_agent.strategy.strategy_type}")
+
+            # Проверяем наличие саммари
+            if hasattr(branched_agent.strategy, 'summary') and branched_agent.strategy.summary:
+                print("  Саммари: скопировано")
+            else:
+                print("  Саммари: отсутствует")
+
+            # Переключаемся на новую ветку
+            self.current_agent = branched_agent
+
+            # Предлагаем продолжить общение в новой ветке
+            continue_in_branch = input("\nПродолжить общение в новой ветке? (y/n): ").strip().lower()
+            if continue_in_branch == "y":
+                self.show_history()
+                self.chat_loop()
+            else:
+                print("\nВетка создана. Вы можете вернуться к ней через меню.")
+
+        except Exception as e:
+            print(f"\n[ERROR] Ошибка при создании ветки: {e}")
+
     def chat_loop(self):
         """Основной цикл общения с агентом."""
         if not self.current_agent:
@@ -428,6 +474,7 @@ class CLIChat:
         print("  /settings - показать настройки и изменить их")
         print("  /summary - показать саммари диалога")
         print("  /info - показать информацию о чате (счетчики токенов)")
+        print("  /branch - создать ветку текущего чата")
         print("  /help - показать список команд")
         print("-" * 40)
 
@@ -453,6 +500,7 @@ class CLIChat:
                     print("  /settings - показать текущие настройки и изменить их")
                     print("  /summary - показать саммари диалога")
                     print("  /info - показать информацию о чате (счетчики токенов)")
+                    print("  /branch - создать ветку текущего чата (копируются настройки, история и саммари)")
                     print("  /help - показать этот список команд")
                     continue
 
@@ -469,6 +517,10 @@ class CLIChat:
                     change = input("\nИзменить настройки? (y/n): ").strip().lower()
                     if change == "y":
                         self.change_settings()
+                    continue
+
+                if user_input.lower() == "/branch":
+                    self.create_branch()
                     continue
 
                 print("\n[AGENT] печатает...", end="", flush=True)

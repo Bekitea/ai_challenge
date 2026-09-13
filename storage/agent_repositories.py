@@ -10,6 +10,11 @@ from agents import (
     AgentSettings,
 )
 from config import DATABASE_URL
+from context_strategies import (
+    ContextWindowStrategy,
+    DefaultStrategy,
+    create_strategy_from_dict,
+)
 from llm_providers import LlmProvider
 from storage.chat_storage import ChatHistoryStorage
 from storage.orm_models import AgentORM, Base
@@ -125,6 +130,15 @@ class PersistentAgentRepository(AgentRepository):
         """
         settings = orm.get_settings()
 
+        # Загружаем стратегию
+        strategy_type = orm.strategy_type or "DefaultStrategy"
+        strategy_params = orm.get_strategy_params()
+        if strategy_params:
+            strategy_data = {"strategy_type": strategy_type, **strategy_params}
+            strategy = create_strategy_from_dict(strategy_data)
+        else:
+            strategy = DefaultStrategy()
+
         # Загружаем историю из файла
         history = self._chat_storage.load_history(orm.id)
 
@@ -136,7 +150,14 @@ class PersistentAgentRepository(AgentRepository):
             system_prompt=orm.system_prompt,
             history_storage=self._chat_storage,
             messages=history if history else None,
+            strategy=strategy,
         )
+
+        # Восстанавливаем счетчики токенов
+        agent._token_counters.chat_prompt_tokens = orm.chat_prompt_tokens
+        agent._token_counters.chat_completion_tokens = orm.chat_completion_tokens
+        agent._token_counters.tech_prompt_tokens = orm.tech_prompt_tokens
+        agent._token_counters.tech_completion_tokens = orm.tech_completion_tokens
 
         # Восстанавливаем last_message_timestamp из истории
         if history:
@@ -172,6 +193,21 @@ class PersistentAgentRepository(AgentRepository):
             if system_msgs:
                 orm.system_prompt = system_msgs[0].content
 
+            # Сохраняем стратегию
+            strategy = agent.strategy
+            orm.strategy_type = strategy.strategy_type
+            strategy_dict = strategy.to_dict()
+            # Удаляем strategy_type из параметров, так как он хранится отдельно
+            params = {k: v for k, v in strategy_dict.items() if k != "strategy_type"}
+            orm.set_strategy_params(params if params else None)
+
+            # Сохраняем счетчики токенов
+            counters = agent.token_counters
+            orm.chat_prompt_tokens = counters.chat_prompt_tokens
+            orm.chat_completion_tokens = counters.chat_completion_tokens
+            orm.tech_prompt_tokens = counters.tech_prompt_tokens
+            orm.tech_completion_tokens = counters.tech_completion_tokens
+
             session.commit()
 
     def _save_agent_history(self, agent: Agent) -> None:
@@ -189,6 +225,7 @@ class PersistentAgentRepository(AgentRepository):
         name: str,
         initial_settings: AgentSettings | None = None,
         system_prompt: str | None = None,
+        strategy: ContextWindowStrategy | None = None,
     ) -> Agent:
         """
         Создаёт нового агента и сохраняет в БД и файл.
@@ -198,6 +235,7 @@ class PersistentAgentRepository(AgentRepository):
             llm_provider: Провайдер LLM.
             initial_settings: Начальные настройки.
             system_prompt: Системный промпт.
+            strategy: Стратегия управления контекстным окном (по умолчанию DefaultStrategy).
 
         Returns:
             Agent: Новый экземпляр агента.
@@ -211,6 +249,7 @@ class PersistentAgentRepository(AgentRepository):
             llm_provider=self._llm_provider,
             initial_settings=initial_settings,
             system_prompt=system_prompt,
+            strategy=strategy,
         )
 
         # Сохраняем метаданные в БД
@@ -223,6 +262,23 @@ class PersistentAgentRepository(AgentRepository):
             orm.last_message_timestamp = None
             orm.message_count = 0
             orm.last_message_preview = None
+
+            # Сохраняем стратегию
+            if strategy:
+                orm.strategy_type = strategy.strategy_type
+                strategy_dict = strategy.to_dict()
+                params = {k: v for k, v in strategy_dict.items() if k != "strategy_type"}
+                orm.set_strategy_params(params if params else None)
+            else:
+                orm.strategy_type = "DefaultStrategy"
+                orm.set_strategy_params(None)
+
+            # Инициализируем счетчики нулями
+            orm.chat_prompt_tokens = 0
+            orm.chat_completion_tokens = 0
+            orm.tech_prompt_tokens = 0
+            orm.tech_completion_tokens = 0
+
             session.add(orm)
             session.commit()
 

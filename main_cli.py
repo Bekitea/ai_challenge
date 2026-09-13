@@ -2,6 +2,11 @@ import os
 
 from agents import Agent, AgentSettings, ContextWindowExceededError
 from config import YANDEX_API_KEY, YANDEX_FOLDER_ID
+from context_strategies import (
+    ContextWindowStrategy,
+    DefaultStrategy,
+    SummarizationStrategy,
+)
 from llm_providers import YandexCloudLlmProvider
 from storage.agent_repositories import PersistentAgentRepository
 
@@ -172,6 +177,9 @@ class CLIChat:
 
         settings = self.get_agent_settings()
 
+        # Выбор стратегии управления контекстным окном
+        strategy = self._select_context_strategy()
+
         # Генерируем имя если пустое
         if not name:
             chat_count = len(self.repository.get_all_previews())
@@ -181,14 +189,40 @@ class CLIChat:
             name=name,
             initial_settings=settings,
             system_prompt=system_prompt if system_prompt else None,
+            strategy=strategy,
         )
         self.current_agent = agent
         print(f"\n[OK] Чат '{name}' создан!")
         print(f"  ID: {agent.agent_id[:8]}...")
+        print(f"  Стратегия: {strategy.strategy_type}")
 
         # Показываем всю историю (пустую для нового чата) и переходим к общению
         self.show_history()
         self.chat_loop()
+
+    def _select_context_strategy(self) -> ContextWindowStrategy:
+        """Запрашивает у пользователя выбор стратегии управления контекстным окном."""
+        print("\n--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---")
+        print("1. DefaultStrategy (пересылка всех сообщений)")
+        print("2. SummarizationStrategy (суммаризация истории)")
+
+        while True:
+            choice = input("\nВыберите стратегию (1-2, по умолчанию 1): ").strip() or "1"
+            if choice == "1":
+                return DefaultStrategy()
+            elif choice == "2":
+                # Запрашиваем параметры для SummarizationStrategy
+                try:
+                    non_compressible = int(input("Количество несжимаемых сообщений (по умолчанию 2): ").strip() or "2")
+                    buffer_size = int(input("Размер буфера для суммаризации (по умолчанию 3): ").strip() or "3")
+                    return SummarizationStrategy(
+                        non_compressible_count=non_compressible,
+                        buffer_size=buffer_size,
+                    )
+                except ValueError as e:
+                    print(f"Ошибка: {e}. Попробуйте снова.")
+            else:
+                print("Неверный выбор, попробуйте снова.")
 
     def select_chat(self):
         """Выбирает существующий чат."""
@@ -307,6 +341,57 @@ class CLIChat:
 
         print("\n" + "=" * 60)
 
+    def print_summary(self):
+        """Выводит саммари, если оно есть."""
+        if not self.current_agent:
+            print("\n[WARN] Сначала выберите или создайте чат!")
+            return
+
+        strategy = self.current_agent.strategy
+        summary = None
+
+        # Получаем саммари из стратегии
+        if hasattr(strategy, 'summary'):
+            summary = strategy.summary
+
+        if summary:
+            print("\n" + "=" * 60)
+            print("САММАРИ ДИАЛОГА")
+            print("=" * 60)
+            print(f"\n{summary}\n")
+            print("=" * 60)
+        else:
+            print("\n[INFO] Саммари отсутствует (суммаризация ещё не выполнялась).")
+
+    def print_info(self):
+        """Выводит информацию о чате, включая счетчики токенов."""
+        if not self.current_agent:
+            print("\n[WARN] Сначала выберите или создайте чат!")
+            return
+
+        counters = self.current_agent.token_counters
+
+        print("\n" + "=" * 60)
+        print(f"ИНФОРМАЦИЯ О ЧАТЕ: {self.current_agent.name}")
+        print("=" * 60)
+
+        # Отображаем счетчики токенов
+        print("\n--- СЧЕТЧИКИ ТОКЕНОВ ---")
+        print(f"  Чат (без технических): prompt={counters.chat_prompt_tokens}, completion={counters.chat_completion_tokens}")
+        print(f"  Технические: prompt={counters.tech_prompt_tokens}, completion={counters.tech_completion_tokens}")
+        print(f"  ОБЩИЕ: prompt={counters.total_prompt_tokens}, completion={counters.total_completion_tokens}")
+        print("-" * 40)
+
+        # Информация о стратегии
+        strategy = self.current_agent.strategy
+        print(f"\nСтратегия: {strategy.strategy_type}")
+        if hasattr(strategy, 'non_compressible_count') and hasattr(strategy, 'buffer_size'):
+            print(f"  Несжимаемых сообщений: {strategy.non_compressible_count}")
+            print(f"  Размер буфера: {strategy.buffer_size}")
+        if hasattr(strategy, 'summary') and strategy.summary:
+            print("  Саммари: доступно")
+        print("=" * 60)
+
     def chat_loop(self):
         """Основной цикл общения с агентом."""
         if not self.current_agent:
@@ -319,6 +404,8 @@ class CLIChat:
         print("  /menu - вернуться в меню")
         print("  /stop - остановить генерацию")
         print("  /settings - показать настройки и изменить их")
+        print("  /summary - показать саммари диалога")
+        print("  /info - показать информацию о чате (счетчики токенов)")
         print("  /help - показать список команд")
         print("-" * 40)
 
@@ -342,7 +429,17 @@ class CLIChat:
                     print("  /menu - вернуться в главное меню")
                     print("  /stop - остановить текущую генерацию")
                     print("  /settings - показать текущие настройки и изменить их")
+                    print("  /summary - показать саммари диалога")
+                    print("  /info - показать информацию о чате (счетчики токенов)")
                     print("  /help - показать этот список команд")
+                    continue
+
+                if user_input.lower() == "/summary":
+                    self.print_summary()
+                    continue
+
+                if user_input.lower() == "/info":
+                    self.print_info()
                     continue
 
                 if user_input.lower() == "/settings":

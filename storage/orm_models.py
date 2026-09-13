@@ -39,6 +39,12 @@ class AgentORM(Base):
         last_message_preview: Превью последнего сообщения (первые 50 символов).
         system_prompt: Системный промпт (хранится в БД, так как это настройка).
         settings_json: JSON сериализованные настройки агента (model_id, temperature и т.д.).
+        strategy_type: Тип стратегии управления контекстным окном.
+        strategy_params_json: JSON параметры стратегии.
+        chat_prompt_tokens: Сумма prompt_tokens без технических запросов.
+        chat_completion_tokens: Сумма completion_tokens без технических запросов.
+        tech_prompt_tokens: Сумма prompt_tokens технических запросов (суммаризация).
+        tech_completion_tokens: Сумма completion_tokens технических запросов.
     """
     __tablename__ = "agents"
 
@@ -49,6 +55,12 @@ class AgentORM(Base):
     last_message_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
     system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    strategy_type: Mapped[str | None] = mapped_column(String(100), nullable=True, default="DefaultStrategy")
+    strategy_params_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chat_prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    chat_completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tech_prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tech_completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     def get_settings(self) -> AgentSettings | None:
         """Возвращает десериализованные настройки агента."""
@@ -57,6 +69,29 @@ class AgentORM(Base):
     def set_settings(self, settings: AgentSettings | None) -> None:
         """Сериализует и сохраняет настройки агента."""
         self.settings_json = _serialize_settings(settings)
+
+    def get_strategy_params(self) -> dict | None:
+        """Возвращает десериализованные параметры стратегии."""
+        if self.strategy_params_json is None:
+            return None
+        return json.loads(self.strategy_params_json)
+
+    def set_strategy_params(self, params: dict | None) -> None:
+        """Сериализует и сохраняет параметры стратегии."""
+        if params is None:
+            self.strategy_params_json = None
+        else:
+            self.strategy_params_json = json.dumps(params)
+
+    @property
+    def total_prompt_tokens(self) -> int:
+        """Возвращает общее количество prompt_tokens (чат + технические)."""
+        return self.chat_prompt_tokens + self.tech_prompt_tokens
+
+    @property
+    def total_completion_tokens(self) -> int:
+        """Возвращает общее количество completion_tokens (чат + технические)."""
+        return self.chat_completion_tokens + self.tech_completion_tokens
 
     def __repr__(self) -> str:
         return f"<AgentORM(id={self.id}, name={self.name})>"

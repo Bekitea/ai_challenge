@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: cd1c41e70219
+Revision ID: e644bdb0b2f5
 Revises: 
-Create Date: 2026-09-13 21:04:47.731551
+Create Date: 2026-09-14 00:14:49.829819
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'cd1c41e70219'
+revision: str = 'e644bdb0b2f5'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -29,6 +29,12 @@ def upgrade() -> None:
     sa.Column('last_message_preview', sa.Text(), nullable=True),
     sa.Column('system_prompt', sa.Text(), nullable=True),
     sa.Column('settings_json', sa.Text(), nullable=True),
+    sa.Column('strategy_type', sa.String(length=100), nullable=True),
+    sa.Column('strategy_params_json', sa.Text(), nullable=True),
+    sa.Column('chat_prompt_tokens', sa.Integer(), nullable=False),
+    sa.Column('chat_completion_tokens', sa.Integer(), nullable=False),
+    sa.Column('tech_prompt_tokens', sa.Integer(), nullable=False),
+    sa.Column('tech_completion_tokens', sa.Integer(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     # ### end Alembic commands ###

@@ -2,6 +2,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from context_strategies import (
+    ContextWindowStrategy,
+    DefaultStrategy,
+)
 from llm_providers import LlmProvider, LlmResponse
 
 
@@ -51,6 +55,25 @@ class AgentSettings:
 
 
 @dataclass
+class TokenCounters:
+    """Счетчики токенов для чата."""
+    chat_prompt_tokens: int = 0
+    chat_completion_tokens: int = 0
+    tech_prompt_tokens: int = 0
+    tech_completion_tokens: int = 0
+
+    @property
+    def total_prompt_tokens(self) -> int:
+        """Общее количество prompt_tokens."""
+        return self.chat_prompt_tokens + self.tech_prompt_tokens
+
+    @property
+    def total_completion_tokens(self) -> int:
+        """Общее количество completion_tokens."""
+        return self.chat_completion_tokens + self.tech_completion_tokens
+
+
+@dataclass
 class Prompt:
     """Сообщение в диалоге с агентом."""
 
@@ -86,6 +109,7 @@ class Agent:
         system_prompt: str | None = None,
         history_storage: Any | None = None,
         messages: list[Prompt] | None = None,
+        strategy: ContextWindowStrategy | None = None,
     ):
         self.agent_id = agent_id
         self.name = name
@@ -93,12 +117,28 @@ class Agent:
         self._settings = initial_settings or AgentSettings()
         self._messages: list[Prompt] = messages if messages is not None else []
         self._history_storage = history_storage
+        self._strategy = strategy or DefaultStrategy()
 
         # Добавляем системный промпт только если сообщений ещё нет
         if system_prompt and not self._messages:
             self._messages.append(Prompt(role="system", content=system_prompt))
 
         self._last_message_timestamp: datetime | None = None
+        self._token_counters = TokenCounters()
+
+    @property
+    def token_counters(self) -> TokenCounters:
+        """Возвращает счетчики токенов."""
+        return self._token_counters
+
+    @property
+    def strategy(self) -> ContextWindowStrategy:
+        """Возвращает стратегию управления контекстным окном."""
+        return self._strategy
+
+    def set_strategy(self, strategy: ContextWindowStrategy) -> None:
+        """Устанавливает стратегию управления контекстным окном."""
+        self._strategy = strategy
 
     def get_settings(self) -> AgentSettings:
         """Возвращает текущие настройки агента."""
@@ -140,11 +180,12 @@ class Agent:
         self._messages.append(user_message)
         self._last_message_timestamp = user_timestamp
 
-        # Формируем messages для отправки в LLM
-        messages_for_llm = []
-        for msg in self._messages:
-            msg_dict: dict[str, Any] = {"role": msg.role, "content": msg.content}
-            messages_for_llm.append(msg_dict)
+        # Подготавливаем сообщения через стратегию
+        prepared = self._strategy.prepare_messages(
+            history=self._messages,
+            llm_provider=self._llm_provider,
+        )
+        messages_for_llm = prepared.messages
 
         settings = self._settings
         kwargs = settings.to_llm_request_properties()
@@ -158,6 +199,27 @@ class Agent:
             raise ContextWindowExceededError(
                 f"Превышен лимит контекстного окна: {response.prompt_tokens} токенов (лимит: {context_window_size})"
             )
+
+        # Обновляем счетчики токенов
+        # Сначала обновляем счетчики от суммаризации (если была)
+        if prepared.summarization_tokens:
+            tech_prompt, tech_completion = prepared.summarization_tokens
+            self._token_counters.tech_prompt_tokens += tech_prompt
+            self._token_counters.tech_completion_tokens += tech_completion
+
+        # Затем обновляем счетчики от основного запроса
+        is_tech_request = prepared.is_summarization_request
+        if response.prompt_tokens is not None:
+            if is_tech_request:
+                self._token_counters.tech_prompt_tokens += response.prompt_tokens
+            else:
+                self._token_counters.chat_prompt_tokens += response.prompt_tokens
+
+        if response.completion_tokens is not None:
+            if is_tech_request:
+                self._token_counters.tech_completion_tokens += response.completion_tokens
+            else:
+                self._token_counters.chat_completion_tokens += response.completion_tokens
 
         # Сохраняем ответ ассистента
         assistant_timestamp = datetime.now()

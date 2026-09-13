@@ -51,6 +51,7 @@ class AgentPreview:
     name: str
     last_message_timestamp: datetime | None
     message_count: int
+    last_message_preview: str | None = None
 
 
 class Agent:
@@ -118,7 +119,6 @@ class Agent:
             msg_dict: dict[str, Any] = {"role": msg.role, "content": msg.content}
             messages_for_llm.append(msg_dict)
 
-        # Получаем текущие настройки
         settings = self._settings
         kwargs = settings.to_dict()
 
@@ -154,6 +154,18 @@ class Agent:
     def message_count(self) -> int:
         """Возвращает количество сообщений (без системного промпта)."""
         return len([msg for msg in self._messages if msg.role != "system"])
+
+    def get_last_message_preview(self, max_length: int = 50) -> str | None:
+        """Возвращает превью последнего сообщения пользователя или агента."""
+        non_system_messages = [msg for msg in self._messages if msg.role != "system"]
+        if not non_system_messages:
+            return None
+
+        last_msg = non_system_messages[-1]
+        preview = last_msg.content[:max_length]
+        if len(last_msg.content) > max_length:
+            preview += "..."
+        return preview
 
 
 class AgentRepository(ABC):

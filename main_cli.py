@@ -5,6 +5,7 @@ from config import YANDEX_API_KEY, YANDEX_FOLDER_ID
 from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
+    KeyValueMemoryStrategy,
     SummarizationStrategy,
 )
 from llm_providers import YandexCloudLlmProvider
@@ -205,9 +206,10 @@ class CLIChat:
         print("\n--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---")
         print("1. DefaultStrategy (пересылка всех сообщений)")
         print("2. SummarizationStrategy (суммаризация истории)")
+        print("3. KeyValueMemoryStrategy (JSON-суммаризация: цель, ограничения, предпочтения, решения, договоренности)")
 
         while True:
-            choice = input("\nВыберите стратегию (1-2, по умолчанию 1): ").strip() or "1"
+            choice = input("\nВыберите стратегию (1-3, по умолчанию 1): ").strip() or "1"
             if choice == "1":
                 return DefaultStrategy()
             elif choice == "2":
@@ -216,6 +218,17 @@ class CLIChat:
                     non_compressible = int(input("Количество несжимаемых сообщений (по умолчанию 2): ").strip() or "2")
                     buffer_size = int(input("Размер буфера для суммаризации (по умолчанию 3): ").strip() or "3")
                     return SummarizationStrategy(
+                        non_compressible_count=non_compressible,
+                        buffer_size=buffer_size,
+                    )
+                except ValueError as e:
+                    print(f"Ошибка: {e}. Попробуйте снова.")
+            elif choice == "3":
+                # Запрашиваем параметры для KeyValueMemoryStrategy
+                try:
+                    non_compressible = int(input("Количество несжимаемых сообщений (по умолчанию 2): ").strip() or "2")
+                    buffer_size = int(input("Размер буфера для суммаризации (по умолчанию 3): ").strip() or "3")
+                    return KeyValueMemoryStrategy(
                         non_compressible_count=non_compressible,
                         buffer_size=buffer_size,
                     )

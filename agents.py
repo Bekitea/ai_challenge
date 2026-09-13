@@ -5,6 +5,10 @@ from typing import Any
 from llm_providers import LlmProvider, LlmResponse
 
 
+class ContextWindowExceededError(Exception):
+    """Исключение, выбрасываемое при превышении лимита контекстного окна."""
+
+
 @dataclass
 class AgentSettings:
     """Настройки агента для взаимодействия с LLM."""
@@ -14,8 +18,24 @@ class AgentSettings:
     top_p: float | None = None
     temperature: float | None = None
     reasoning_effort: str | None = None
+    context_window_size: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Преобразует настройки в словарь, отфильтровывая None значения."""
+        return {
+            k: v
+            for k, v in {
+                "model_id": self.model_id,
+                "top_k": self.top_k,
+                "top_p": self.top_p,
+                "temperature": self.temperature,
+                "reasoning_effort": self.reasoning_effort,
+                "context_window_size": self.context_window_size,
+            }.items()
+            if v is not None
+        }
+
+    def to_llm_request_properties(self) -> dict[str, Any]:
         """Преобразует настройки в словарь, отфильтровывая None значения."""
         return {
             k: v
@@ -39,6 +59,8 @@ class Prompt:
     timestamp: datetime | None = None  # None для system, обязательно для user и assistant
     reasoning: str | None = None  # Только для assistant
     settings: AgentSettings | None = None  # Только для assistant (настройки на момент генерации)
+    prompt_tokens: int | None = None  # Только для assistant
+    completion_tokens: int | None = None  # Только для assistant
 
 
 @dataclass
@@ -104,6 +126,9 @@ class Agent:
 
         Returns:
             LlmResponse: Ответ от LLM с контентом и reasoning.
+
+        Raises:
+            ContextWindowExceededError: Если prompt_tokens превысил размер контекстного окна.
         """
         # Добавляем сообщение пользователя
         user_timestamp = datetime.now()
@@ -122,10 +147,17 @@ class Agent:
             messages_for_llm.append(msg_dict)
 
         settings = self._settings
-        kwargs = settings.to_dict()
+        kwargs = settings.to_llm_request_properties()
 
         # Делаем запрос к LLM
         response = self._llm_provider.generate(messages=messages_for_llm, **kwargs)
+
+        # Проверяем лимит контекстного окна (только для assistant prompt)
+        context_window_size = settings.context_window_size or 200_000  # По умолчанию 200k
+        if response.prompt_tokens is not None and response.prompt_tokens > context_window_size:
+            raise ContextWindowExceededError(
+                f"Превышен лимит контекстного окна: {response.prompt_tokens} токенов (лимит: {context_window_size})"
+            )
 
         # Сохраняем ответ ассистента
         assistant_timestamp = datetime.now()
@@ -134,12 +166,15 @@ class Agent:
             content=response.content,
             timestamp=assistant_timestamp,
             reasoning=response.reasoning,
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
             settings=AgentSettings(
                 model_id=settings.model_id,
                 top_k=settings.top_k,
                 top_p=settings.top_p,
                 temperature=settings.temperature,
                 reasoning_effort=settings.reasoning_effort,
+                context_window_size=settings.context_window_size,
             ),
         )
         self._messages.append(assistant_message)

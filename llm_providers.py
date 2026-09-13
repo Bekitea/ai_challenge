@@ -12,7 +12,9 @@ class LlmResponse:
     """Результат ответа от LLM."""
 
     content: str
-    reasoning: str | None = None 
+    reasoning: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
 
 
 class LlmProvider(ABC):
@@ -133,4 +135,13 @@ class YandexCloudLlmProvider(LlmProvider):
             message, "reasoning", None
         )
 
-        return LlmResponse(content=raw_content, reasoning=reasoning_text)
+        usage = getattr(response, "usage", None)
+        prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
+        completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+
+        return LlmResponse(
+            content=raw_content,
+            reasoning=reasoning_text,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )

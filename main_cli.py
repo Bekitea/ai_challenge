@@ -1,6 +1,6 @@
 import os
 
-from agents import Agent, AgentSettings
+from agents import Agent, AgentSettings, ContextWindowExceededError
 from config import YANDEX_API_KEY, YANDEX_FOLDER_ID
 from llm_providers import YandexCloudLlmProvider
 from storage.agent_repositories import PersistentAgentRepository
@@ -136,12 +136,30 @@ class CLIChat:
             except ValueError:
                 print("Введите корректное число")
 
+        # Размер контекстного окна
+        print("\nРазмер контекстного окна (в токенах):")
+        print("  По умолчанию: 200000 токенов (200k)")
+        print("  Примеры: 4000, 8000, 32000, 128000, 200000")
+        context_input = input("Введите размер контекстного окна (Enter для 200k): ").strip()
+        if context_input:
+            try:
+                context_window_size = int(context_input)
+                if context_window_size <= 0:
+                    print("Размер должен быть положительным числом. Используется 200k.")
+                    context_window_size = 200_000
+            except ValueError:
+                print("Некорректное число. Используется 200k.")
+                context_window_size = 200_000
+        else:
+            context_window_size = 200_000
+
         return AgentSettings(
             model_id=model_id,
             temperature=temp,
             top_p=top_p,
             top_k=top_k if top_k > 0 else None,
             reasoning_effort=reasoning_effort,
+            context_window_size=context_window_size,
         )
 
     def create_new_chat(self):
@@ -209,6 +227,8 @@ class CLIChat:
         print(f"  Top P: {settings.top_p if settings.top_p is not None else 'отключен'}")
         print(f"  Top K: {settings.top_k if settings.top_k is not None else 'отключено'}")
         print(f"  Reasoning Effort: {settings.reasoning_effort}")
+        context_window = settings.context_window_size if settings.context_window_size is not None else 200_000
+        print(f"  Размер контекстного окна: {context_window} токенов")
         print("-" * 40)
 
     def print_settings(self):
@@ -244,6 +264,10 @@ class CLIChat:
             print("\nИстория пуста.")
             return
 
+        # Получаем размер контекстного окна для отображения заполненности
+        settings = self.current_agent.get_settings()
+        context_window_size = settings.context_window_size or 200_000
+
         print("\n" + "=" * 60)
         print(f"ИСТОРИЯ ЧАТА: {self.current_agent.name}")
         print("=" * 60)
@@ -259,6 +283,21 @@ class CLIChat:
 
             print(f"\n[{timestamp}] {role_prefix}:")
             print(f"{msg.content}")
+
+            # Отображаем токены для assistant prompt
+            if msg.role == "assistant" and (msg.prompt_tokens is not None or msg.completion_tokens is not None):
+                tokens_info = []
+                if msg.prompt_tokens is not None:
+                    tokens_info.append(f"prompt: {msg.prompt_tokens}")
+                if msg.completion_tokens is not None:
+                    tokens_info.append(f"completion: {msg.completion_tokens}")
+                if tokens_info:
+                    print(f"  [Токены: {', '.join(tokens_info)}]")
+
+                # Отображаем степень заполненности контекстного окна
+                if msg.prompt_tokens is not None:
+                    fill_percent = (msg.prompt_tokens / context_window_size) * 100
+                    print(f"  [Заполненность контекста: {msg.prompt_tokens}/{context_window_size} ({fill_percent:.1f}%)])")
 
             if msg.reasoning:
                 print("\n  [Reasoning]:")
@@ -315,7 +354,14 @@ class CLIChat:
 
                 print("\n[AGENT] печатает...", end="", flush=True)
 
-                response = self.current_agent.continue_dialog(user_input)
+                try:
+                    response = self.current_agent.continue_dialog(user_input)
+                except ContextWindowExceededError as e:
+                    # Очищаем строку "Агент печатает..."
+                    print("\r" + " " * 40 + "\r", end="")
+                    print(f"\n[ERROR] {e}")
+                    print("Необходимо очистить историю сообщений или создать новый чат.")
+                    break
 
                 # Сохраняем обновлённое состояние агента в репозиторий
                 self.repository.update_agent(self.current_agent)
@@ -324,6 +370,23 @@ class CLIChat:
                 print("\r" + " " * 40 + "\r", end="")
 
                 print(f"\n[AGENT]: {response.content}")
+
+                # Отображаем информацию о токенах
+                if response.prompt_tokens is not None or response.completion_tokens is not None:
+                    tokens_info = []
+                    if response.prompt_tokens is not None:
+                        tokens_info.append(f"prompt: {response.prompt_tokens}")
+                    if response.completion_tokens is not None:
+                        tokens_info.append(f"completion: {response.completion_tokens}")
+                    if tokens_info:
+                        print(f"  [Токены: {', '.join(tokens_info)}]")
+
+                    # Отображаем степень заполненности контекстного окна
+                    if response.prompt_tokens is not None:
+                        settings = self.current_agent.get_settings()
+                        context_window_size = settings.context_window_size or 200_000
+                        fill_percent = (response.prompt_tokens / context_window_size) * 100
+                        print(f"  [Заполненность контекста: {response.prompt_tokens}/{context_window_size} ({fill_percent:.1f}%)]")
 
                 if response.reasoning:
                     show_reasoning = input("\nПоказать рассуждения модели? (y/n): ").strip().lower()

@@ -317,6 +317,9 @@ class CLIChat:
 
                 response = self.current_agent.continue_dialog(user_input)
 
+                # Сохраняем обновлённое состояние агента в репозиторий
+                self.repository.update_agent(self.current_agent)
+
                 # Очищаем строку "Агент печатает..."
                 print("\r" + " " * 40 + "\r", end="")
 

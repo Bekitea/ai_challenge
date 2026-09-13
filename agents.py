@@ -63,15 +63,17 @@ class Agent:
         initial_settings: AgentSettings | None = None,
         system_prompt: str | None = None,
         history_storage: Any | None = None,
+        messages: list[Prompt] | None = None,
     ):
         self.agent_id = agent_id
         self.name = name
         self._llm_provider = llm_provider
         self._settings = initial_settings or AgentSettings()
-        self._messages: list[Prompt] = []
+        self._messages: list[Prompt] = messages if messages is not None else []
         self._history_storage = history_storage
 
-        if system_prompt:
+        # Добавляем системный промпт только если сообщений ещё нет
+        if system_prompt and not self._messages:
             self._messages.append(Prompt(role="system", content=system_prompt))
 
         self._last_message_timestamp: datetime | None = None
@@ -142,9 +144,6 @@ class Agent:
         )
         self._messages.append(assistant_message)
         self._last_message_timestamp = assistant_timestamp
-
-        if self._history_storage and hasattr(self._history_storage, 'save_history'):
-            self._history_storage.save_history(self.agent_id, self._messages)
 
         return response
 

@@ -60,8 +60,6 @@ class AgentRepository(ABC):
             Список AgentPreview, отсортированный по last_message_timestamp (descending).
         """
 
-    
-
     @abstractmethod
     def update_agent(self, agent: Agent) -> None:
         """
@@ -72,7 +70,6 @@ class AgentRepository(ABC):
         Args:
             agent: Агент для обновления.
         """
-
 
     @abstractmethod
     def delete_agent(self, agent_id: str) -> bool:
@@ -128,19 +125,21 @@ class PersistentAgentRepository(AgentRepository):
         """
         settings = orm.get_settings()
 
+        # Загружаем историю из файла
+        history = self._chat_storage.load_history(orm.id)
+
         agent = Agent(
             agent_id=orm.id,
             name=orm.name,
             llm_provider=self._llm_provider,
             initial_settings=settings,
             system_prompt=orm.system_prompt,
+            history_storage=self._chat_storage,
+            messages=history if history else None,
         )
 
-        # Загружаем историю из файла
-        history = self._chat_storage.load_history(orm.id)
+        # Восстанавливаем last_message_timestamp из истории
         if history:
-            agent._messages = history
-            # Восстанавливаем last_message_timestamp из истории
             non_system_msgs = [m for m in history if m.role != "system"]
             if non_system_msgs:
                 agent._last_message_timestamp = non_system_msgs[-1].timestamp

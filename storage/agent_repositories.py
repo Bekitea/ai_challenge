@@ -1,0 +1,313 @@
+from abc import ABC, abstractmethod
+from datetime import datetime
+
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session, sessionmaker
+
+from agents import (
+    Agent,
+    AgentPreview,
+    AgentSettings,
+)
+from config import DATABASE_URL
+from llm_providers import LlmProvider
+from storage.chat_storage import ChatHistoryStorage
+from storage.orm_models import AgentORM, Base
+
+
+class AgentRepository(ABC):
+    """Абстракция для хранения и управления агентами."""
+
+    @abstractmethod
+    def create_agent(
+        self,
+        name: str,
+        initial_settings: AgentSettings | None = None,
+        system_prompt: str | None = None,
+    ) -> Agent:
+        """
+        Создаёт нового агента с уникальным идентификатором.
+
+        Args:
+            name: Название агента.
+            llm_provider: Провайдер LLM для запросов.
+            initial_settings: Начальные настройки агента.
+            system_prompt: Системный промпт (опционально).
+
+        Returns:
+            Agent: Newly created agent instance.
+        """
+
+    @abstractmethod
+    def get_agent(self, agent_id: str) -> Agent | None:
+        """
+        Получает агента по идентификатору.
+
+        Args:
+            agent_id: Уникальный идентификатор агента.
+
+        Returns:
+            Agent или None, если агент не найден.
+        """
+
+    @abstractmethod
+    def get_all_previews(self) -> list[AgentPreview]:
+        """
+        Получает превью всех агентов, отсортированные по дате последнего сообщения
+        (последние сверху).
+
+        Returns:
+            Список AgentPreview, отсортированный по last_message_timestamp (descending).
+        """
+
+    
+
+    @abstractmethod
+    def update_agent(self, agent: Agent) -> None:
+        """
+        Обновляет метаданные и историю агента.
+
+        Вызывается после каждого изменения состояния агента.
+
+        Args:
+            agent: Агент для обновления.
+        """
+
+
+    @abstractmethod
+    def delete_agent(self, agent_id: str) -> bool:
+        """
+        Удаляет агента из БД и удаляет файл истории.
+
+        Args:
+            agent_id: UUID агента.
+
+        Returns:
+            True, если агент был удалён, False если не найден.
+        """
+
+
+class PersistentAgentRepository(AgentRepository):
+    """
+    Реализация AgentRepository с хранением метаданных в SQLite и истории в файлах.
+
+    Метаданные (настройки, превью, системный промпт) хранятся в БД.
+    Полная история сообщений (Prompt objects) хранится в pickle-файлах.
+    """
+
+    def __init__(self, llm_provider: LlmProvider):
+        """
+        Инициализирует репозиторий.
+
+        Args:
+            llm_provider_factory: Фабрика для создания LLM провайдера.
+                                  Вызывается при загрузке каждого агента.
+        """
+        self._engine = create_engine(DATABASE_URL, echo=False)
+        self._session_factory = sessionmaker(bind=self._engine, autoflush=False)
+        self._llm_provider = llm_provider
+        self._chat_storage = ChatHistoryStorage()
+
+    def init_db(self) -> None:
+        """Создаёт таблицы в БД, если они не существуют."""
+        Base.metadata.create_all(bind=self._engine)
+
+    def _get_session(self) -> Session:
+        """Возвращает новую сессию БД."""
+        return self._session_factory()
+
+    def _agent_orm_to_agent(self, orm: AgentORM) -> Agent:
+        """
+        Преобразует ORM объект в Agent, загружая историю из файла.
+
+        Args:
+            orm: ORM объект агента.
+
+        Returns:
+            Agent: Экземпляр агента с загруженной историей.
+        """
+        settings = orm.get_settings()
+
+        agent = Agent(
+            agent_id=orm.id,
+            name=orm.name,
+            llm_provider=self._llm_provider,
+            initial_settings=settings,
+            system_prompt=orm.system_prompt,
+        )
+
+        # Загружаем историю из файла
+        history = self._chat_storage.load_history(orm.id)
+        if history:
+            agent._messages = history
+            # Восстанавливаем last_message_timestamp из истории
+            non_system_msgs = [m for m in history if m.role != "system"]
+            if non_system_msgs:
+                agent._last_message_timestamp = non_system_msgs[-1].timestamp
+
+        return agent
+
+    def _save_agent_metadata(self, agent: Agent) -> None:
+        """
+        Сохраняет метаданные агента в БД.
+
+        Args:
+            agent: Агент для сохранения.
+        """
+        with self._get_session() as session:
+            orm = session.get(AgentORM, agent.agent_id)
+            if orm is None:
+                orm = AgentORM()
+                orm.id = agent.agent_id
+                session.add(orm)
+
+            orm.name = agent.name
+            orm.last_message_timestamp = agent.last_message_timestamp
+            orm.message_count = agent.message_count
+            orm.last_message_preview = agent.get_last_message_preview()
+            orm.set_settings(agent.get_settings())
+
+            # Сохраняем системный промпт, если он есть
+            history = agent.get_history()
+            system_msgs = [m for m in history if m.role == "system"]
+            if system_msgs:
+                orm.system_prompt = system_msgs[0].content
+
+            session.commit()
+
+    def _save_agent_history(self, agent: Agent) -> None:
+        """
+        Сохраняет историю сообщений агента в файл.
+
+        Args:
+            agent: Агент для сохранения.
+        """
+        history = agent.get_history()
+        self._chat_storage.save_history(agent.agent_id, history)
+
+    def create_agent(
+        self,
+        name: str,
+        initial_settings: AgentSettings | None = None,
+        system_prompt: str | None = None,
+    ) -> Agent:
+        """
+        Создаёт нового агента и сохраняет в БД и файл.
+
+        Args:
+            name: Название агента.
+            llm_provider: Провайдер LLM.
+            initial_settings: Начальные настройки.
+            system_prompt: Системный промпт.
+
+        Returns:
+            Agent: Новый экземпляр агента.
+        """
+        from uuid import uuid4
+
+        agent_id = str(uuid4())
+        agent = Agent(
+            agent_id=agent_id,
+            name=name,
+            llm_provider=self._llm_provider,
+            initial_settings=initial_settings,
+            system_prompt=system_prompt,
+        )
+
+        # Сохраняем метаданные в БД
+        with self._get_session() as session:
+            orm = AgentORM()
+            orm.id = agent_id
+            orm.name = name
+            orm.set_settings(initial_settings)
+            orm.system_prompt = system_prompt
+            orm.last_message_timestamp = None
+            orm.message_count = 0
+            orm.last_message_preview = None
+            session.add(orm)
+            session.commit()
+
+        # Сохраняем начальную историю (системный промпт) в файл
+        self._save_agent_history(agent)
+
+        return agent
+
+    def get_agent(self, agent_id: str) -> Agent | None:
+        """
+        Получает агента по ID, загружая историю из файла.
+
+        Args:
+            agent_id: UUID агента.
+
+        Returns:
+            Agent или None, если не найден.
+        """
+        with self._get_session() as session:
+            orm = session.get(AgentORM, agent_id)
+            if orm is None:
+                return None
+            return self._agent_orm_to_agent(orm)
+
+    def get_all_previews(self) -> list[AgentPreview]:
+        """
+        Получает превью всех агентов из БД, отсортированные по дате последнего сообщения.
+
+        Returns:
+            Список AgentPreview, отсортированный по last_message_timestamp (descending).
+        """
+        with self._get_session() as session:
+            # SQLite не поддерживает NULLS FIRST с DESC, поэтому загружаем все и сортируем в Python
+            stmt = select(AgentORM)
+            orms = session.execute(stmt).scalars().all()
+
+            previews = []
+            for orm in orms:
+                preview = AgentPreview(
+                    agent_id=orm.id,
+                    name=orm.name,
+                    last_message_timestamp=orm.last_message_timestamp,
+                    message_count=orm.message_count,
+                    last_message_preview=orm.last_message_preview,
+                )
+                previews.append(preview)
+
+            # Сортировка: None в конце, остальные по убыванию
+            previews.sort(
+                key=lambda p: p.last_message_timestamp if p.last_message_timestamp else datetime.min,
+                reverse=True,
+            )
+            return previews
+
+    def update_agent(self, agent: Agent) -> None:
+        """
+        Обновляет метаданные и историю агента.
+
+        Вызывается после каждого изменения состояния агента.
+
+        Args:
+            agent: Агент для обновления.
+        """
+        self._save_agent_metadata(agent)
+        self._save_agent_history(agent)
+
+    def delete_agent(self, agent_id: str) -> bool:
+        """
+        Удаляет агента из БД и удаляет файл истории.
+
+        Args:
+            agent_id: UUID агента.
+
+        Returns:
+            True, если агент был удалён, False если не найден.
+        """
+        with self._get_session() as session:
+            orm = session.get(AgentORM, agent_id)
+            if orm is None:
+                return False
+
+            session.delete(orm)
+            session.commit()
+
+        # Удаляем файл истории
+        self._chat_storage.delete_history(agent_id)
+        return True

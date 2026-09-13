@@ -1,19 +1,20 @@
 import os
 
-from agents import Agent, AgentSettings, InMemoryAgentRepository
+from agents import Agent, AgentSettings
 from config import YANDEX_API_KEY, YANDEX_FOLDER_ID
 from llm_providers import YandexCloudLlmProvider
+from storage.agent_repositories import PersistentAgentRepository
 
 
 class CLIChat:
     """Консольный интерфейс для взаимодействия с агентами."""
 
     def __init__(self):
-        self.repository = InMemoryAgentRepository()
         self.llm_provider = YandexCloudLlmProvider(
             api_key=YANDEX_API_KEY,
             folder_id=YANDEX_FOLDER_ID,
         )
+        self.repository = PersistentAgentRepository(self.llm_provider)
         self.current_agent: Agent | None = None
         self.available_models = {
             "1": ("gpt-oss-120b/latest", "GPT OSS 120B"),
@@ -160,7 +161,6 @@ class CLIChat:
 
         agent = self.repository.create_agent(
             name=name,
-            llm_provider=self.llm_provider,
             initial_settings=settings,
             system_prompt=system_prompt if system_prompt else None,
         )

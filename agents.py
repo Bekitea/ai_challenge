@@ -1,5 +1,3 @@
-import uuid
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -64,12 +62,14 @@ class Agent:
         llm_provider: LlmProvider,
         initial_settings: AgentSettings | None = None,
         system_prompt: str | None = None,
+        history_storage: Any | None = None,
     ):
         self.agent_id = agent_id
         self.name = name
         self._llm_provider = llm_provider
         self._settings = initial_settings or AgentSettings()
         self._messages: list[Prompt] = []
+        self._history_storage = history_storage
 
         if system_prompt:
             self._messages.append(Prompt(role="system", content=system_prompt))
@@ -143,6 +143,9 @@ class Agent:
         self._messages.append(assistant_message)
         self._last_message_timestamp = assistant_timestamp
 
+        if self._history_storage and hasattr(self._history_storage, 'save_history'):
+            self._history_storage.save_history(self.agent_id, self._messages)
+
         return response
 
     @property
@@ -166,95 +169,3 @@ class Agent:
         if len(last_msg.content) > max_length:
             preview += "..."
         return preview
-
-
-class AgentRepository(ABC):
-    """Абстракция для хранения и управления агентами."""
-
-    @abstractmethod
-    def create_agent(
-        self,
-        name: str,
-        llm_provider: LlmProvider,
-        initial_settings: AgentSettings | None = None,
-        system_prompt: str | None = None,
-    ) -> Agent:
-        """
-        Создаёт нового агента с уникальным идентификатором.
-
-        Args:
-            name: Название агента.
-            llm_provider: Провайдер LLM для запросов.
-            initial_settings: Начальные настройки агента.
-            system_prompt: Системный промпт (опционально).
-
-        Returns:
-            Agent: Newly created agent instance.
-        """
-
-    @abstractmethod
-    def get_agent(self, agent_id: str) -> Agent | None:
-        """
-        Получает агента по идентификатору.
-
-        Args:
-            agent_id: Уникальный идентификатор агента.
-
-        Returns:
-            Agent или None, если агент не найден.
-        """
-
-    @abstractmethod
-    def get_all_previews(self) -> list[AgentPreview]:
-        """
-        Получает превью всех агентов, отсортированные по дате последнего сообщения
-        (последние сверху).
-
-        Returns:
-            Список AgentPreview, отсортированный по last_message_timestamp (descending).
-        """
-
-
-class InMemoryAgentRepository(AgentRepository):
-    """Реализация AgentRepository с хранением в памяти."""
-
-    def __init__(self):
-        self._agents: dict[str, Agent] = {}
-
-    def create_agent(
-        self,
-        name: str,
-        llm_provider: LlmProvider,
-        initial_settings: AgentSettings | None = None,
-        system_prompt: str | None = None,
-    ) -> Agent:
-        agent_id = str(uuid.uuid4())
-        agent = Agent(
-            agent_id=agent_id,
-            name=name,
-            llm_provider=llm_provider,
-            initial_settings=initial_settings,
-            system_prompt=system_prompt,
-        )
-        self._agents[agent_id] = agent
-        return agent
-
-    def get_agent(self, agent_id: str) -> Agent | None:
-        return self._agents.get(agent_id)
-
-    def get_all_previews(self) -> list[AgentPreview]:
-        previews = [
-            AgentPreview(
-                agent_id=agent.agent_id,
-                name=agent.name,
-                last_message_timestamp=agent.last_message_timestamp,
-                message_count=agent.message_count,
-            )
-            for agent in self._agents.values()
-        ]
-        # Сортировка по last_message_timestamp descending (None в конце)
-        previews.sort(
-            key=lambda p: p.last_message_timestamp if p.last_message_timestamp else datetime.min,
-            reverse=True,
-        )
-        return previews

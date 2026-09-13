@@ -493,6 +493,77 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
         return "KeyValueMemoryStrategy"
 
 
+@dataclass
+class SlidingWindowStrategy(ContextWindowStrategy):
+    """
+    Стратегия скользящего окна (Sliding Window).
+
+    Параметры:
+        window_size: Количество последних сообщений, которые передаются в LLM.
+
+    Логика:
+        - При каждом запросе передаётся системный промпт (если есть) + N последних сообщений.
+        - Все сообщения старше N не передаются в LLM.
+        - История сохраняется полностью в хранилище, но для LLM отправляются только последние N сообщений.
+    """
+
+    window_size: int
+
+    def __post_init__(self):
+        if self.window_size <= 0:
+            raise ValueError("window_size должен быть > 0")
+
+    def prepare_messages(
+        self,
+        history: list[Any],
+        llm_provider: LlmProvider | None = None,
+    ) -> PreparedMessages:
+        """
+        Подготавливает сообщения для отправки в LLM.
+
+        Возвращает системный промпт + последние window_size сообщений.
+        """
+        # Разделяем системный промпт и остальные сообщения
+        system_msg = None
+        other_messages = []
+        for msg in history:
+            if msg.role == "system":
+                system_msg = msg
+            else:
+                other_messages.append(msg)
+
+        # Берём только последние window_size сообщений
+        recent_messages = other_messages[-self.window_size:] if self.window_size < len(other_messages) else other_messages
+
+        # Формируем итоговые сообщения
+        messages = []
+        if system_msg:
+            messages.append({"role": "system", "content": system_msg.content})
+
+        for msg in recent_messages:
+            messages.append({"role": msg.role, "content": msg.content})
+
+        return PreparedMessages(
+            messages=messages,
+            summary=None,
+            is_summarization_request=False,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "strategy_type": self.strategy_type,
+            "window_size": self.window_size,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SlidingWindowStrategy":
+        return cls(window_size=data["window_size"])
+
+    @property
+    def strategy_type(self) -> str:
+        return "SlidingWindowStrategy"
+
+
 def create_strategy_from_dict(data: dict[str, Any]) -> ContextWindowStrategy:
     """Фабричный метод для создания стратегии из словаря."""
     strategy_type = data.get("strategy_type", "DefaultStrategy")
@@ -502,5 +573,7 @@ def create_strategy_from_dict(data: dict[str, Any]) -> ContextWindowStrategy:
         return SummarizationStrategy.from_dict(data)
     elif strategy_type == "KeyValueMemoryStrategy":
         return KeyValueMemoryStrategy.from_dict(data)
+    elif strategy_type == "SlidingWindowStrategy":
+        return SlidingWindowStrategy.from_dict(data)
     else:
         raise ValueError(f"Неизвестный тип стратегии: {strategy_type}")

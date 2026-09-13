@@ -6,6 +6,7 @@ from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
     KeyValueMemoryStrategy,
+    SlidingWindowStrategy,
     SummarizationStrategy,
 )
 from llm_providers import YandexCloudLlmProvider
@@ -207,9 +208,10 @@ class CLIChat:
         print("1. DefaultStrategy (пересылка всех сообщений)")
         print("2. SummarizationStrategy (суммаризация истории)")
         print("3. KeyValueMemoryStrategy (JSON-суммаризация: цель, ограничения, предпочтения, решения, договоренности)")
+        print("4. SlidingWindowStrategy (скользящее окно: последние N сообщений)")
 
         while True:
-            choice = input("\nВыберите стратегию (1-3, по умолчанию 1): ").strip() or "1"
+            choice = input("\nВыберите стратегию (1-4, по умолчанию 1): ").strip() or "1"
             if choice == "1":
                 return DefaultStrategy()
             elif choice == "2":
@@ -232,6 +234,13 @@ class CLIChat:
                         non_compressible_count=non_compressible,
                         buffer_size=buffer_size,
                     )
+                except ValueError as e:
+                    print(f"Ошибка: {e}. Попробуйте снова.")
+            elif choice == "4":
+                # Запрашиваем параметры для SlidingWindowStrategy
+                try:
+                    window_size = int(input("Размер скользящего окна N (по умолчанию 10): ").strip() or "10")
+                    return SlidingWindowStrategy(window_size=window_size)
                 except ValueError as e:
                     print(f"Ошибка: {e}. Попробуйте снова.")
             else:

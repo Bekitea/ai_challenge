@@ -152,10 +152,6 @@ class Agent:
         """Возвращает всю историю диалога (включая системный промпт)."""
         return self._messages.copy()
 
-    def get_messages_for_display(self) -> list[Prompt]:
-        """Возвращает сообщения для отображения пользователю (без системного промпта)."""
-        return [msg for msg in self._messages if msg.role != "system"]
-
     def continue_dialog(self, user_prompt: str) -> LlmResponse:
         """
         Продолжает диалог: добавляет сообщение пользователя, делает запрос к LLM,

@@ -88,7 +88,7 @@ class CLIChat:
             print(f"{i}. {preview.name}")
             print(f"   Сообщений: {preview.message_count} | Последнее: {last_msg_time}")
             print(f"   Превью: {preview_text}")
-            print(f"   ID: {preview.agent_id[:8]}...")
+            print(f"   ID: {preview.agent_id}")
         print("-" * 40)
 
     def get_agent_settings(
@@ -232,7 +232,7 @@ class CLIChat:
         )
         self.current_agent = agent
         print(f"\n[OK] Чат '{name}' создан!")
-        print(f"  ID: {agent.agent_id[:8]}...")
+        print(f"  ID: {agent.agent_id}")
         print(f"  Стратегия: {strategy.strategy_type}")
 
         # Показываем всю историю (пустую для нового чата) и переходим к общению
@@ -387,7 +387,6 @@ class CLIChat:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
-        messages = self.current_agent.get_messages_for_display()
         all_messages = self.current_agent.get_history()  # Включая системный промпт
 
         if not all_messages:
@@ -524,7 +523,7 @@ class CLIChat:
             )
 
             print(f"\n[OK] Ветка '{branched_agent.name}' создана!")
-            print(f"  ID: {branched_agent.agent_id[:8]}...")
+            print(f"  ID: {branched_agent.agent_id}")
             print(f"  Сообщений скопировано: {branched_agent.message_count}")
             print(f"  Стратегия: {branched_agent.strategy.strategy_type}")
 

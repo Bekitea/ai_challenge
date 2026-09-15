@@ -1,4 +1,5 @@
 .env
+.vscode/*
 *.pyc
 app.log
 data/*

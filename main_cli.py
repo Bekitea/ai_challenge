@@ -1,6 +1,9 @@
+import argparse
 import os
+import sys
 
 from agents import Agent, AgentSettings, ContextWindowExceededError
+from app_mode import get_mode_config, validate_production_env
 from config import YANDEX_API_KEY, YANDEX_FOLDER_ID
 from context_strategies import (
     ContextWindowStrategy,
@@ -16,15 +19,21 @@ from storage.agent_repositories import PersistentAgentRepository
 class CLIChat:
     """Консольный интерфейс для взаимодействия с агентами."""
 
-    def __init__(self):
-        # Используем MockProvider если нет ключей API, иначе YandexCloudLlmProvider
-        if not YANDEX_API_KEY or not YANDEX_FOLDER_ID:
-            self.llm_provider = MockLlmProvider()
-        else:
+    def __init__(self, is_test_mode: bool = False):
+        # Определяем режим работы и выбираем провайдера
+        mode_config = get_mode_config(is_test_mode)
+
+        if mode_config.require_env_vars:
+            # Продакшен режим: проверяем переменные окружения
+            validate_production_env(YANDEX_API_KEY, YANDEX_FOLDER_ID)
             self.llm_provider = YandexCloudLlmProvider(
                 api_key=YANDEX_API_KEY,
                 folder_id=YANDEX_FOLDER_ID,
             )
+        else:
+            # Тестовый режим: всегда используем MockProvider
+            self.llm_provider = MockLlmProvider()
+
         self.repository = PersistentAgentRepository(self.llm_provider)
         self.current_agent: Agent | None = None
         self.available_models = {
@@ -33,6 +42,7 @@ class CLIChat:
             "3": ("aliceai-llm-flash/latest", "Alice AI LLM Flash"),
         }
         self.reasoning_efforts = ["none", "low", "medium", "high"]
+        self.is_test_mode = is_test_mode
 
     def clear_screen(self):
         """Очищает экран консоли."""
@@ -707,8 +717,29 @@ class CLIChat:
 
 def main():
     """Точка входа CLI приложения."""
-    cli = CLIChat()
-    cli.run()
+    parser = argparse.ArgumentParser(
+        description="AI Chat CLI - Консольный чат с AI агентами"
+    )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Запустить в тестовом режиме с Mock провайдером (по умолчанию: продакшен режим)",
+    )
+    args = parser.parse_args()
+
+    try:
+        cli = CLIChat(is_test_mode=args.test)
+        if args.test:
+            print("\n[INFO] Запуск в ТЕСТОВОМ режиме с Mock провайдером.\n")
+        else:
+            print("\n[INFO] Запуск в ПРОДАКШЕН режиме с Yandex Cloud LLM.\n")
+        cli.run()
+    except OSError as e:
+        print(f"\n[ERROR] {e}\n", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("\n\nДо свидания!\n")
+        sys.exit(0)
 
 
 if __name__ == "__main__":

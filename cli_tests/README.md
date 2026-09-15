@@ -147,7 +147,39 @@ Include comments explaining what each test scenario validates.
 
 When API keys are not available, ensure your application falls back to mock providers and tests verify this behavior.
 
+### 7. Use Explicit Test Mode Flag
+
+The application now supports an explicit `--test` flag for running in test mode with the Mock provider:
+
+```python
+# Always use --test flag in automated tests
+process = subprocess.Popen(
+    [sys.executable, "main_cli.py", "--test"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True,
+    cwd=str(project_root),
+)
+```
+
+This ensures:
+
+- Tests always run with the Mock provider regardless of environment variables
+- Production mode explicitly requires API credentials
+- Clear separation between test and production scenarios
+
 ## Running Tests
+
+### Automated Tests Must Use Test Mode
+
+**IMPORTANT:** All automated test scripts **MUST** be executed in the application's **TEST MODE** (`--test` flag).
+
+This ensures:
+
+- Tests run without requiring real API keys or environment variables
+- Tests use the `MockLlmProvider` for predictable, fast, and isolated execution
+- No accidental costs or external dependencies during testing
 
 ### From Any Location
 
@@ -155,7 +187,7 @@ When API keys are not available, ensure your application falls back to mock prov
 # Navigate to the test directory
 cd cli_tests
 
-# Run the smoke test
+# Run the smoke test (uses --test flag by default)
 python smoke_test.py
 ```
 
@@ -165,6 +197,30 @@ python smoke_test.py
 python -u smoke_test.py
 ```
 
+### Manual Testing Modes
+
+You can run the application manually in two modes:
+
+**1. Test Mode (Recommended for Development/Testing)**
+Uses the Mock LLM provider. No API keys required.
+
+```bash
+python ../main_cli.py --test
+```
+
+**2. Production Mode (Default)**
+Uses the real Yandex Cloud LLM provider. Requires environment variables.
+
+```bash
+# Set required variables first
+$env:YANDEX_CLOUD_API_KEY="your_key"
+$env:YANDEX_CLOUD_FOLDER_ID="your_folder"
+
+python ../main_cli.py
+```
+
+If variables are missing in Production Mode, the app will exit with an error.
+
 ## Common Issues and Solutions
 
 | Issue                               | Solution                                                 |
@@ -173,3 +229,5 @@ python -u smoke_test.py
 | Test hangs indefinitely             | Add `timeout` parameter to `communicate()`               |
 | Encoding errors                     | Use `text=True` and ensure consistent encoding           |
 | Different behavior on Windows/Linux | Test on both platforms; use cross-platform path handling |
+| `EnvironmentError` in test mode     | Ensure `--test` flag is passed to the application        |
+| Mock provider not used              | Verify `--test` flag is present; check app_mode module   |

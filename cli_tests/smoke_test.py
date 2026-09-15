@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Smoke test for CLI chat application.
-Tests basic interaction with the mock provider.
+Tests basic interaction with the mock provider in test mode.
 """
 
 import subprocess
@@ -10,13 +10,27 @@ from pathlib import Path
 
 
 def run_smoke_test():
-    """Run basic smoke test scenario."""
+    """Run basic smoke test scenario in test mode."""
 
-    # Test input: select option 1 (chat), send message, then exit
-    test_input = "1\nHello, how are you?\n0\n"
+    # Test input:
+    # 1 - Новый чат
+    # "Test Chat" - имя чата
+    # "" - системный промпт (пропуск)
+    # 1 - модель GPT OSS 120B
+    # "" - температура (отключена)
+    # "" - top P (отключен)
+    # "" - top K (0 по умолчанию)
+    # "" - reasoning effort (1 none по умолчанию)
+    # "" - контекстное окно (200k по умолчанию)
+    # 1 - стратегия Default
+    # "" - параметры стратегии (по умолчанию)
+    # "Hello, how are you?" - сообщение пользователю
+    # 0 - выход из чата
+    # 4 - выход из приложения
+    test_input = "1\nTest Chat\n\n1\n\n\n\n\n\n1\n\n\nHello, how are you?\n0\n4\n"
 
-    print("Running smoke test...")
-    print(f"Test input:\n{test_input}")
+    print("Running smoke test in TEST MODE (--test flag)...")
+    print(f"Test input:\n{test_input!r}")
     print("-" * 50)
 
     try:
@@ -25,9 +39,9 @@ def run_smoke_test():
         script_dir = Path(__file__).parent.absolute()
         project_root = script_dir.parent
 
-        # Run the CLI application with test input
+        # Run the CLI application with --test flag for mock provider
         process = subprocess.Popen(
-            [sys.executable, "main_cli.py"],
+            [sys.executable, "main_cli.py", "--test"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -49,12 +63,8 @@ def run_smoke_test():
         # Check if the output contains expected elements
         success = True
 
-        # Check for menu display (checking for multiple possible menu items)
-        if (
-            "1. Новый чат" not in stdout
-            and "1. Start chat" not in stdout
-            and "МЕНЮ" not in stdout
-        ):
+        # Check for menu display
+        if "МЕНЮ" not in stdout and "1. Новый чат" not in stdout:
             print("❌ Menu not displayed correctly")
             success = False
         else:
@@ -66,15 +76,24 @@ def run_smoke_test():
         else:
             print("✓ Model selection displayed")
 
-        # Check for mock provider warning if no env vars
-        if "YANDEX_CLOUD_API_KEY" in stderr or "MockLlmProvider" in stdout:
-            print("✓ Mock provider is being used (expected when no API keys)")
-
-        # Check if application processed input
-        if "Hello, how are you?" in stdout or process.returncode == 0:
-            print("✓ Application processed input successfully")
+        # Verify mock provider is being used (check for mock responses)
+        if "[MOCK" in stdout or "[MOCK RESPONSE]" in stdout:
+            print("✓ Mock provider is being used (expected in test mode)")
+        elif "MODEL_RESPONSE" in stdout or "mock response" in stdout.lower():
+            print("✓ Mock provider responded successfully")
         else:
-            print("⚠ Application may not have processed input correctly")
+            print("⚠ Could not verify mock provider usage (may still be working)")
+
+        # Check if application processed user message
+        if "Hello, how are you?" in stdout:
+            print("✓ User message was echoed/displayed")
+
+        # Check for assistant response (mock provider should respond)
+        # Mock provider returns: [MOCK RESPONSE] Это тестовый ответ на ваш запрос: '...'
+        if "[MOCK RESPONSE]" in stdout or "тестовый ответ" in stdout.lower():
+            print("✓ Mock provider responded with expected format")
+        elif "assistant" in stdout.lower() or "ответ" in stdout.lower():
+            print("✓ Assistant response received")
 
         # Check exit code
         if process.returncode == 0:
@@ -82,6 +101,15 @@ def run_smoke_test():
         else:
             print(f"❌ Application exited with code {process.returncode}")
             success = False
+
+        # Show stderr if present (should be empty in test mode)
+        if stderr and "ERROR" in stderr.upper():
+            print(f"⚠ Unexpected errors in stderr:\n{stderr}")
+            success = False
+        elif stderr.strip():
+            print(f"ℹ Stderr output (non-critical):\n{stderr}")
+        else:
+            print("✓ No errors in stderr")
 
         print("-" * 50)
         if success:

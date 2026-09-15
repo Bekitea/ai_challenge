@@ -87,9 +87,10 @@ Strategy for managing context window when it exceeds limits:
 
 ```python
 class ContextWindowStrategy:
-    strategy_type: str         # "DefaultStrategy" | "SummarizationStrategy" | "KeyValueMemoryStrategy"
+    strategy_type: str         # "DefaultStrategy" | "SummarizationStrategy" | "KeyValueMemoryStrategy" | "SlidingWindowStrategy"
     non_compressible_count: int|null  # For summarization strategies only
     buffer_size: int|null             # For summarization strategies only
+    window_size: int|null             # For SlidingWindowStrategy only
     summary: str|null                 # Current summary text (auto-managed)
 ```
 
@@ -100,11 +101,13 @@ class ContextWindowStrategy:
 | `DefaultStrategy`        | Passes all messages as-is, throws error on overflow           | None                                |
 | `SummarizationStrategy`  | Summarizes old messages using free-form text summarization    | non_compressible_count, buffer_size |
 | `KeyValueMemoryStrategy` | Summarizes into structured JSON format with predefined schema | non_compressible_count, buffer_size |
+| `SlidingWindowStrategy`  | Keeps only last N messages, discards older ones               | window_size                         |
 
 #### Default Values:
 
-- `non_compressible_count`: 10 (messages kept in original form)
-- `buffer_size`: 5 (messages grouped for summarization)
+- `non_compressible_count`: 2 (messages kept in original form)
+- `buffer_size`: 3 (messages grouped for summarization)
+- `window_size`: 10 (for SlidingWindowStrategy)
 
 ---
 
@@ -131,8 +134,6 @@ class ContextWindowStrategy:
 | assistant | AI response               | [AGENT]        | No                    |
 
 ---
-
-## 4. User Interface Specifications
 
 ### 4.1 Visual Style Guidelines
 
@@ -314,18 +315,21 @@ Reasoning Effort:
 #### 4.4.9 Step 9: Context Strategy Selection
 
 ```
-Выберите стратегию управления контекстным окном:
-  1. DefaultStrategy (без сжатия, ошибка при переполнении)
-  2. SummarizationStrategy (суммаризация текстом)
-  3. KeyValueMemoryStrategy (структурированная JSON суммаризация)
+--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---
+1. DefaultStrategy (пересылка всех сообщений)
+2. SummarizationStrategy (суммаризация истории)
+3. KeyValueMemoryStrategy (JSON-суммаризация: цель, ограничения, предпочтения, решения, договоренности)
+4. SlidingWindowStrategy (скользящее окно: последние N сообщений)
 
-Ваш выбор (1-3, по умолчанию 1):
+Выберите стратегию (1-4, по умолчанию 1):
 ```
 
 - Default: 1 (DefaultStrategy)
 - If strategy 2 or 3 selected, prompt for parameters:
-  - `non_compressible_count` (default 10)
-  - `buffer_size` (default 5)
+  - `non_compressible_count` (default 2)
+  - `buffer_size` (default 3)
+- If strategy 4 selected, prompt for parameters:
+  - `window_size` (default 10)
 - Invalid input: Default to 1
 
 #### 4.4.10 Completion Message
@@ -342,7 +346,14 @@ Reasoning Effort:
 ```
 --- ЧАТ: {chat_name} ---
 Введите сообщение и нажмите Enter для отправки.
-Команды: /menu - вернуться в меню, /stop - остановить генерацию, /settings - настройки чата, /help - помощь, /summary - показать саммари диалога, /info - показать информацию о чате (счетчики токенов), /branch - создать ветку текущего чата
+Команды:
+  /menu - вернуться в меню
+  /stop - остановить генерацию
+  /settings - показать настройки и изменить их
+  /summary - показать саммари диалога
+  /info - показать информацию о чате (счетчики токенов)
+  /branch - создать ветку текущего чата
+  /help - показать список команд
 ----------------------------------------
 ```
 
@@ -369,15 +380,20 @@ Reasoning Effort:
 
 ##### `/stop`
 
-- **Action**: Interrupt current LLM generation
-- **Output**: `Прервано пользователем.`
+- **Action**: Interrupt current LLM generation (if active)
+- **Output**: `Генерация остановлена.` if generation was active, or `Генерация не активна.` if idle
 - **Side Effects**: Partial response may be saved
 
 ##### `/settings`
 
-- **Action**: Execute `print_settings()` then `change_settings()`
-- **Output**: Current settings display followed by change prompts
-- **Flow**: See Section 4.6
+- **Action**: Execute `print_settings()` then prompt for change confirmation
+- **Flow**:
+  1. Display current settings using `print_settings()`
+  2. Prompt: `Изменить настройки? (y/n):`
+  3. If 'y': Execute `change_settings()` which prompts for all settings (same as creation workflow)
+  4. If 'n' or other: Return to chat loop without changes
+- **Output**: Current settings display, optionally followed by change prompts
+- **Side Effects**: Settings updated only if user confirms with 'y'
 
 ##### `/help`
 
@@ -385,14 +401,14 @@ Reasoning Effort:
 - **Output**:
 
 ```
-Доступные команды:
+--- ДОСТУПНЫЕ КОМАНДЫ ---
   /menu - вернуться в главное меню
-  /stop - остановить генерацию
-  /settings - просмотр и изменение настроек чата
-  /help - показать эту справку
+  /stop - остановить текущую генерацию
+  /settings - показать текущие настройки и изменить их
   /summary - показать саммари диалога
   /info - показать информацию о чате (счетчики токенов)
-  /branch - создать ветку текущего чата
+  /branch - создать ветку текущего чата (копируются настройки, история и саммари)
+  /help - показать этот список команд
 ```
 
 ##### `/summary`

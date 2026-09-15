@@ -120,10 +120,12 @@ class ContextWindowStrategy:
   "top_p": "float|null (0.0-1.0)",
   "top_k": "integer (0 = disabled)",
   "reasoning_effort": "string (none|low|medium|high)",
-  "context_window_size": "integer (default 200000, tokens)",
+  "context_window_size": "integer (default 200000, tokens, retained for backward compatibility)",
   "strategy": "ContextWindowStrategy object (see section 3.4)"
 }
 ```
+
+**Note**: `context_window_size` is retained in the data structure for backward compatibility but is no longer prompted during chat creation or settings change. Context window management is now handled internally by the selected strategy.
 
 ### 3.6 Message Roles
 
@@ -134,8 +136,6 @@ class ContextWindowStrategy:
 | assistant | AI response               | [AGENT]        | No                    |
 
 ---
-
-## 4. User Interface Specifications
 
 ### 4.1 Visual Style Guidelines
 
@@ -303,7 +303,11 @@ Reasoning Effort:
 - Default: 1 (none)
 - Invalid input: Default to 1
 
-#### 4.4.8 Step 8: Context Window Size
+#### 4.4.8 Step 8: Context Window Size (Retained for Backward Compatibility)
+
+**Note**: This step was removed in version 1.2. Context window size is now managed internally by the strategy. The parameter remains in the data structure for backward compatibility but is no longer prompted during chat creation or settings change.
+
+Historical prompt (removed):
 
 ```
 Введите размер контекстного окна (Enter для 200k):
@@ -476,8 +480,8 @@ ID: {full_id}
 Top P: {value}|отключен
 Top K: {value}|отключен
 Reasoning Effort: {effort}
-Размер контекстного окна: {context_window_size}
 Стратегия: {strategy_type}
+{Strategy parameters: non_compressible_count, buffer_size, or window_size if applicable}
 ----------------------------------------
 ```
 
@@ -1147,20 +1151,299 @@ Same prompts as creation workflow (Section 4.4.3-4.4.9), but:
 
 ---
 
+### TC-021: View Summary With Summarization
+
+**Related UC**: UC-009
+
+| Step | Action                       | Expected Result                    |
+| ---- | ---------------------------- | ---------------------------------- |
+| 1    | Open chat with summarization | Chat active                        |
+| 2    | Type "/summary"              | Summary text displayed             |
+| 3    | Verify summary content       | Matches strategy's current summary |
+| 4    | Verify no state changes      | Chat remains active                |
+
+---
+
+### TC-022: View Summary Without Summarization
+
+**Related UC**: UC-009
+
+| Step | Action                         | Expected Result                                     |
+| ---- | ------------------------------ | --------------------------------------------------- |
+| 1    | Open new chat (no summary yet) | Chat active                                         |
+| 2    | Type "/summary"                | `[INFO] Суммаризация еще не выполнялась.` displayed |
+| 3    | Verify no state changes        | Chat remains active                                 |
+
+---
+
+### TC-023: View Chat Info With Token Statistics
+
+**Related UC**: UC-010
+
+| Step | Action                  | Expected Result                        |
+| ---- | ----------------------- | -------------------------------------- |
+| 1    | Open chat with messages | Chat active                            |
+| 2    | Type "/info"            | Chat info header displayed             |
+| 3    | Verify token statistics | Prompt, Completion, Total tokens shown |
+| 4    | Verify strategy type    | Strategy name displayed                |
+| 5    | Verify no state changes | Chat remains active                    |
+
+---
+
+### TC-024: Create Branch And Switch
+
+**Related UC**: UC-011
+
+| Step | Action                                     | Expected Result                                   |
+| ---- | ------------------------------------------ | ------------------------------------------------- |
+| 1    | Open chat with messages                    | Chat active                                       |
+| 2    | Type "/branch"                             | Branch name prompt with default                   |
+| 3    | Press Enter (accept default)               | Success message with ID and message count         |
+| 4    | Prompt: "Продолжить в новой ветке? (y/n):" | Displayed                                         |
+| 5    | Enter "y"                                  | Switch to new branch chat                         |
+| 6    | Verify new chat                            | Has same messages, settings, strategy as original |
+| 7    | Verify original chat                       | Unchanged                                         |
+
+---
+
+### TC-025: Create Branch And Stay
+
+**Related UC**: UC-011
+
+| Step | Action                                     | Expected Result            |
+| ---- | ------------------------------------------ | -------------------------- |
+| 1    | Open chat with messages                    | Chat active                |
+| 2    | Type "/branch"                             | Branch name prompt         |
+| 3    | Press Enter                                | Success message            |
+| 4    | Prompt: "Продолжить в новой ветке? (y/n):" | Displayed                  |
+| 5    | Enter "n"                                  | Stay in current chat       |
+| 6    | Verify branch created                      | New chat exists in storage |
+| 7    | Verify active chat                         | Still original chat        |
+
+---
+
+### TC-026: Create Branch With Custom Name
+
+**Related UC**: UC-011
+
+| Step | Action                   | Expected Result                  |
+| ---- | ------------------------ | -------------------------------- |
+| 1    | Open chat                | Chat active                      |
+| 2    | Type "/branch"           | Branch name prompt               |
+| 3    | Enter "My Custom Branch" | Success message with custom name |
+| 4    | Verify branch name       | "My Custom Branch" used          |
+
+---
+
+### TC-027: Settings Change With Confirmation
+
+**Related UC**: UC-005
+
+| Step | Action                               | Expected Result                            |
+| ---- | ------------------------------------ | ------------------------------------------ |
+| 1    | Type "/settings"                     | Current settings displayed                 |
+| 2    | Prompt: "Изменить настройки? (y/n):" | Displayed                                  |
+| 3    | Enter "y"                            | All settings prompts shown (like creation) |
+| 4    | Change temperature to 0.8            | Other settings kept as-is                  |
+| 5    | Verify update                        | `[OK] Настройки обновлены!` displayed      |
+| 6    | Verify only temperature changed      | Other settings preserved                   |
+
+---
+
+### TC-028: Settings Change Cancelled
+
+**Related UC**: UC-005
+
+| Step | Action                               | Expected Result                     |
+| ---- | ------------------------------------ | ----------------------------------- |
+| 1    | Type "/settings"                     | Current settings displayed          |
+| 2    | Prompt: "Изменить настройки? (y/n):" | Displayed                           |
+| 3    | Enter "n"                            | Return to chat loop without changes |
+| 4    | Verify no changes                    | Settings remain unchanged           |
+
+---
+
+### TC-029: Stop Command During Generation
+
+**Related UC**: UC-007
+
+| Step | Action                          | Expected Result                    |
+| ---- | ------------------------------- | ---------------------------------- |
+| 1    | Send message, generation starts | "Thinking..." indicator visible    |
+| 2    | Type "/stop"                    | Generation interrupted             |
+| 3    | Verify output                   | `Генерация остановлена.` displayed |
+| 4    | Verify partial response         | May be saved or discarded          |
+
+---
+
+### TC-030: Stop Command When Idle
+
+**Related UC**: UC-007
+
+| Step | Action                  | Expected Result                   |
+| ---- | ----------------------- | --------------------------------- |
+| 1    | Wait for idle state     | No generation active              |
+| 2    | Type "/stop"            | No action taken                   |
+| 3    | Verify output           | `Генерация не активна.` displayed |
+| 4    | Verify no state changes | Chat remains active               |
+
+---
+
+### TC-031: SlidingWindowStrategy Creation
+
+**Related UC**: UC-001
+
+| Step | Action                          | Expected Result                         |
+| ---- | ------------------------------- | --------------------------------------- |
+| 1    | Create new chat                 | Strategy selection prompt               |
+| 2    | Select option 4 (SlidingWindow) | window_size prompt with default 10      |
+| 3    | Press Enter (accept default)    | Chat created with SlidingWindowStrategy |
+| 4    | Verify strategy                 | Strategy type = "SlidingWindowStrategy" |
+| 5    | Verify window_size              | window_size = 10                        |
+
+---
+
+### TC-032: SlidingWindowStrategy With Custom Window
+
+**Related UC**: UC-001
+
+| Step | Action                          | Expected Result                         |
+| ---- | ------------------------------- | --------------------------------------- |
+| 1    | Create new chat                 | Strategy selection prompt               |
+| 2    | Select option 4 (SlidingWindow) | window_size prompt                      |
+| 3    | Enter "20"                      | Chat created with window_size = 20      |
+| 4    | Verify strategy                 | Strategy type = "SlidingWindowStrategy" |
+| 5    | Verify window_size              | window_size = 20                        |
+
+---
+
+### TC-033: SummarizationStrategy Creation
+
+**Related UC**: UC-001
+
+| Step | Action                          | Expected Result                              |
+| ---- | ------------------------------- | -------------------------------------------- |
+| 1    | Create new chat                 | Strategy selection prompt                    |
+| 2    | Select option 2 (Summarization) | non_compressible_count prompt with default 2 |
+| 3    | Press Enter (accept default)    | buffer_size prompt with default 3            |
+| 4    | Press Enter (accept default)    | Chat created with SummarizationStrategy      |
+| 5    | Verify strategy                 | Strategy type = "SummarizationStrategy"      |
+| 6    | Verify parameters               | non_compressible_count = 2, buffer_size = 3  |
+
+---
+
+### TC-034: SummarizationStrategy With Custom Parameters
+
+**Related UC**: UC-001
+
+| Step | Action                          | Expected Result                             |
+| ---- | ------------------------------- | ------------------------------------------- |
+| 1    | Create new chat                 | Strategy selection prompt                   |
+| 2    | Select option 2 (Summarization) | non_compressible_count prompt               |
+| 3    | Enter "5"                       | buffer_size prompt                          |
+| 4    | Enter "4"                       | Chat created with custom parameters         |
+| 5    | Verify strategy                 | Strategy type = "SummarizationStrategy"     |
+| 6    | Verify parameters               | non_compressible_count = 5, buffer_size = 4 |
+
+---
+
+### TC-035: KeyValueMemoryStrategy Creation
+
+**Related UC**: UC-001
+
+| Step | Action                           | Expected Result                              |
+| ---- | -------------------------------- | -------------------------------------------- |
+| 1    | Create new chat                  | Strategy selection prompt                    |
+| 2    | Select option 3 (KeyValueMemory) | non_compressible_count prompt with default 2 |
+| 3    | Press Enter (accept default)     | buffer_size prompt with default 3            |
+| 4    | Press Enter (accept default)     | Chat created with KeyValueMemoryStrategy     |
+| 5    | Verify strategy                  | Strategy type = "KeyValueMemoryStrategy"     |
+| 6    | Verify parameters                | non_compressible_count = 2, buffer_size = 3  |
+
+---
+
+### TC-036: KeyValueMemoryStrategy With Custom Parameters
+
+**Related UC**: UC-001
+
+| Step | Action                           | Expected Result                             |
+| ---- | -------------------------------- | ------------------------------------------- |
+| 1    | Create new chat                  | Strategy selection prompt                   |
+| 2    | Select option 3 (KeyValueMemory) | non_compressible_count prompt               |
+| 3    | Enter "3"                        | buffer_size prompt                          |
+| 4    | Enter "5"                        | Chat created with custom parameters         |
+| 5    | Verify strategy                  | Strategy type = "KeyValueMemoryStrategy"    |
+| 6    | Verify parameters                | non_compressible_count = 3, buffer_size = 5 |
+
+---
+
+### TC-037: DefaultStrategy Creation
+
+**Related UC**: UC-001
+
+| Step | Action                     | Expected Result                                                       |
+| ---- | -------------------------- | --------------------------------------------------------------------- |
+| 1    | Create new chat            | Strategy selection prompt                                             |
+| 2    | Select option 1 (Default)  | Chat created immediately without extra prompts                        |
+| 3    | Verify strategy            | Strategy type = "DefaultStrategy"                                     |
+| 4    | Verify no extra parameters | non_compressible_count = null, buffer_size = null, window_size = null |
+
+---
+
+### TC-038: View Info For Different Strategies
+
+**Related UC**: UC-010
+
+| Step | Action                                | Expected Result                                       |
+| ---- | ------------------------------------- | ----------------------------------------------------- |
+| 1    | Open chat with DefaultStrategy        | Type /info, verify strategy displayed                 |
+| 2    | Open chat with SummarizationStrategy  | Type /info, verify strategy and params displayed      |
+| 3    | Open chat with KeyValueMemoryStrategy | Type /info, verify strategy and params displayed      |
+| 4    | Open chat with SlidingWindowStrategy  | Type /info, verify strategy and window_size displayed |
+
+---
+
+### TC-039: Branch Preserves Strategy Type
+
+**Related UC**: UC-011
+
+| Step | Action                               | Expected Result                                  |
+| ---- | ------------------------------------ | ------------------------------------------------ |
+| 1    | Open chat with SummarizationStrategy | Type /branch, create branch                      |
+| 2    | Verify new branch                    | Strategy type = "SummarizationStrategy"          |
+| 3    | Verify parameters copied             | non_compressible_count and buffer_size preserved |
+
+---
+
+### TC-040: Branch Preserves SlidingWindow Configuration
+
+**Related UC**: UC-011
+
+| Step | Action                                                | Expected Result                         |
+| ---- | ----------------------------------------------------- | --------------------------------------- |
+| 1    | Open chat with SlidingWindowStrategy (window_size=15) | Type /branch, create branch             |
+| 2    | Verify new branch                                     | Strategy type = "SlidingWindowStrategy" |
+| 3    | Verify window_size copied                             | window_size = 15 in new branch          |
+
+---
+
 ## 7. Error Handling Matrix
 
-| Error Type            | Trigger                  | Display Message                                                | Recovery Action  |
-| --------------------- | ------------------------ | -------------------------------------------------------------- | ---------------- |
-| InvalidMenuChoice     | Menu input not 1-4       | `[ERROR] Неверный выбор. Введите число от 1 до 4.`             | Re-prompt        |
-| InvalidModelSelection | Model input not 1-3      | `[ERROR] Неверный выбор модели.`                               | Re-prompt        |
-| InvalidTemperature    | Temp < 0 or > 2.0        | `[WARN] Значение вне диапазона. Температура отключена.`        | Set None         |
-| NonNumericTemperature | Temp = "abc"             | `[WARN] Некорректное значение. Температура отключена.`         | Set None         |
-| InvalidTopP           | TopP < 0 or > 1.0        | `[WARN] Значение вне диапазона. Top P отключен.`               | Set None         |
-| EmptyChatList         | Select chat with 0 chats | `Нет доступных чатов. Создайте новый.`                         | Return to menu   |
-| NoActiveChat          | Return to chat with none | `[WARN] Нет активного чата.`                                   | Stay in menu     |
-| BackendException      | LLM provider error       | `[ERROR] Ошибка: {message}`                                    | Return to prompt |
-| UnknownCommand        | Input "/xyz"             | `[WARN] Неизвестная команда. Введите /help для списка команд.` | Return to prompt |
-| EmptyInput            | Chat prompt Enter        | (no message)                                                   | Re-prompt        |
+| Error Type             | Trigger                  | Display Message                                                | Recovery Action  |
+| ---------------------- | ------------------------ | -------------------------------------------------------------- | ---------------- |
+| InvalidMenuChoice      | Menu input not 1-4       | `[ERROR] Неверный выбор. Введите число от 1 до 4.`             | Re-prompt        |
+| InvalidModelSelection  | Model input not 1-3      | `[ERROR] Неверный выбор модели.`                               | Re-prompt        |
+| InvalidTemperature     | Temp < 0 or > 2.0        | `[WARN] Значение вне диапазона. Температура отключена.`        | Set None         |
+| NonNumericTemperature  | Temp = "abc"             | `[WARN] Некорректное значение. Температура отключена.`         | Set None         |
+| InvalidTopP            | TopP < 0 or > 1.0        | `[WARN] Значение вне диапазона. Top P отключен.`               | Set None         |
+| EmptyChatList          | Select chat with 0 chats | `Нет доступных чатов. Создайте новый.`                         | Return to menu   |
+| NoActiveChat           | Return to chat with none | `[WARN] Нет активного чата.`                                   | Stay in menu     |
+| BackendException       | LLM provider error       | `[ERROR] Ошибка: {message}`                                    | Return to prompt |
+| NetworkTimeout         | Connection timeout       | `[ERROR] Таймаут соединения`                                   | Return to prompt |
+| UnknownCommand         | Input "/xyz"             | `[WARN] Неизвестная команда. Введите /help для списка команд.` | Return to prompt |
+| EmptyInput             | Chat prompt Enter        | (no message)                                                   | Re-prompt        |
+| InvalidSettingsConfirm | Settings y/n != y/n      | Return to chat loop without changes                            | No action        |
+| InvalidBranchConfirm   | Branch y/n != y/n        | Stay in current chat                                           | No action        |
 
 ---
 
@@ -1261,10 +1544,11 @@ pytest --cov=cli --cov-report=html
 
 ## 10. Version History
 
-| Version | Date       | Author       | Changes                                 |
-| ------- | ---------- | ------------ | --------------------------------------- |
-| 1.0     | 2026-09-13 | AI Assistant | Initial comprehensive specification     |
-| 1.1     | 2026-09-13 | AI Assistant | Added detailed test cases, error matrix |
+| Version | Date       | Author       | Changes                                                                                                                                                                                                                                       |
+| ------- | ---------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 2026-09-13 | AI Assistant | Initial comprehensive specification                                                                                                                                                                                                           |
+| 1.1     | 2026-09-13 | AI Assistant | Added detailed test cases, error matrix                                                                                                                                                                                                       |
+| 1.2     | 2026-09-13 | AI Assistant | Added new features: SlidingWindowStrategy, /summary, /info, /branch commands; Updated UC-005, UC-007, UC-009, UC-010, UC-011; Added TC-021 to TC-032; Updated error matrix; Clarified context_window_size retained for backward compatibility |
 
 ---
 

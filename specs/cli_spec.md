@@ -74,7 +74,7 @@ Returned by `Agents.get_chats_preview()` method:
 
 ```python
 class AgentPreview:
-    id: str                    # Chat UUID (first 8 chars displayed)
+    id: str                    # Chat UUID (displayed in full, not truncated)
     name: str                  # Chat name
     message_count: int         # Total messages excluding system prompt
     last_message_time: str     # Formatted timestamp
@@ -192,11 +192,13 @@ class ContextWindowStrategy:
 {index}. {chat_name}
    Сообщений: {count} | Последнее: {timestamp}
    Превью: {preview_text}
-   ID: {short_id}
+   ID: {full_id}
 ----------------------------------------
 
 Выберите чат (1-{n}):
 ```
+
+**Note**: `{full_id}` displays the complete UUID without truncation or ellipsis.
 
 #### 4.3.2 Preview Logic
 
@@ -338,9 +340,11 @@ Reasoning Effort:
 
 ```
 [OK] Чат '{name}' создан!
-  ID: {short_id}
+  ID: {full_id}
   Стратегия: {strategy_type}
 ```
+
+**Note**: `{full_id}` displays the complete UUID without truncation or ellipsis.
 
 ### 4.5 Chat Interaction Loop
 
@@ -367,8 +371,7 @@ Reasoning Effort:
 3. If empty: Re-prompt
 4. If command: Execute command handler
 5. If text:
-   - Display `[USER]: {message}`
-   - Call backend agent
+   - Send to backend agent
    - Display `[AGENT]: {response}`
    - Save to history
 6. Repeat
@@ -633,14 +636,13 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 1. System displays chat header and prompt
 2. User types "Hello, how are you?"
 3. User presses Enter
-4. System displays "[USER]: Hello, how are you?"
-5. System sends message to backend agent
-6. Backend calls LLM provider
-7. LLM generates response
-8. System displays "[AGENT]: {response}"
-9. System saves both messages to history
-10. System re-displays prompt
-11. Use case ends
+4. System sends message to backend agent
+5. Backend calls LLM provider
+6. LLM generates response
+7. System displays "[AGENT]: {response}"
+8. System saves both messages to history
+9. System re-displays prompt
+10. Use case ends
 
 #### 5.4.3 Alternative Flows
 
@@ -1591,7 +1593,7 @@ Reasoning Effort:
 Ваш выбор (1-4, по умолчанию 1): 2
 
 [OK] Чат 'Мой первый чат' создан!
-  ID: a1b2c3d4...
+  ID: a1b2c3d4-e5f6-7890-g1h2-i3j4k5l6m7n8
 
 --- ЧАТ: Мой первый чат ---
 Введите сообщение и нажмите Enter для отправки.
@@ -1613,6 +1615,8 @@ Reasoning Effort: low
 
 Изменить температуру (0.0-2.0, Enter без изменений):
 ...
+
+[OK] Настройки обновлены!
 
 [USER]: /menu
 

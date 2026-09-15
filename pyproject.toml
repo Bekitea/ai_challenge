@@ -1,0 +1,21 @@
+[project]
+name = "ai-challenge"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Bekitea",email = "r.z.8102.80@gmail.com"}
+]
+readme = "README.md"
+package-mode = false
+requires-python = "==3.14.4"
+dependencies = [
+    "alembic (>=1.20.0,<2.0.0)",
+    "dotenv (>=0.9.9,<0.10.0)",
+    "openai (>=3.14.0,<4.0.0)",
+    "sqlalchemy (>=2.0.53,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

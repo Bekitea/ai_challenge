@@ -303,11 +303,7 @@ Reasoning Effort:
 - Default: 1 (none)
 - Invalid input: Default to 1
 
-#### 4.4.8 Step 8: Context Window Size (Retained for Backward Compatibility)
-
-**Note**: This step was removed in version 1.2. Context window size is now managed internally by the strategy. The parameter remains in the data structure for backward compatibility but is no longer prompted during chat creation or settings change.
-
-Historical prompt (removed):
+#### 4.4.8 Step 8: Context Window Size
 
 ```
 Введите размер контекстного окна (Enter для 200k):
@@ -343,6 +339,7 @@ Historical prompt (removed):
 ```
 [OK] Чат '{name}' создан!
   ID: {short_id}
+  Стратегия: {strategy_type}
 ```
 
 ### 4.5 Chat Interaction Loop
@@ -437,6 +434,7 @@ ID: {full_id}
 Создан: {timestamp}
 Сообщений: {count}
 Стратегия: {strategy_type}
+{Strategy parameters: non_compressible_count and buffer_size if applicable}
 Токенов использовано:
   Prompt: {total_prompt_tokens}
   Completion: {total_completion_tokens}
@@ -480,17 +478,16 @@ ID: {full_id}
 Top P: {value}|отключен
 Top K: {value}|отключен
 Reasoning Effort: {effort}
-Стратегия: {strategy_type}
-{Strategy parameters: non_compressible_count, buffer_size, or window_size if applicable}
 ----------------------------------------
 ```
 
 #### 4.6.2 Change Settings (`change_settings`)
 
-Same prompts as creation workflow (Section 4.4.3-4.4.9), but:
+Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 - Shows current value as hint
-- Only changed settings are updated
+- Only changed settings are updated (model, temperature, top_p, top_k, reasoning_effort)
+- Strategy and context window size cannot be changed for existing chats
 - Confirmation: `[OK] Настройки обновлены!`
 
 ---

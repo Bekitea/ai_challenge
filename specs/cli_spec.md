@@ -81,7 +81,48 @@ class AgentPreview:
     last_message_preview: str  # First 50 chars of last message content
 ```
 
-### 3.3 Message Roles
+### 3.4 Context Window Strategy Object
+
+Strategy for managing context window when it exceeds limits:
+
+```python
+class ContextWindowStrategy:
+    strategy_type: str         # "DefaultStrategy" | "SummarizationStrategy" | "KeyValueMemoryStrategy"
+    non_compressible_count: int|null  # For summarization strategies only
+    buffer_size: int|null             # For summarization strategies only
+    summary: str|null                 # Current summary text (auto-managed)
+```
+
+#### Strategy Types:
+
+| Strategy                 | Description                                                   | Parameters Required                 |
+| ------------------------ | ------------------------------------------------------------- | ----------------------------------- |
+| `DefaultStrategy`        | Passes all messages as-is, throws error on overflow           | None                                |
+| `SummarizationStrategy`  | Summarizes old messages using free-form text summarization    | non_compressible_count, buffer_size |
+| `KeyValueMemoryStrategy` | Summarizes into structured JSON format with predefined schema | non_compressible_count, buffer_size |
+
+#### Default Values:
+
+- `non_compressible_count`: 10 (messages kept in original form)
+- `buffer_size`: 5 (messages grouped for summarization)
+
+---
+
+### 3.5 Chat Settings Extended
+
+```json
+{
+  "model": "string (model identifier)",
+  "temperature": "float|null (0.0-2.0)",
+  "top_p": "float|null (0.0-1.0)",
+  "top_k": "integer (0 = disabled)",
+  "reasoning_effort": "string (none|low|medium|high)",
+  "context_window_size": "integer (default 200000, tokens)",
+  "strategy": "ContextWindowStrategy object (see section 3.4)"
+}
+```
+
+### 3.6 Message Roles
 
 | Role      | Description               | Display Prefix | Editable              |
 | --------- | ------------------------- | -------------- | --------------------- |
@@ -259,7 +300,35 @@ Reasoning Effort:
 - Default: 1 (none)
 - Invalid input: Default to 1
 
-#### 4.4.8 Completion Message
+#### 4.4.8 Step 8: Context Window Size
+
+```
+Введите размер контекстного окна (Enter для 200k):
+```
+
+- Valid: Positive integer
+- Empty input: Default to 200000 tokens
+- Invalid number: Default to 200000 with warning `[WARN] Некорректное значение. Используется 200k.`
+- Out of range (<=0): Default to 200000 with warning
+
+#### 4.4.9 Step 9: Context Strategy Selection
+
+```
+Выберите стратегию управления контекстным окном:
+  1. DefaultStrategy (без сжатия, ошибка при переполнении)
+  2. SummarizationStrategy (суммаризация текстом)
+  3. KeyValueMemoryStrategy (структурированная JSON суммаризация)
+
+Ваш выбор (1-3, по умолчанию 1):
+```
+
+- Default: 1 (DefaultStrategy)
+- If strategy 2 or 3 selected, prompt for parameters:
+  - `non_compressible_count` (default 10)
+  - `buffer_size` (default 5)
+- Invalid input: Default to 1
+
+#### 4.4.10 Completion Message
 
 ```
 [OK] Чат '{name}' создан!
@@ -273,7 +342,7 @@ Reasoning Effort:
 ```
 --- ЧАТ: {chat_name} ---
 Введите сообщение и нажмите Enter для отправки.
-Команды: /menu - вернуться в меню, /stop - остановить генерацию, /settings - настройки чата, /help - помощь
+Команды: /menu - вернуться в меню, /stop - остановить генерацию, /settings - настройки чата, /help - помощь, /summary - показать саммари диалога, /info - показать информацию о чате (счетчики токенов), /branch - создать ветку текущего чата
 ----------------------------------------
 ```
 
@@ -321,7 +390,54 @@ Reasoning Effort:
   /stop - остановить генерацию
   /settings - просмотр и изменение настроек чата
   /help - показать эту справку
+  /summary - показать саммари диалога
+  /info - показать информацию о чате (счетчики токенов)
+  /branch - создать ветку текущего чата
 ```
+
+##### `/summary`
+
+- **Action**: Display current conversation summary from active strategy
+- **Output**:
+  - If summary exists: Display the summary text
+  - If no summary: Display `[INFO] Суммаризация еще не выполнялась.`
+- **Side Effects**: None
+
+##### `/info`
+
+- **Action**: Display detailed chat statistics including token counts
+- **Output**:
+
+```
+--- ИНФОРМАЦИЯ О ЧАТЕ ---
+Название: {chat_name}
+ID: {full_id}
+Создан: {timestamp}
+Сообщений: {count}
+Стратегия: {strategy_type}
+Токенов использовано:
+  Prompt: {total_prompt_tokens}
+  Completion: {total_completion_tokens}
+  Всего: {total_tokens}
+----------------------------------------
+```
+
+- **Side Effects**: None
+
+##### `/branch`
+
+- **Action**: Create a new chat branch copying current chat history and settings
+- **Flow**:
+  1. Prompt for branch name (default: `{current_name} (branch)`)
+  2. Copy all messages, settings, and strategy from current chat
+  3. Create new chat with copied data
+  4. Ask if user wants to continue in new branch: `Продолжить в новой ветке? (y/n):`
+  5. If 'y': Switch to new branch chat
+  6. If 'n': Stay in current chat
+- **Output**:
+  - Success: `[OK] Ветка '{name}' создана!` with ID and message count
+  - Continue prompt as described above
+- **Side Effects**: New chat created in storage, optionally becomes active chat
 
 #### 4.5.4 Error States
 
@@ -342,12 +458,14 @@ Reasoning Effort:
 Top P: {value}|отключен
 Top K: {value}|отключен
 Reasoning Effort: {effort}
+Размер контекстного окна: {context_window_size}
+Стратегия: {strategy_type}
 ----------------------------------------
 ```
 
 #### 4.6.2 Change Settings (`change_settings`)
 
-Same prompts as creation workflow (Section 4.4.3-4.4.7), but:
+Same prompts as creation workflow (Section 4.4.3-4.4.9), but:
 
 - Shows current value as hint
 - Only changed settings are updated
@@ -636,6 +754,100 @@ Same prompts as creation workflow (Section 4.4.3-4.4.7), but:
 
 - No state changes
 - User informed of available commands
+
+---
+
+### UC-009: View Conversation Summary
+
+#### 5.9.1 Preconditions
+
+- User is in chat interaction loop
+- Chat uses SummarizationStrategy or KeyValueMemoryStrategy
+- At least one summarization has been performed
+
+#### 5.9.2 Main Success Scenario
+
+1. User types "/summary"
+2. System retrieves summary from active strategy
+3. System displays summary text
+4. System returns to prompt
+5. Use case ends
+
+#### 5.9.3 Alternative Flows
+
+- **A1: No Summary Yet**
+  - Step 2: Strategy has no summary (summarization not triggered yet)
+  - System displays `[INFO] Суммаризация еще не выполнялась.`
+  - Continue to step 4
+
+#### 5.9.4 Postconditions
+
+- No state changes
+- User sees conversation summary
+
+---
+
+### UC-010: View Chat Information and Token Statistics
+
+#### 5.10.1 Preconditions
+
+- User is in chat interaction loop
+
+#### 5.10.2 Main Success Scenario
+
+1. User types "/info"
+2. System calculates total token usage from message history
+3. System displays chat information header
+4. System displays token statistics (prompt, completion, total)
+5. System displays strategy type
+6. System returns to prompt
+7. Use case ends
+
+#### 5.10.3 Postconditions
+
+- No state changes
+- User sees detailed chat statistics
+
+---
+
+### UC-011: Create Chat Branch
+
+#### 5.11.1 Preconditions
+
+- User is in chat interaction loop
+- Current chat has at least one message
+
+#### 5.11.2 Main Success Scenario
+
+1. User types "/branch"
+2. System prompts for branch name with default
+3. User enters name or accepts default
+4. System creates new chat copying:
+   - All messages
+   - All settings
+   - Context strategy with current state
+5. System displays success message with ID and message count
+6. System asks: `Продолжить в новой ветке? (y/n):`
+7. User enters "y"
+8. System switches to new branch chat
+9. Use case ends
+
+#### 5.11.3 Alternative Flows
+
+- **A1: Stay in Current Chat**
+  - Step 7: User enters "n"
+  - System remains in current chat
+  - Use case ends
+
+- **A2: Custom Branch Name**
+  - Step 3: User enters custom name
+  - System uses provided name for new branch
+
+#### 5.11.4 Postconditions
+
+- New chat created with copied data
+- Optionally: new chat becomes active chat
+- Original chat preserved unchanged
 
 ---
 

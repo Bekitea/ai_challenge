@@ -145,3 +145,60 @@ class YandexCloudLlmProvider(LlmProvider):
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
         )
+
+
+class MockLlmProvider(LlmProvider):
+    """Mock-провайдер для тестирования без реального API.
+
+    Возвращает заглушки вместо реальных запросов к LLM.
+    """
+
+    def __init__(self):
+        """Инициализирует mock-провайдер."""
+
+    def generate(
+        self,
+        messages: list[dict],
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        timeout: int = 20,
+        top_p: float | None = None,
+        top_k: int | None = None,
+        response_format: dict | None = None,
+        reasoning_effort: str | None = None,
+        model_id: str | None = None,
+    ) -> LlmResponse:
+        """Генерирует mock-ответ для тестирования.
+
+        Args:
+            messages: Список сообщений в формате [{"role": "...", "content": "..."}].
+            temperature: Температура генерации (игнорируется).
+            max_tokens: Максимальное количество токенов (игнорируется).
+            timeout: Таймаут запроса (игнорируется).
+            top_p: Параметр выборки ядра (игнорируется).
+            top_k: Параметр топ-K выборки (игнорируется).
+            response_format: Формат ответа (игнорируется).
+            reasoning_effort: Уровень усилий рассуждений (игнорируется).
+            model_id: Идентификатор модели (игнорируется).
+
+        Returns:
+            LlmResponse: Mock-объект с содержимым ответа.
+        """
+        # Получаем последнее сообщение пользователя для формирования ответа
+        last_user_message = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                last_user_message = msg.get("content", "")
+                break
+
+        mock_content = f"[MOCK RESPONSE] Это тестовый ответ на ваш запрос: '{last_user_message[:50]}...'"
+        mock_reasoning = (
+            "[MOCK REASONING] Тестовые рассуждения для демонстрации функциональности."
+        )
+
+        return LlmResponse(
+            content=mock_content,
+            reasoning=mock_reasoning,
+            prompt_tokens=100,
+            completion_tokens=50,
+        )

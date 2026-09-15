@@ -9,7 +9,7 @@ from context_strategies import (
     SlidingWindowStrategy,
     SummarizationStrategy,
 )
-from llm_providers import YandexCloudLlmProvider
+from llm_providers import MockLlmProvider, YandexCloudLlmProvider
 from storage.agent_repositories import PersistentAgentRepository
 
 
@@ -17,10 +17,14 @@ class CLIChat:
     """Консольный интерфейс для взаимодействия с агентами."""
 
     def __init__(self):
-        self.llm_provider = YandexCloudLlmProvider(
-            api_key=YANDEX_API_KEY,
-            folder_id=YANDEX_FOLDER_ID,
-        )
+        # Используем MockProvider если нет ключей API, иначе YandexCloudLlmProvider
+        if not YANDEX_API_KEY or not YANDEX_FOLDER_ID:
+            self.llm_provider = MockLlmProvider()
+        else:
+            self.llm_provider = YandexCloudLlmProvider(
+                api_key=YANDEX_API_KEY,
+                folder_id=YANDEX_FOLDER_ID,
+            )
         self.repository = PersistentAgentRepository(self.llm_provider)
         self.current_agent: Agent | None = None
         self.available_models = {

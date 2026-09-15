@@ -135,6 +135,8 @@ class ContextWindowStrategy:
 
 ---
 
+## 4. User Interface Specifications
+
 ### 4.1 Visual Style Guidelines
 
 - **No emojis** - Use text markers only

@@ -63,9 +63,13 @@ class CLIChat:
         for i, preview in enumerate(previews, 1):
             last_msg_time = ""
             if preview.last_message_timestamp:
-                last_msg_time = preview.last_message_timestamp.strftime("%Y-%m-%d %H:%M")
+                last_msg_time = preview.last_message_timestamp.strftime(
+                    "%Y-%m-%d %H:%M"
+                )
 
-            preview_text = getattr(preview, 'last_message_preview', None) or "(нет сообщений)"
+            preview_text = (
+                getattr(preview, "last_message_preview", None) or "(нет сообщений)"
+            )
 
             print(f"{i}. {preview.name}")
             print(f"   Сообщений: {preview.message_count} | Последнее: {last_msg_time}")
@@ -73,7 +77,9 @@ class CLIChat:
             print(f"   ID: {preview.agent_id[:8]}...")
         print("-" * 40)
 
-    def get_agent_settings(self, current_settings: AgentSettings | None = None) -> AgentSettings:
+    def get_agent_settings(
+        self, current_settings: AgentSettings | None = None
+    ) -> AgentSettings:
         """Запрашивает настройки у пользователя."""
         print("\n--- НАСТРОЙКИ АГЕНТА ---")
 
@@ -95,10 +101,14 @@ class CLIChat:
             try:
                 temp = float(temp_input)
                 if not (0.0 <= temp <= 2.0):
-                    print("Температура должна быть от 0.0 до 2.0. Используется значение по умолчанию (отключено).")
+                    print(
+                        "Температура должна быть от 0.0 до 2.0. Используется значение по умолчанию (отключено)."
+                    )
                     temp = None
             except ValueError:
-                print("Некорректное число. Используется значение по умолчанию (отключено).")
+                print(
+                    "Некорректное число. Используется значение по умолчанию (отключено)."
+                )
                 temp = None
         else:
             temp = None
@@ -109,10 +119,14 @@ class CLIChat:
             try:
                 top_p = float(top_p_input)
                 if not (0.0 <= top_p <= 1.0):
-                    print("Top P должен быть от 0.0 до 1.0. Используется значение по умолчанию (отключено).")
+                    print(
+                        "Top P должен быть от 0.0 до 1.0. Используется значение по умолчанию (отключено)."
+                    )
                     top_p = None
             except ValueError:
-                print("Некорректное число. Используется значение по умолчанию (отключено).")
+                print(
+                    "Некорректное число. Используется значение по умолчанию (отключено)."
+                )
                 top_p = None
         else:
             top_p = None
@@ -120,7 +134,9 @@ class CLIChat:
         # Top K
         while True:
             try:
-                top_k_input = input("Top K (0 для отключения, по умолчанию 0): ").strip() or "0"
+                top_k_input = (
+                    input("Top K (0 для отключения, по умолчанию 0): ").strip() or "0"
+                )
                 top_k = int(top_k_input)
                 if top_k >= 0:
                     break
@@ -135,7 +151,12 @@ class CLIChat:
 
         while True:
             try:
-                re_choice = int(input(f"\nВаш выбор (1-{len(self.reasoning_efforts)}, по умолчанию 1): ").strip() or "1")
+                re_choice = int(
+                    input(
+                        f"\nВаш выбор (1-{len(self.reasoning_efforts)}, по умолчанию 1): "
+                    ).strip()
+                    or "1"
+                )
                 if 1 <= re_choice <= len(self.reasoning_efforts):
                     reasoning_effort = self.reasoning_efforts[re_choice - 1]
                     break
@@ -147,7 +168,9 @@ class CLIChat:
         print("\nРазмер контекстного окна (в токенах):")
         print("  По умолчанию: 200000 токенов (200k)")
         print("  Примеры: 4000, 8000, 32000, 128000, 200000")
-        context_input = input("Введите размер контекстного окна (Enter для 200k): ").strip()
+        context_input = input(
+            "Введите размер контекстного окна (Enter для 200k): "
+        ).strip()
         if context_input:
             try:
                 context_window_size = int(context_input)
@@ -207,18 +230,32 @@ class CLIChat:
         print("\n--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---")
         print("1. DefaultStrategy (пересылка всех сообщений)")
         print("2. SummarizationStrategy (суммаризация истории)")
-        print("3. KeyValueMemoryStrategy (JSON-суммаризация: цель, ограничения, предпочтения, решения, договоренности)")
+        print(
+            "3. KeyValueMemoryStrategy (JSON-суммаризация: цель, ограничения, предпочтения, решения, договоренности)"
+        )
         print("4. SlidingWindowStrategy (скользящее окно: последние N сообщений)")
 
         while True:
-            choice = input("\nВыберите стратегию (1-4, по умолчанию 1): ").strip() or "1"
+            choice = (
+                input("\nВыберите стратегию (1-4, по умолчанию 1): ").strip() or "1"
+            )
             if choice == "1":
                 return DefaultStrategy()
             elif choice == "2":
                 # Запрашиваем параметры для SummarizationStrategy
                 try:
-                    non_compressible = int(input("Количество несжимаемых сообщений (по умолчанию 2): ").strip() or "2")
-                    buffer_size = int(input("Размер буфера для суммаризации (по умолчанию 3): ").strip() or "3")
+                    non_compressible = int(
+                        input(
+                            "Количество несжимаемых сообщений (по умолчанию 2): "
+                        ).strip()
+                        or "2"
+                    )
+                    buffer_size = int(
+                        input(
+                            "Размер буфера для суммаризации (по умолчанию 3): "
+                        ).strip()
+                        or "3"
+                    )
                     return SummarizationStrategy(
                         non_compressible_count=non_compressible,
                         buffer_size=buffer_size,
@@ -228,8 +265,18 @@ class CLIChat:
             elif choice == "3":
                 # Запрашиваем параметры для KeyValueMemoryStrategy
                 try:
-                    non_compressible = int(input("Количество несжимаемых сообщений (по умолчанию 2): ").strip() or "2")
-                    buffer_size = int(input("Размер буфера для суммаризации (по умолчанию 3): ").strip() or "3")
+                    non_compressible = int(
+                        input(
+                            "Количество несжимаемых сообщений (по умолчанию 2): "
+                        ).strip()
+                        or "2"
+                    )
+                    buffer_size = int(
+                        input(
+                            "Размер буфера для суммаризации (по умолчанию 3): "
+                        ).strip()
+                        or "3"
+                    )
                     return KeyValueMemoryStrategy(
                         non_compressible_count=non_compressible,
                         buffer_size=buffer_size,
@@ -239,7 +286,10 @@ class CLIChat:
             elif choice == "4":
                 # Запрашиваем параметры для SlidingWindowStrategy
                 try:
-                    window_size = int(input("Размер скользящего окна N (по умолчанию 10): ").strip() or "10")
+                    window_size = int(
+                        input("Размер скользящего окна N (по умолчанию 10): ").strip()
+                        or "10"
+                    )
                     return SlidingWindowStrategy(window_size=window_size)
                 except ValueError as e:
                     print(f"Ошибка: {e}. Попробуйте снова.")
@@ -279,11 +329,21 @@ class CLIChat:
         settings = self.current_agent.get_settings()
         print("\n--- ТЕКУЩИЕ НАСТРОЙКИ ---")
         print(f"  Модель: {settings.model_id}")
-        print(f"  Температура: {settings.temperature if settings.temperature is not None else 'отключена'}")
-        print(f"  Top P: {settings.top_p if settings.top_p is not None else 'отключен'}")
-        print(f"  Top K: {settings.top_k if settings.top_k is not None else 'отключено'}")
+        print(
+            f"  Температура: {settings.temperature if settings.temperature is not None else 'отключена'}"
+        )
+        print(
+            f"  Top P: {settings.top_p if settings.top_p is not None else 'отключен'}"
+        )
+        print(
+            f"  Top K: {settings.top_k if settings.top_k is not None else 'отключено'}"
+        )
         print(f"  Reasoning Effort: {settings.reasoning_effort}")
-        context_window = settings.context_window_size if settings.context_window_size is not None else 200_000
+        context_window = (
+            settings.context_window_size
+            if settings.context_window_size is not None
+            else 200_000
+        )
         print(f"  Размер контекстного окна: {context_window} токенов")
         print("-" * 40)
 
@@ -341,7 +401,9 @@ class CLIChat:
             print(f"{msg.content}")
 
             # Отображаем токены для assistant prompt
-            if msg.role == "assistant" and (msg.prompt_tokens is not None or msg.completion_tokens is not None):
+            if msg.role == "assistant" and (
+                msg.prompt_tokens is not None or msg.completion_tokens is not None
+            ):
                 tokens_info = []
                 if msg.prompt_tokens is not None:
                     tokens_info.append(f"prompt: {msg.prompt_tokens}")
@@ -353,7 +415,9 @@ class CLIChat:
                 # Отображаем степень заполненности контекстного окна
                 if msg.prompt_tokens is not None:
                     fill_percent = (msg.prompt_tokens / context_window_size) * 100
-                    print(f"  [Заполненность контекста: {msg.prompt_tokens}/{context_window_size} ({fill_percent:.1f}%)])")
+                    print(
+                        f"  [Заполненность контекста: {msg.prompt_tokens}/{context_window_size} ({fill_percent:.1f}%)])"
+                    )
 
             if msg.reasoning:
                 print("\n  [Reasoning]:")
@@ -373,7 +437,7 @@ class CLIChat:
         summary = None
 
         # Получаем саммари из стратегии
-        if hasattr(strategy, 'summary'):
+        if hasattr(strategy, "summary"):
             summary = strategy.summary
 
         if summary:
@@ -399,18 +463,26 @@ class CLIChat:
 
         # Отображаем счетчики токенов
         print("\n--- СЧЕТЧИКИ ТОКЕНОВ ---")
-        print(f"  Чат (без технических): prompt={counters.chat_prompt_tokens}, completion={counters.chat_completion_tokens}")
-        print(f"  Технические: prompt={counters.tech_prompt_tokens}, completion={counters.tech_completion_tokens}")
-        print(f"  ОБЩИЕ: prompt={counters.total_prompt_tokens}, completion={counters.total_completion_tokens}")
+        print(
+            f"  Чат (без технических): prompt={counters.chat_prompt_tokens}, completion={counters.chat_completion_tokens}"
+        )
+        print(
+            f"  Технические: prompt={counters.tech_prompt_tokens}, completion={counters.tech_completion_tokens}"
+        )
+        print(
+            f"  ОБЩИЕ: prompt={counters.total_prompt_tokens}, completion={counters.total_completion_tokens}"
+        )
         print("-" * 40)
 
         # Информация о стратегии
         strategy = self.current_agent.strategy
         print(f"\nСтратегия: {strategy.strategy_type}")
-        if hasattr(strategy, 'non_compressible_count') and hasattr(strategy, 'buffer_size'):
+        if hasattr(strategy, "non_compressible_count") and hasattr(
+            strategy, "buffer_size"
+        ):
             print(f"  Несжимаемых сообщений: {strategy.non_compressible_count}")
             print(f"  Размер буфера: {strategy.buffer_size}")
-        if hasattr(strategy, 'summary') and strategy.summary:
+        if hasattr(strategy, "summary") and strategy.summary:
             print("  Саммари: доступно")
         print("=" * 60)
 
@@ -424,7 +496,9 @@ class CLIChat:
 
         # Запрашиваем имя для новой ветки
         default_name = f"{self.current_agent.name} (branch)"
-        new_name = input(f"Введите название для ветки (Enter для '{default_name}'): ").strip()
+        new_name = input(
+            f"Введите название для ветки (Enter для '{default_name}'): "
+        ).strip()
         if not new_name:
             new_name = default_name
 
@@ -441,7 +515,10 @@ class CLIChat:
             print(f"  Стратегия: {branched_agent.strategy.strategy_type}")
 
             # Проверяем наличие саммари
-            if hasattr(branched_agent.strategy, 'summary') and branched_agent.strategy.summary:
+            if (
+                hasattr(branched_agent.strategy, "summary")
+                and branched_agent.strategy.summary
+            ):
                 print("  Саммари: скопировано")
             else:
                 print("  Саммари: отсутствует")
@@ -450,7 +527,9 @@ class CLIChat:
             self.current_agent = branched_agent
 
             # Предлагаем продолжить общение в новой ветке
-            continue_in_branch = input("\nПродолжить общение в новой ветке? (y/n): ").strip().lower()
+            continue_in_branch = (
+                input("\nПродолжить общение в новой ветке? (y/n): ").strip().lower()
+            )
             if continue_in_branch == "y":
                 self.show_history()
                 self.chat_loop()
@@ -500,7 +579,9 @@ class CLIChat:
                     print("  /settings - показать текущие настройки и изменить их")
                     print("  /summary - показать саммари диалога")
                     print("  /info - показать информацию о чате (счетчики токенов)")
-                    print("  /branch - создать ветку текущего чата (копируются настройки, история и саммари)")
+                    print(
+                        "  /branch - создать ветку текущего чата (копируются настройки, история и саммари)"
+                    )
                     print("  /help - показать этот список команд")
                     continue
 
@@ -531,7 +612,9 @@ class CLIChat:
                     # Очищаем строку "Агент печатает..."
                     print("\r" + " " * 40 + "\r", end="")
                     print(f"\n[ERROR] {e}")
-                    print("Необходимо очистить историю сообщений или создать новый чат.")
+                    print(
+                        "Необходимо очистить историю сообщений или создать новый чат."
+                    )
                     break
 
                 # Сохраняем обновлённое состояние агента в репозиторий
@@ -543,7 +626,10 @@ class CLIChat:
                 print(f"\n[AGENT]: {response.content}")
 
                 # Отображаем информацию о токенах
-                if response.prompt_tokens is not None or response.completion_tokens is not None:
+                if (
+                    response.prompt_tokens is not None
+                    or response.completion_tokens is not None
+                ):
                     tokens_info = []
                     if response.prompt_tokens is not None:
                         tokens_info.append(f"prompt: {response.prompt_tokens}")
@@ -556,11 +642,17 @@ class CLIChat:
                     if response.prompt_tokens is not None:
                         settings = self.current_agent.get_settings()
                         context_window_size = settings.context_window_size or 200_000
-                        fill_percent = (response.prompt_tokens / context_window_size) * 100
-                        print(f"  [Заполненность контекста: {response.prompt_tokens}/{context_window_size} ({fill_percent:.1f}%)]")
+                        fill_percent = (
+                            response.prompt_tokens / context_window_size
+                        ) * 100
+                        print(
+                            f"  [Заполненность контекста: {response.prompt_tokens}/{context_window_size} ({fill_percent:.1f}%)]"
+                        )
 
                 if response.reasoning:
-                    show_reasoning = input("\nПоказать рассуждения модели? (y/n): ").strip().lower()
+                    show_reasoning = (
+                        input("\nПоказать рассуждения модели? (y/n): ").strip().lower()
+                    )
                     if show_reasoning == "y":
                         print("\n[Reasoning]:")
                         for line in response.reasoning.split("\n"):

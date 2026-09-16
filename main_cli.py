@@ -541,7 +541,7 @@ class CLIChat:
 
             # Предлагаем продолжить общение в новой ветке
             continue_in_branch = (
-                input("\nПродолжить общение в новой ветке? (y/n): ").strip().lower()
+                input("\nПродолжить в новой ветке? (y/n): ").strip().lower()
             )
             if continue_in_branch == "y":
                 self.show_history()

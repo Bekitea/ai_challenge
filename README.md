@@ -88,3 +88,47 @@ alembic current
 # Показать ожидающие применения миграции
 alembic heads
 ```
+
+## Тестирование
+
+### Запуск E2E тестов CLI
+
+Проект включает набор End-to-End тестов, которые эмулируют поведение реального пользователя через CLI интерфейс. Все тесты соответствуют спецификации ([cli_spec.md](specs/cli_spec.md)).
+
+#### Требования
+
+- Python 3.8+
+- pytest: `pip install pytest`
+- Приложение должно быть в рабочем состоянии
+
+#### Запуск тестов
+
+```bash
+# Запустить все E2E тесты
+pytest cli_tests/test_cli_e2e.py -v
+
+# Запустить тесты конкретного Use Case
+pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings -v
+
+# Запустить конкретный тесткейс
+pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings::test_tc_001_create_chat_default_settings -v
+
+# Запустить smoke тест
+python cli_tests/smoke_test.py
+```
+
+#### Принципы тестирования
+
+1. **Без фикстур** — каждый тест полностью самодостаточен
+2. **Subprocess interaction** — взаимодействие только через subprocess с stdin/stdout
+3. **Трассируемость** — имена тестов соответствуют номерам тесткейсов из спецификации (`test_tc_XXX_<description>`)
+4. **Test mode** — все тесты запускаются с флагом `--test` (используется Mock provider)
+5. **Таймауты** — обязательные таймауты для предотвращения зависаний
+
+#### Структура тестов
+
+- **Тесткейсы** организованы по классам (по одному на Use Case)
+- Покрытие: полное покрытие (каждый use case -> один или несколько тест кейсов в спецификации, каждый тест кейс -> e2e cli тест)
+- Расположение: `cli_tests/test_cli_e2e.py`
+
+**Подробная документация**: см. [cli_tests/README.md](cli_tests/README.md)

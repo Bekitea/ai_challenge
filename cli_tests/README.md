@@ -191,35 +191,436 @@ cd cli_tests
 python smoke_test.py
 ```
 
-### With Verbose Output
+### Running E2E Tests with pytest
+
+The project includes pytest-based E2E tests that emulate real user interaction via subprocess calls. These tests:
+
+- Use `subprocess.Popen` to spawn actual CLI processes (no mocking at Python level)
+- Send input via stdin (simulating keyboard input)
+- Capture stdout/stderr (simulating terminal output)
+- Do NOT use pytest fixtures - each test is self-contained to maximize realism
+- Directly map to test cases from `cli_spec.md` specification
 
 ```bash
-python -u smoke_test.py
+# Run all E2E tests
+pytest cli_tests/test_cli_e2e.py -v
+
+# Run specific test class (Use Case)
+pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings -v
+
+# Run specific test
+pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings::test_tc_001_create_chat_default_values -v
 ```
 
-### Manual Testing Modes
+### Test Organization and Naming Convention
 
-You can run the application manually in two modes:
+**IMPORTANT:** All E2E tests follow a strict naming convention for direct traceability to the specification:
 
-**1. Test Mode (Recommended for Development/Testing)**
-Uses the Mock LLM provider. No API keys required.
+- **Test classes** are named after Use Cases: `TestUC001_CreateChatWithAllSettings`
+- **Test methods** are named after Test Cases: `test_tc_001_create_chat_default_values`
+- Format: `test_tc_XXX_<description>` where `XXX` is the test case number from `cli_spec.md`
 
+This ensures:
+1. Easy mapping between specification and implementation
+2. Clear coverage tracking
+3. Simple identification of missing tests
+
+### Why This Approach?
+
+The existing smoke test (`smoke_test.py`) and new pytest E2E tests intentionally avoid pytest fixtures and direct function calls because:
+
+1. **Real User Simulation**: Tests interact with the CLI exactly as a real user would - through stdin/stdout
+2. **Cross-Platform Compatibility**: Subprocess approach works identically on Windows, Linux, and macOS
+3. **No Hidden State**: Each test is completely independent, avoiding fixture-related side effects
+4. **True Integration Testing**: Tests verify the entire stack - from CLI parsing to database operations
+5. **Specification Traceability**: Direct mapping to `cli_spec.md` ensures complete coverage
+
+```python
+# Example test structure (from test_cli_e2e.py)
+class TestUC001_CreateChatWithAllSettings:
+    \"\"\"Use Case UC-001: Create New Chat with All Settings\"\"\"
+
+    def test_tc_001_create_chat_default_values(self):
+        \"\"\"
+        TC-001: Create Chat with Default Values
+
+        Steps:
+        1. Select "New Chat"
+        2. Press Enter (default name)
+        3. Press Enter (skip prompt)
+        4. Select model 1
+        5. Press Enter (disable temp)
+        6. Verify chat created
+        \"\"\"
+        test_input = (
+            "1\\n"           # Новый чат
+            "\\n"            # Default name
+            "\\n"            # Skip system prompt
+            "1\\n"           # Model 1
+            "\\n"            # Temperature disabled
+            "4\\n"           # Exit
+        )
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0
+        assert "Чат создан" in stdout
+```
+
+### Running Tests in Different Modes
+
+**Test Mode (Default for Automated Tests):**
 ```bash
-python ../main_cli.py --test
+# Uses --test flag automatically (Mock provider)
+pytest cli_tests/test_cli_e2e.py -v
 ```
 
-**2. Production Mode (Default)**
-Uses the real Yandex Cloud LLM provider. Requires environment variables.
-
+**Manual Exploration:**
 ```bash
-# Set required variables first
-$env:YANDEX_CLOUD_API_KEY="your_key"
-$env:YANDEX_CLOUD_FOLDER_ID="your_folder"
+# Run CLI manually in test mode
+python main_cli.py --test
 
-python ../main_cli.py
+# Run CLI manually in production mode (requires API keys)
+export YANDEX_CLOUD_API_KEY="your_key"
+export YANDEX_CLOUD_FOLDER_ID="your_folder"
+python main_cli.py
 ```
 
-If variables are missing in Production Mode, the app will exit with an error.
+## Core Principles for CLI E2E Testing
+
+### 1. No Fixtures Policy
+
+**Rule:** E2E tests MUST NOT use pytest fixtures for test setup/teardown.
+
+**Rationale:**
+- Each test must be completely self-contained
+- Avoids hidden state between tests
+- Ensures tests can run in any order
+- Maximizes realism (real user has no "fixtures")
+
+**Example:**
+```python
+# ❌ WRONG: Using fixtures
+@pytest.fixture
+def create_test_chat():
+    # Creates chat in database
+    yield chat
+    # Cleanup
+
+def test_something(create_test_chat):
+    ...
+
+# ✅ CORRECT: Self-contained test
+def test_tc_001_create_chat_default_values(self):
+    """Test creates its own state via CLI interaction."""
+    test_input = "1\n\n\n1\n\n4\n"
+    stdout, stderr, returncode = run_cli_command(test_input)
+    assert "Чат создан" in stdout
+```
+
+### 2. Subprocess-Only Interaction
+
+**Rule:** Tests MUST interact with CLI exclusively through `subprocess.Popen`.
+
+**Rationale:**
+- Simulates real user behavior (keyboard input → terminal output)
+- Cross-platform compatibility (Windows/Linux/macOS)
+- Tests entire stack (CLI parser → business logic → database)
+- No mocking at Python level
+
+**Example:**
+```python
+# ❌ WRONG: Direct function calls
+from main_cli import create_chat
+chat = create_chat(name="Test")
+
+# ✅ CORRECT: Subprocess interaction
+test_input = "1\nTest\n...\n"
+stdout, stderr, returncode = run_cli_command(test_input)
+```
+
+### 3. Dynamic Path Resolution
+
+**Rule:** NEVER hardcode absolute paths like `/workspace`.
+
+**Rationale:**
+- Works on any machine (Windows, Linux, macOS)
+- Works in CI/CD and local development
+- Works regardless of project location
+
+**Example:**
+```python
+# ❌ WRONG: Hardcoded path
+project_root = Path("/workspace")
+
+# ✅ CORRECT: Dynamic resolution
+script_dir = Path(__file__).parent.absolute()
+project_root = script_dir.parent
+```
+
+### 4. Specification Traceability
+
+**Rule:** Test names MUST directly map to test cases in `cli_spec.md`.
+
+**Format:**
+- Class name: `TestUC<XXX>_<UseCaseName>`
+- Method name: `test_tc_<XXX>_<description>`
+
+**Rationale:**
+- Easy coverage tracking
+- Clear requirement-to-test mapping
+- Simple gap analysis
+
+**Example:**
+```python
+class TestUC001_CreateChatWithAllSettings:
+    """Covers UC-001 from specification."""
+
+    def test_tc_001_create_chat_default_values(self):
+        """Directly maps to TC-001 in cli_spec.md."""
+        ...
+
+    def test_tc_002_create_chat_custom_settings(self):
+        """Directly maps to TC-002 in cli_spec.md."""
+        ...
+```
+
+### 5. Timeout Enforcement
+
+**Rule:** ALL subprocess calls MUST specify a `timeout` parameter.
+
+**Rationale:**
+- Prevents hanging tests
+- Catches infinite loops
+- Ensures CI/CD reliability
+
+**Example:**
+```python
+# ❌ WRONG: No timeout
+stdout, stderr = process.communicate(input=test_input)
+
+# ✅ CORRECT: Explicit timeout
+stdout, stderr = process.communicate(input=test_input, timeout=30)
+```
+
+### 6. Test Mode Requirement
+
+**Rule:** Automated tests MUST use `--test` flag.
+
+**Rationale:**
+- No API keys required
+- Fast execution (mock responses)
+- Predictable behavior
+- No external dependencies
+
+**Example:**
+```python
+# ❌ WRONG: Production mode
+process = subprocess.Popen([sys.executable, "main_cli.py"], ...)
+
+# ✅ CORRECT: Test mode
+process = subprocess.Popen([sys.executable, "main_cli.py", "--test"], ...)
+```
+
+### 7. Complete Output Capture
+
+**Rule:** ALWAYS capture both `stdout` AND `stderr`.
+
+**Rationale:**
+- Complete debugging information
+- Catch warnings and errors
+- Verify correct output streams
+
+**Example:**
+```python
+# ❌ WRONG: Only stdout
+stdout = process.stdout.read()
+
+# ✅ CORRECT: Both streams
+stdout, stderr = process.communicate(input=test_input, timeout=30)
+```
+
+## Test Case Design Guidelines
+
+### Structuring Test Input
+
+Build input strings that mirror real user keystrokes:
+
+```python
+test_input = (
+    "1\n"           # Menu option: New Chat
+    "My Chat\n"     # Chat name
+    "You are helpful\n"  # System prompt
+    "1\n"           # Model selection
+    "0.7\n"         # Temperature
+    "\n"            # Skip (default)
+    "4\n"           # Exit
+)
+```
+
+### Assertion Strategy
+
+Focus on observable behavior:
+
+```python
+# ✅ Check return code
+assert returncode == 0
+
+# ✅ Check success messages
+assert "Чат создан" in stdout
+
+# ✅ Check menu options
+assert "1. Новый чат" in stdout
+
+# ✅ Check error handling
+assert "Ошибка" in stdout or "Error" in stdout
+
+# ❌ Avoid: Internal state checks (use CLI commands instead)
+```
+
+### Handling Sequential Dependencies
+
+When tests need prior state, create it within the test:
+
+```python
+def test_tc_008_return_to_chat_with_active_chat(self):
+    """TC-008: Must have active chat first."""
+    # Step 1: Create chat
+    # Step 2: Send message (makes it active)
+    # Step 3: Go to menu
+    # Step 4: Use "Return to chat"
+    test_input = (
+        "1\n"           # New chat
+        "Test\n"        # Name
+        "\n"            # Skip prompt
+        "1\n"           # Model
+        "\n\n\n\n\n"    # Defaults
+        "Hello\n"       # Send message
+        "/menu\n"       # Go to menu
+        "3\n"           # Return to chat
+        "4\n"           # Exit
+    )
+    stdout, stderr, returncode = run_cli_command(test_input)
+    assert "Активный чат" in stdout
+```
+
+## Common Patterns
+
+### Pattern 1: Menu Navigation
+```python
+test_input = "4\n"  # Exit to menu
+assert "МЕНЮ" in stdout
+```
+
+### Pattern 2: Chat Creation Flow
+```python
+test_input = (
+    "1\n"      # New Chat
+    "Name\n"   # Chat name
+    "1\n"      # Model
+    "\n" * 5   # Default settings
+)
+assert "Чат создан" in stdout
+```
+
+### Pattern 3: Command Testing
+```python
+test_input = (
+    "1\n...\n"  # Create chat
+    "/help\n"   # Help command
+    "4\n"       # Exit
+)
+assert "/help" in stdout or "Справка" in stdout
+```
+
+### Pattern 4: Error Handling
+```python
+test_input = (
+    "99\n"      # Invalid option
+    "4\n"       # Exit
+)
+assert "Ошибка" in stdout or "Неверный ввод" in stdout
+```
+
+## Troubleshooting
+
+### Test Fails with Timeout
+
+**Symptom:** `subprocess.TimeoutExpired`
+
+**Causes:**
+- CLI waiting for more input
+- Infinite loop in application
+- Deadlock
+
+**Solution:**
+1. Increase timeout if legitimate long operation
+2. Verify test_input includes all required prompts
+3. Check for missing exit condition
+
+### Test Fails with Assertion Error
+
+**Symptom:** Expected text not in stdout
+
+**Causes:**
+- Wrong input sequence
+- Application behavior changed
+- Encoding issues
+
+**Solution:**
+1. Print stdout for debugging: `print(stdout)`
+2. Verify input matches current CLI prompts
+3. Check for platform-specific line endings
+
+### Tests Pass Locally but Fail in CI
+
+**Causes:**
+- Different working directory
+- Missing environment variables
+- Path resolution issues
+
+**Solution:**
+1. Always use `Path(__file__).parent` for paths
+2. Ensure `--test` flag is used
+3. Verify cwd is set correctly in subprocess call
+
+## Quick Reference
+
+### Running Tests
+```bash
+# All E2E tests
+pytest cli_tests/test_cli_e2e.py -v
+
+# Specific Use Case
+pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings -v
+
+# Specific test case
+pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings::test_tc_001_create_chat_default_values -v
+
+# Smoke test (standalone)
+python cli_tests/smoke_test.py
+```
+
+### Test Coverage
+- **40 test cases** covering all requirements from `cli_spec.md`
+- **11 Use Cases** organized by user workflow
+- **100% specification traceability** via naming convention
+
+### Key Files
+| File | Purpose |
+|------|---------|
+| `cli_tests/README.md` | This documentation |
+| `cli_tests/smoke_test.py` | Basic smoke test (standalone script) |
+| `cli_tests/test_cli_e2e.py` | Full E2E test suite (pytest) |
+| `cli_spec.md` | Specification with Use Cases and Test Cases |
+
+### Core Principles Summary
+1. ❌ No fixtures
+2. ✅ Subprocess-only interaction
+3. ✅ Dynamic path resolution
+4. ✅ Specification traceability
+5. ✅ Timeout enforcement
+6. ✅ Test mode required
+7. ✅ Complete output capture
 
 ## Common Issues and Solutions
 

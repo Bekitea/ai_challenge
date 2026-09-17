@@ -1,4 +1,3 @@
-import argparse
 import os
 import sys
 
@@ -19,9 +18,9 @@ from storage.agent_repositories import PersistentAgentRepository
 class CLIChat:
     """Консольный интерфейс для взаимодействия с агентами."""
 
-    def __init__(self, is_test_mode: bool = False):
+    def __init__(self):
         # Определяем режим работы и выбираем провайдера
-        mode_config = get_mode_config(is_test_mode)
+        mode_config = get_mode_config()
 
         if mode_config.require_env_vars:
             # Продакшен режим: проверяем переменные окружения
@@ -42,7 +41,6 @@ class CLIChat:
             "3": ("aliceai-llm-flash/latest", "Alice AI LLM Flash"),
         }
         self.reasoning_efforts = ["none", "low", "medium", "high"]
-        self.is_test_mode = is_test_mode
 
     def clear_screen(self):
         """Очищает экран консоли."""
@@ -716,19 +714,11 @@ class CLIChat:
 
 def main():
     """Точка входа CLI приложения."""
-    parser = argparse.ArgumentParser(
-        description="AI Chat CLI - Консольный чат с AI агентами"
-    )
-    parser.add_argument(
-        "--test",
-        action="store_true",
-        help="Запустить в тестовом режиме с Mock провайдером (по умолчанию: продакшен режим)",
-    )
-    args = parser.parse_args()
+    mode_config = get_mode_config()
 
     try:
-        cli = CLIChat(is_test_mode=args.test)
-        if args.test:
+        cli = CLIChat()
+        if mode_config.use_mock_provider:
             print("\n[INFO] Запуск в ТЕСТОВОМ режиме с Mock провайдером.\n")
         else:
             print("\n[INFO] Запуск в ПРОДАКШЕН режиме с Yandex Cloud LLM.\n")

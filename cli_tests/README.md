@@ -4,6 +4,100 @@
 
 This guide documents the experience and best practices for testing CLI applications in this project, particularly focusing on cross-platform compatibility between Linux (CI/development environment) and Windows (local development).
 
+## Test Isolation and Data Management
+
+### Test Mode and Data Isolation
+
+**CRITICAL:** All automated tests MUST run in **TEST MODE** to ensure complete isolation from production data.
+
+**Mechanism:** The application uses the `APPLICATION_MODE` environment variable to determine data storage locations:
+
+| Mode | Environment Variable | Database Path | Chat History Path |
+|------|---------------------|---------------|-------------------|
+| **PROD** (default) | `APPLICATION_MODE=PROD` or not set | `./data/app.db` | `./data/chat_history/` |
+| **TEST** | `APPLICATION_MODE=TEST` | `./test-data/app.db` | `./test-data/chat_history/` |
+
+**How It Works:**
+
+1. **Before each test:** Test framework sets `APPLICATION_MODE=TEST` in the subprocess environment
+2. **CLI startup:** Application reads `APPLICATION_MODE` and configures paths accordingly
+3. **Test execution:** All data operations use isolated `./test-data/` directory
+4. **After each test:** `./test-data/` directory is completely removed
+
+**Benefits:**
+
+- ✅ Production data in `./data/` is never touched by tests
+- ✅ Each test starts with a clean slate (no residual state)
+- ✅ Tests can run in parallel without conflicts
+- ✅ Failed tests leave artifacts for debugging (until next test run)
+
+### Test Setup and Teardown Pattern
+
+All E2E tests inherit from `BaseCLITest`, which provides automatic isolation:
+
+```python
+class BaseCLITest:
+    """Base class providing test isolation."""
+
+    def setUp(self):
+        """Called before each test."""
+        # 1. Remove old test-data directory
+        if os.path.exists(TEST_DATA_DIR):
+            shutil.rmtree(TEST_DATA_DIR)
+
+        # 2. Create fresh test-data directory
+        os.makedirs(TEST_DATA_DIR, exist_ok=True)
+
+        # 3. Initialize database tables
+        init_db()
+
+    def tearDown(self):
+        """Called after each test."""
+        # Optional: Clean up test-data immediately
+        if os.path.exists(TEST_DATA_DIR):
+            shutil.rmtree(TEST_DATA_DIR)
+```
+
+**Example Test:**
+
+```python
+class TestUC001_CreateChatWithAllSettings(BaseCLITest):
+
+    def test_tc_001_create_chat_default_values(self):
+        # setUp() already ran - test-data is clean and DB initialized
+
+        test_input = "1\n\n\n1\n\n\n\n\n\n1\n4\n"
+        env = os.environ.copy()
+        env["APPLICATION_MODE"] = "TEST"  # Critical!
+
+        stdout, stderr, returncode = run_cli_command(test_input, env=env)
+
+        assert returncode == 0
+        assert "Чат создан" in stdout
+
+        # tearDown() will run after - cleans up test-data
+```
+
+### Manual Testing with Different Modes
+
+**Test Mode (Manual):**
+```bash
+# Linux/macOS
+APPLICATION_MODE=TEST python main_cli.py
+
+# Windows PowerShell
+$env:APPLICATION_MODE="TEST"; python main_cli.py
+
+# Windows CMD
+set APPLICATION_MODE=TEST && python main_cli.py
+```
+
+**Production Mode:**
+```bash
+# Uses ./data/ directory - requires API keys for real LLM calls
+python main_cli.py
+```
+
 ## Key Challenges
 
 ### 1. Working Directory Issues
@@ -51,6 +145,7 @@ process = subprocess.Popen(
     stderr=subprocess.PIPE,
     text=True,  # Important: handle strings instead of bytes
     cwd=str(project_root),
+    env={**os.environ, "APPLICATION_MODE": "TEST"},  # Critical for isolation!
 )
 
 stdout, stderr = process.communicate(input=test_input, timeout=30)
@@ -147,39 +242,46 @@ Include comments explaining what each test scenario validates.
 
 When API keys are not available, ensure your application falls back to mock providers and tests verify this behavior.
 
-### 7. Use Explicit Test Mode Flag
+### 7. Use APPLICATION_MODE Environment Variable
 
-The application now supports an explicit `--test` flag for running in test mode with the Mock provider:
+The application uses the `APPLICATION_MODE` environment variable to control both the LLM provider and data storage location:
 
 ```python
-# Always use --test flag in automated tests
+# Always set APPLICATION_MODE=TEST in automated tests
+env = os.environ.copy()
+env["APPLICATION_MODE"] = "TEST"
+
 process = subprocess.Popen(
-    [sys.executable, "main_cli.py", "--test"],
+    [sys.executable, "main_cli.py"],
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
     text=True,
     cwd=str(project_root),
+    env=env,  # Critical for isolation!
 )
 ```
 
 This ensures:
 
-- Tests always run with the Mock provider regardless of environment variables
-- Production mode explicitly requires API credentials
+- Tests always run with the Mock provider (no API keys required)
+- Tests use isolated `./test-data/` directory (production data safe)
+- Each test starts with a clean database state
 - Clear separation between test and production scenarios
 
 ## Running Tests
 
 ### Automated Tests Must Use Test Mode
 
-**IMPORTANT:** All automated test scripts **MUST** be executed in the application's **TEST MODE** (`--test` flag).
+**IMPORTANT:** All automated test scripts **MUST** set `APPLICATION_MODE=TEST` environment variable.
 
 This ensures:
 
-- Tests run without requiring real API keys or environment variables
+- Tests run without requiring real API keys
 - Tests use the `MockLlmProvider` for predictable, fast, and isolated execution
+- Tests use isolated `./test-data/` directory (production data in `./data/` is never touched)
 - No accidental costs or external dependencies during testing
+- Each test starts with a clean database state
 
 ### From Any Location
 
@@ -187,7 +289,7 @@ This ensures:
 # Navigate to the test directory
 cd cli_tests
 
-# Run the smoke test (uses --test flag by default)
+# Run the smoke test (sets APPLICATION_MODE=TEST internally)
 python smoke_test.py
 ```
 
@@ -198,11 +300,12 @@ The project includes pytest-based E2E tests that emulate real user interaction v
 - Use `subprocess.Popen` to spawn actual CLI processes (no mocking at Python level)
 - Send input via stdin (simulating keyboard input)
 - Capture stdout/stderr (simulating terminal output)
+- Set `APPLICATION_MODE=TEST` for complete isolation
 - Do NOT use pytest fixtures - each test is self-contained to maximize realism
 - Directly map to test cases from `cli_spec.md` specification
 
 ```bash
-# Run all E2E tests
+# Run all E2E tests (APPLICATION_MODE=TEST is set automatically in tests)
 pytest cli_tests/test_cli_e2e.py -v
 
 # Run specific test class (Use Case)
@@ -270,16 +373,23 @@ class TestUC001_CreateChatWithAllSettings:
 
 **Test Mode (Default for Automated Tests):**
 ```bash
-# Uses --test flag automatically (Mock provider)
+# APPLICATION_MODE=TEST is set automatically in tests
 pytest cli_tests/test_cli_e2e.py -v
 ```
 
 **Manual Exploration:**
 ```bash
-# Run CLI manually in test mode
-python main_cli.py --test
+# Run CLI manually in test mode (Mock provider, ./test-data/)
+# Linux/macOS:
+APPLICATION_MODE=TEST python main_cli.py
 
-# Run CLI manually in production mode (requires API keys)
+# Windows PowerShell:
+$env:APPLICATION_MODE="TEST"; python main_cli.py
+
+# Windows CMD:
+set APPLICATION_MODE=TEST && python main_cli.py
+
+# Run CLI manually in production mode (requires API keys, ./data/)
 export YANDEX_CLOUD_API_KEY="your_key"
 export YANDEX_CLOUD_FOLDER_ID="your_folder"
 python main_cli.py
@@ -404,21 +514,26 @@ stdout, stderr = process.communicate(input=test_input, timeout=30)
 
 ### 6. Test Mode Requirement
 
-**Rule:** Automated tests MUST use `--test` flag.
+**Rule:** Automated tests MUST set `APPLICATION_MODE=TEST` environment variable.
 
 **Rationale:**
 - No API keys required
 - Fast execution (mock responses)
 - Predictable behavior
 - No external dependencies
+- Isolated data storage (`./test-data/` vs `./data/`)
+- Clean state for each test
 
 **Example:**
 ```python
-# ❌ WRONG: Production mode
-process = subprocess.Popen([sys.executable, "main_cli.py"], ...)
+# ❌ WRONG: Production mode (uses ./data/)
+env = os.environ.copy()
+process = subprocess.Popen([sys.executable, "main_cli.py"], ..., env=env)
 
-# ✅ CORRECT: Test mode
-process = subprocess.Popen([sys.executable, "main_cli.py", "--test"], ...)
+# ✅ CORRECT: Test mode (uses ./test-data/)
+env = os.environ.copy()
+env["APPLICATION_MODE"] = "TEST"
+process = subprocess.Popen([sys.executable, "main_cli.py"], ..., env=env)
 ```
 
 ### 7. Complete Output Capture
@@ -577,11 +692,13 @@ assert "Ошибка" in stdout or "Неверный ввод" in stdout
 - Different working directory
 - Missing environment variables
 - Path resolution issues
+- APPLICATION_MODE not set correctly
 
 **Solution:**
 1. Always use `Path(__file__).parent` for paths
-2. Ensure `--test` flag is used
+2. Ensure `APPLICATION_MODE=TEST` is set in test environment
 3. Verify cwd is set correctly in subprocess call
+4. Check that test-data directory is writable
 
 ## Quick Reference
 
@@ -604,6 +721,7 @@ python cli_tests/smoke_test.py
 - **40 test cases** covering all requirements from `cli_spec.md`
 - **11 Use Cases** organized by user workflow
 - **100% specification traceability** via naming convention
+- **Complete data isolation** via APPLICATION_MODE and test-data directory
 
 ### Key Files
 | File | Purpose |
@@ -619,16 +737,19 @@ python cli_tests/smoke_test.py
 3. ✅ Dynamic path resolution
 4. ✅ Specification traceability
 5. ✅ Timeout enforcement
-6. ✅ Test mode required
+6. ✅ APPLICATION_MODE=TEST for isolation
 7. ✅ Complete output capture
+8. ✅ Clean test-data directory per test
 
 ## Common Issues and Solutions
 
-| Issue                               | Solution                                                 |
-| ----------------------------------- | -------------------------------------------------------- |
-| `[WinError 267] Invalid directory`  | Use `Path(__file__).parent` instead of hardcoded paths   |
-| Test hangs indefinitely             | Add `timeout` parameter to `communicate()`               |
-| Encoding errors                     | Use `text=True` and ensure consistent encoding           |
-| Different behavior on Windows/Linux | Test on both platforms; use cross-platform path handling |
-| `EnvironmentError` in test mode     | Ensure `--test` flag is passed to the application        |
-| Mock provider not used              | Verify `--test` flag is present; check app_mode module   |
+| Issue                                      | Solution                                                              |
+| ------------------------------------------ | --------------------------------------------------------------------- |
+| `[WinError 267] Invalid directory`         | Use `Path(__file__).parent` instead of hardcoded paths                |
+| Test hangs indefinitely                    | Add `timeout` parameter to `communicate()`                            |
+| Encoding errors                            | Use `text=True` and ensure consistent encoding                        |
+| Different behavior on Windows/Linux        | Test on both platforms; use cross-platform path handling              |
+| `sqlite3.OperationalError: no such table`  | Ensure `init_db()` is called after setting `APPLICATION_MODE=TEST`    |
+| Tests use production data                  | Verify `APPLICATION_MODE=TEST` is set before running CLI              |
+| Mock provider not used                     | Check `APPLICATION_MODE=TEST` is set; verify app_mode module          |
+| Database path conflicts                    | Confirm test-data and data directories are separate                   |

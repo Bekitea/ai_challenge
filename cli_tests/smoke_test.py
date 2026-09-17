@@ -4,9 +4,17 @@ Smoke test for CLI chat application.
 Tests basic interaction with the mock provider in test mode.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+# Add project root to path to import modules
+script_dir = Path(__file__).parent.absolute()
+project_root = script_dir.parent
+sys.path.insert(0, str(project_root))
+
+from storage.agent_repositories import PersistentAgentRepository
 
 
 def run_smoke_test():
@@ -29,24 +37,39 @@ def run_smoke_test():
     # 4 - выход из приложения
     test_input = "1\nTest Chat\n\n1\n\n\n\n\n\n1\n\n\nHello, how are you?\n0\n4\n"
 
-    print("Running smoke test in TEST MODE (--test flag)...")
+    print("Running smoke test in TEST MODE (APPLICATION_MODE=TEST)...")
     print(f"Test input:\n{test_input!r}")
     print("-" * 50)
 
     try:
-        # Determine project root directory dynamically
-        # This works both in CI (/workspace) and locally
-        script_dir = Path(__file__).parent.absolute()
-        project_root = script_dir.parent
+        # Устанавливаем переменную окружения для тестового режима
+        env = os.environ.copy()
+        env["APPLICATION_MODE"] = "TEST"
 
-        # Run the CLI application with --test flag for mock provider
+        # Очищаем тестовую директорию и инициализируем БД
+        import shutil
+
+        from llm_providers import MockLlmProvider
+
+        test_data_dir = project_root / "test-data"
+        if test_data_dir.exists():
+            shutil.rmtree(test_data_dir)
+        test_data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Инициализируем базу данных через репозиторий с mock провайдером
+        repo = PersistentAgentRepository(llm_provider=MockLlmProvider())
+        repo.init_db()
+        print("✓ Test database initialized")
+
+        # Run the CLI application with APPLICATION_MODE=TEST for mock provider
         process = subprocess.Popen(
-            [sys.executable, "main_cli.py", "--test"],
+            [sys.executable, "main_cli.py"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             cwd=str(project_root),
+            env=env,
         )
 
         stdout, stderr = process.communicate(input=test_input, timeout=30)

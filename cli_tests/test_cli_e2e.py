@@ -10,15 +10,51 @@ Test naming convention: test_tc_XXX_<description>
 where XXX is the test case number from cli_spec.md specification.
 """
 
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 
 def get_project_root() -> Path:
     """Dynamically resolve project root directory."""
     script_dir = Path(__file__).parent.absolute()
     return script_dir.parent
+
+
+def get_test_data_path() -> Path:
+    """Get path to test data directory."""
+    return get_project_root() / "test-data"
+
+
+def clean_test_data():
+    """Clean test data directory before and after each test."""
+    test_data_path = get_test_data_path()
+    if test_data_path.exists():
+        shutil.rmtree(test_data_path)
+    test_data_path.mkdir(parents=True, exist_ok=True)
+
+
+# Pytest fixture for automatic cleanup before each test
+@pytest.fixture(autouse=True)
+def setup_clean_test_environment():
+    """Automatically clean test data and initialize DB before each test in this module."""
+    clean_test_data()
+
+    # Initialize database
+    sys.path.insert(0, str(get_project_root()))
+    from llm_providers import MockLlmProvider
+    from storage.agent_repositories import PersistentAgentRepository
+
+    repo = PersistentAgentRepository(llm_provider=MockLlmProvider())
+    repo.init_db()
+
+    yield
+    # Optional: cleanup after test as well
+    # clean_test_data()
 
 
 def run_cli_command(test_input: str, timeout: int = 30) -> tuple[str, str, int]:
@@ -39,13 +75,18 @@ def run_cli_command(test_input: str, timeout: int = 30) -> tuple[str, str, int]:
     """
     project_root = get_project_root()
 
+    # Устанавливаем переменную окружения для тестового режима
+    env = os.environ.copy()
+    env["APPLICATION_MODE"] = "TEST"
+
     process = subprocess.Popen(
-        [sys.executable, "main_cli.py", "--test"],
+        [sys.executable, "main_cli.py"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         cwd=str(project_root),
+        env=env,
     )
 
     stdout, stderr = process.communicate(input=test_input, timeout=timeout)
@@ -86,17 +127,17 @@ class TestUC001_CreateChatWithAllSettings:
         9. Verify chat created
         """
         test_input = (
-            "1\n"           # Новый чат
-            "\n"            # Default name (Чат N)
-            "\n"            # Skip system prompt
-            "1\n"           # Model 1
-            "\n"            # Temperature disabled
-            "\n"            # Top P disabled
-            "\n"            # Top K disabled (0)
-            "\n"            # Reasoning effort (none)
-            "\n"            # Context window (200k)
-            "1\n"           # DefaultStrategy
-            "4\n"           # Exit
+            "1\n"  # Новый чат
+            "\n"  # Default name (Чат N)
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n"  # Temperature disabled
+            "\n"  # Top P disabled
+            "\n"  # Top K disabled (0)
+            "\n"  # Reasoning effort (none)
+            "\n"  # Context window (200k)
+            "1\n"  # DefaultStrategy
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -104,7 +145,9 @@ class TestUC001_CreateChatWithAllSettings:
         assert returncode == 0, f"App exited with code {returncode}, stderr: {stderr}"
         assert "[OK] Чат 'Чат" in stdout, "Default chat name should be 'Чат N'"
         assert "ID:" in stdout, "Chat ID should be displayed"
-        assert "Стратегия:" in stdout or "DefaultStrategy" in stdout, "Strategy should be displayed"
+        assert "Стратегия:" in stdout or "DefaultStrategy" in stdout, (
+            "Strategy should be displayed"
+        )
 
     def test_tc_002_create_chat_custom_settings(self):
         """
@@ -122,17 +165,17 @@ class TestUC001_CreateChatWithAllSettings:
         9. Verify settings
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "Test Chat\n"            # Название
-            "Be concise\n"           # Системный промпт
-            "2\n"                    # Model 2 (Qwen3.6)
-            "1.5\n"                  # Temperature
-            "0.8\n"                  # Top P
-            "50\n"                   # Top K
-            "3\n"                    # Reasoning effort: medium
-            "100000\n"               # Context window
-            "1\n"                    # DefaultStrategy
-            "4\n"                    # Exit
+            "1\n"  # Новый чат
+            "Test Chat\n"  # Название
+            "Be concise\n"  # Системный промпт
+            "2\n"  # Model 2 (Qwen3.6)
+            "1.5\n"  # Temperature
+            "0.8\n"  # Top P
+            "50\n"  # Top K
+            "3\n"  # Reasoning effort: medium
+            "100000\n"  # Context window
+            "1\n"  # DefaultStrategy
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -151,25 +194,28 @@ class TestUC001_CreateChatWithAllSettings:
         5. Continue creation
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "Temp Test\n"            # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
-            "abc\n"                  # Invalid temperature
-            "\n"                     # Top P disabled
-            "\n"                     # Top K disabled
-            "\n"                     # Reasoning effort
-            "\n"                     # Context window
-            "1\n"                    # DefaultStrategy
-            "4\n"                    # Exit
+            "1\n"  # Новый чат
+            "Temp Test\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "abc\n"  # Invalid temperature
+            "\n"  # Top P disabled
+            "\n"  # Top K disabled
+            "\n"  # Reasoning effort
+            "\n"  # Context window
+            "1\n"  # DefaultStrategy
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0
         # Check for Russian text about invalid input or disabled temperature
-        assert "Некорректное" in stdout or "отключено" in stdout.lower() or "default" in stdout.lower(), \
-            "Should show warning about invalid temperature"
+        assert (
+            "Некорректное" in stdout
+            or "отключено" in stdout.lower()
+            or "default" in stdout.lower()
+        ), "Should show warning about invalid temperature"
 
     def test_tc_019_long_chat_name_handling(self):
         """
@@ -183,13 +229,13 @@ class TestUC001_CreateChatWithAllSettings:
         long_name = "A" * 150  # 150 characters
 
         test_input = (
-            "1\n"                    # Новый чат
-            f"{long_name}\n"         # Long name (should truncate to 100)
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            f"{long_name}\n"  # Long name (should truncate to 100)
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -208,13 +254,13 @@ class TestUC001_CreateChatWithAllSettings:
         4. Verify strategy type = "SlidingWindowStrategy"
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "SlidingWindow Test\n"   # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "SlidingWindow Test\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "4\n"                    # SlidingWindowStrategy
-            "4\n"                    # Exit
+            "4\n"  # SlidingWindowStrategy
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -233,14 +279,14 @@ class TestUC001_CreateChatWithAllSettings:
         4. Verify window_size = 20
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "SlidingWindow Custom\n" # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "SlidingWindow Custom\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "4\n"                    # SlidingWindowStrategy
-            "20\n"                   # Custom window_size
-            "4\n"                    # Exit
+            "4\n"  # SlidingWindowStrategy
+            "20\n"  # Custom window_size
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -260,15 +306,15 @@ class TestUC001_CreateChatWithAllSettings:
         5. Verify strategy type = "SummarizationStrategy"
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "Summarization Test\n"   # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "Summarization Test\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "2\n"                    # SummarizationStrategy
-            "\n"                     # non_compressible_count=2
-            "\n"                     # buffer_size=3
-            "4\n"                    # Exit
+            "2\n"  # SummarizationStrategy
+            "\n"  # non_compressible_count=2
+            "\n"  # buffer_size=3
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -288,15 +334,15 @@ class TestUC001_CreateChatWithAllSettings:
         5. Verify custom parameters
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "Summarization Custom\n" # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "Summarization Custom\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "2\n"                    # SummarizationStrategy
-            "5\n"                    # non_compressible_count=5
-            "4\n"                    # buffer_size=4
-            "4\n"                    # Exit
+            "2\n"  # SummarizationStrategy
+            "5\n"  # non_compressible_count=5
+            "4\n"  # buffer_size=4
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -316,15 +362,15 @@ class TestUC001_CreateChatWithAllSettings:
         5. Verify strategy type = "KeyValueMemoryStrategy"
         """
         test_input = (
-            "1\n"                    # Новый чат
+            "1\n"  # Новый чат
             "KeyValueMemory Test\n"  # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "3\n"                    # KeyValueMemoryStrategy
-            "\n"                     # non_compressible_count=2
-            "\n"                     # buffer_size=3
-            "4\n"                    # Exit
+            "3\n"  # KeyValueMemoryStrategy
+            "\n"  # non_compressible_count=2
+            "\n"  # buffer_size=3
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -344,15 +390,15 @@ class TestUC001_CreateChatWithAllSettings:
         5. Verify custom parameters
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "KeyValueMemory Custom\n" # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "KeyValueMemory Custom\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "3\n"                    # KeyValueMemoryStrategy
-            "3\n"                    # non_compressible_count=3
-            "5\n"                    # buffer_size=5
-            "4\n"                    # Exit
+            "3\n"  # KeyValueMemoryStrategy
+            "3\n"  # non_compressible_count=3
+            "5\n"  # buffer_size=5
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -371,13 +417,13 @@ class TestUC001_CreateChatWithAllSettings:
         4. Verify strategy type = "DefaultStrategy"
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "DefaultStrategy Test\n" # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "DefaultStrategy Test\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -407,14 +453,17 @@ class TestUC002_SelectExistingChatFromList:
         4. Verify returns to Main Menu
         """
         test_input = (
-            "2\n"                    # Выбрать чат (empty list)
-            "4\n"                    # Exit
+            "2\n"  # Выбрать чат (empty list)
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0
-        assert "Нет доступных чатов" in stdout or "Нет доступных чатов. Создайте новый." in stdout
+        assert (
+            "Нет доступных чатов" in stdout
+            or "Нет доступных чатов. Создайте новый." in stdout
+        )
 
     def test_tc_005_preview_with_system_prompt_only(self):
         """
@@ -427,19 +476,19 @@ class TestUC002_SelectExistingChatFromList:
         4. Verify count shows "Сообщений: 0"
         """
         create_input = (
-            "1\n"                    # Новый чат
-            "SystemPromptOnly\n"     # Название
-            "You are helpful\n"      # System prompt only
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "SystemPromptOnly\n"  # Название
+            "You are helpful\n"  # System prompt only
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "4\n"  # Exit
         )
         run_cli_command(create_input)
 
         select_input = (
-            "2\n"                    # Выбрать чат
-            "4\n"                    # Exit
+            "2\n"  # Выбрать чат
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(select_input)
@@ -458,21 +507,21 @@ class TestUC002_SelectExistingChatFromList:
         4. Verify preview shows "Hello world"
         """
         create_input = (
-            "1\n"                    # Новый чат
-            "PreviewTest\n"          # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "PreviewTest\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "Hello world\n"          # Message
-            "\n"                     # Decline reasoning view
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "Hello world\n"  # Message
+            "\n"  # Decline reasoning view
+            "4\n"  # Exit
         )
         run_cli_command(create_input)
 
         select_input = (
-            "2\n"                    # Выбрать чат
-            "4\n"                    # Exit
+            "2\n"  # Выбрать чат
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(select_input)
@@ -501,8 +550,8 @@ class TestUC003_ReturnToActiveChat:
         4. Verify warning displayed
         """
         test_input = (
-            "3\n"                    # Вернуться в чат (no active chat)
-            "4\n"                    # Exit
+            "3\n"  # Вернуться в чат (no active chat)
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -522,21 +571,24 @@ class TestUC003_ReturnToActiveChat:
         5. Verify chat loop entered with same context
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "ActiveChatTest\n"       # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "ActiveChatTest\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/menu\n"                # Return to menu
-            "3\n"                    # Вернуться в чат
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/menu\n"  # Return to menu
+            "3\n"  # Вернуться в чат
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0
-        assert "Вернуться в чат: ActiveChatTest" in stdout or "ЧАТ: ActiveChatTest" in stdout
+        assert (
+            "Вернуться в чат: ActiveChatTest" in stdout
+            or "ЧАТ: ActiveChatTest" in stdout
+        )
 
 
 class TestUC004_SendMessageAndReceiveResponse:
@@ -563,20 +615,20 @@ class TestUC004_SendMessageAndReceiveResponse:
         5. Return to menu
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "MultiMessage\n"         # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "MultiMessage\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "Message 1\n"            # First message
-            "\n"                     # Decline reasoning
-            "Message 2\n"            # Second message
-            "\n"                     # Decline reasoning
-            "Message 3\n"            # Third message
-            "\n"                     # Decline reasoning
-            "/menu\n"                # Return to menu
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "Message 1\n"  # First message
+            "\n"  # Decline reasoning
+            "Message 2\n"  # Second message
+            "\n"  # Decline reasoning
+            "Message 3\n"  # Third message
+            "\n"  # Decline reasoning
+            "/menu\n"  # Return to menu
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -596,17 +648,17 @@ class TestUC004_SendMessageAndReceiveResponse:
         4. Send valid message - normal flow resumes
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "EmptyMessage\n"         # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "EmptyMessage\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "\n"                     # Empty message (should re-prompt)
-            "\n"                     # Empty message again
-            "Valid message\n"        # Valid message
-            "\n"                     # Decline reasoning
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "\n"  # Empty message (should re-prompt)
+            "\n"  # Empty message again
+            "Valid message\n"  # Valid message
+            "\n"  # Decline reasoning
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -624,20 +676,22 @@ class TestUC004_SendMessageAndReceiveResponse:
         3. Verify warning about unknown command
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "UnknownCmd\n"           # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "UnknownCmd\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/unknown\n"             # Unknown command
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/unknown\n"  # Unknown command
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0
-        assert "[WARN]" in stdout or "Неизвестная команда" in stdout or "/help" in stdout
+        assert (
+            "[WARN]" in stdout or "Неизвестная команда" in stdout or "/help" in stdout
+        )
 
     def test_tc_017_system_prompt_in_history(self):
         """
@@ -650,15 +704,15 @@ class TestUC004_SendMessageAndReceiveResponse:
         4. Check display with [SYSTEM] prefix
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "SystemPromptTest\n"     # Название
+            "1\n"  # Новый чат
+            "SystemPromptTest\n"  # Название
             "You are a helpful assistant\n"  # System prompt
-            "1\n"                    # Model 1
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "Hello\n"                # User message
-            "\n"                     # Decline reasoning
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "Hello\n"  # User message
+            "\n"  # Decline reasoning
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -678,15 +732,15 @@ class TestUC004_SendMessageAndReceiveResponse:
         special_message = "Test @#$%^&*()_+-=[]{}|;':\",./<>?"
 
         test_input = (
-            "1\n"                    # Новый чат
-            "SpecialChars\n"         # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "SpecialChars\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            f"{special_message}\n"   # Message with special chars
-            "\n"                     # Decline reasoning
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            f"{special_message}\n"  # Message with special chars
+            "\n"  # Decline reasoning
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -716,15 +770,15 @@ class TestUC005_ViewAndChangeSettingsInChat:
         3. Verify current settings displayed
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "ViewSettings\n"         # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "ViewSettings\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/settings\n"            # View settings
-            "n\n"                    # Don't change
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/settings\n"  # View settings
+            "n\n"  # Don't change
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -744,17 +798,20 @@ class TestUC005_ViewAndChangeSettingsInChat:
         4. Verify only temperature changed
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "PartialSettings\n"      # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "PartialSettings\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/settings\n"            # View settings
-            "y\n"                    # Change settings
-            "0.8\n"                  # New temperature
-            "\n" + "\n" + "\n" + "\n"  # Keep others (4 times)
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/settings\n"  # View settings
+            "y\n"  # Change settings
+            "1\n"  # Keep model 1
+            "0.8\n"  # New temperature
+            "\n" + "\n" + "\n"  # Keep top_p, top_k, reasoning_effort defaults
+            "1\n"  # Confirm reasoning effort (default 1)
+            "\n"  # Keep context window size default
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -773,17 +830,17 @@ class TestUC005_ViewAndChangeSettingsInChat:
         4. Verify all settings prompts shown
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "ConfirmSettings\n"      # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "ConfirmSettings\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/settings\n"            # View settings
-            "y\n"                    # Confirm change
-            "0.8\n"                  # New temperature
+            "1\n"  # DefaultStrategy
+            "/settings\n"  # View settings
+            "y\n"  # Confirm change
+            "0.8\n"  # New temperature
             "\n" + "\n" + "\n" + "\n"  # Keep others
-            "4\n"                    # Exit
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -802,15 +859,15 @@ class TestUC005_ViewAndChangeSettingsInChat:
         4. Verify return to chat without changes
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "CancelSettings\n"       # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "CancelSettings\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/settings\n"            # View settings
-            "n\n"                    # Cancel change
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/settings\n"  # View settings
+            "n\n"  # Cancel change
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -837,15 +894,15 @@ class TestUC006_NavigateToMenuFromChat:
         3. Verify Main Menu displayed
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "MenuNav\n"              # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "MenuNav\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/menu\n"                # Return to menu
-            "3\n"                    # Return to chat
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/menu\n"  # Return to menu
+            "3\n"  # Return to chat
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -864,21 +921,21 @@ class TestUC006_NavigateToMenuFromChat:
         4. Verify both chats exist
         """
         create_a = (
-            "1\n"                    # Новый чат
-            "Chat A\n"               # Название
+            "1\n"  # Новый чат
+            "Chat A\n"  # Название
             "\n" + "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (7 times)
-            "1\n"                    # DefaultStrategy
-            "/menu\n"                # Return to menu
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/menu\n"  # Return to menu
+            "4\n"  # Exit
         )
         run_cli_command(create_a)
 
         create_b = (
-            "1\n"                    # Новый чат
-            "Chat B\n"               # Название
+            "1\n"  # Новый чат
+            "Chat B\n"  # Название
             "\n" + "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (7 times)
-            "1\n"                    # DefaultStrategy
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "4\n"  # Exit
         )
         run_cli_command(create_b)
 
@@ -909,21 +966,25 @@ class TestUC007_StopOngoingGeneration:
         3. Verify message about generation status
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "StopIdle\n"             # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "StopIdle\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/stop\n"                # Stop when idle
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/stop\n"  # Stop when idle
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0
         # CLI shows "Генерация остановлена." even when idle in mock mode
-        assert "Генерация" in stdout or "остановлена" in stdout.lower() or "не активна" in stdout.lower()
+        assert (
+            "Генерация" in stdout
+            or "остановлена" in stdout.lower()
+            or "не активна" in stdout.lower()
+        )
 
     def test_tc_029_stop_command_during_generation(self):
         """
@@ -932,15 +993,15 @@ class TestUC007_StopOngoingGeneration:
         Note: In mock/test mode, generation is instant.
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "StopGen\n"              # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "StopGen\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "Test message\n"         # Send message
-            "/stop\n"                # Try to stop
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "Test message\n"  # Send message
+            "/stop\n"  # Try to stop
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -958,20 +1019,22 @@ class TestUC007_StopOngoingGeneration:
         4. Verify no state changes
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "IdleStop\n"             # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "IdleStop\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/stop\n"                # Stop when idle
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/stop\n"  # Stop when idle
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0
-        assert "Генерация не активна" in stdout or "[INFO]" in stdout or "[WARN]" in stdout
+        assert (
+            "Генерация не активна" in stdout or "[INFO]" in stdout or "[WARN]" in stdout
+        )
 
 
 class TestUC008_DisplayHelpCommands:
@@ -992,14 +1055,14 @@ class TestUC008_DisplayHelpCommands:
         3. Verify command list displayed
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "HelpTest\n"             # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "HelpTest\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/help\n"                # Show help
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/help\n"  # Show help
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -1028,15 +1091,15 @@ class TestUC009_ViewConversationSummary:
         TC-021: View Summary With Summarization
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "SummaryTest\n"          # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "SummaryTest\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "2\n"                    # SummarizationStrategy
-            "\n" + "\n"             # Default params
-            "/summary\n"             # View summary
-            "4\n"                    # Exit
+            "2\n"  # SummarizationStrategy
+            "\n" + "\n"  # Default params
+            "/summary\n"  # View summary
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -1049,14 +1112,14 @@ class TestUC009_ViewConversationSummary:
         TC-022: View Summary Without Summarization
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "NoSummary\n"            # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "NoSummary\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/summary\n"             # View summary
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/summary\n"  # View summary
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -1079,14 +1142,14 @@ class TestUC010_ViewChatInfoAndTokenStatistics:
         TC-023: View Chat Info With Token Statistics
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "InfoTest\n"             # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "InfoTest\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/info\n"                # View info
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/info\n"  # View info
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -1099,12 +1162,14 @@ class TestUC010_ViewChatInfoAndTokenStatistics:
         TC-038: View Info For Different Strategies
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "DefaultInfo\n"          # Название
-            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
-            "1\n"                    # DefaultStrategy
-            "/info\n"                # View info
-            "4\n"                    # Exit
+            "1\n"  # Новый чат
+            "DefaultInfo\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "1\n"  # DefaultStrategy
+            "/info\n"  # View info
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -1130,16 +1195,16 @@ class TestUC011_CreateChatBranch:
         TC-024: Create Branch And Switch
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "BranchSwitch\n"         # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "BranchSwitch\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/branch\n"              # Create branch
-            "\n"                     # Accept default name
-            "y\n"                    # Switch to branch
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/branch\n"  # Create branch
+            "\n"  # Accept default name
+            "y\n"  # Switch to branch
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -1153,16 +1218,16 @@ class TestUC011_CreateChatBranch:
         TC-025: Create Branch And Stay
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "BranchStay\n"           # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "BranchStay\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/branch\n"              # Create branch
-            "\n"                     # Accept default name
-            "n\n"                    # Stay in current
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/branch\n"  # Create branch
+            "\n"  # Accept default name
+            "n\n"  # Stay in current
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -1175,16 +1240,16 @@ class TestUC011_CreateChatBranch:
         TC-026: Create Branch With Custom Name
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "Original\n"             # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "Original\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "1\n"                    # DefaultStrategy
-            "/branch\n"              # Create branch
-            "My Custom Branch\n"     # Custom name
-            "n\n"                    # Stay
-            "4\n"                    # Exit
+            "1\n"  # DefaultStrategy
+            "/branch\n"  # Create branch
+            "My Custom Branch\n"  # Custom name
+            "n\n"  # Stay
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -1197,17 +1262,17 @@ class TestUC011_CreateChatBranch:
         TC-039: Branch Preserves Strategy Type
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "BranchStrategy\n"       # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "BranchStrategy\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "2\n"                    # SummarizationStrategy
-            "\n" + "\n"             # Default params
-            "/branch\n"              # Create branch
-            "\n"                     # Accept name
-            "n\n"                    # Stay
-            "4\n"                    # Exit
+            "2\n"  # SummarizationStrategy
+            "\n" + "\n"  # Default params
+            "/branch\n"  # Create branch
+            "\n"  # Accept name
+            "n\n"  # Stay
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -1220,17 +1285,17 @@ class TestUC011_CreateChatBranch:
         TC-040: Branch Preserves SlidingWindow Configuration
         """
         test_input = (
-            "1\n"                    # Новый чат
-            "BranchSliding\n"        # Название
-            "\n"                     # Skip system prompt
-            "1\n"                    # Model 1
+            "1\n"  # Новый чат
+            "BranchSliding\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
-            "4\n"                    # SlidingWindowStrategy
-            "15\n"                   # window_size=15
-            "/branch\n"              # Create branch
-            "\n"                     # Accept name
-            "n\n"                    # Stay
-            "4\n"                    # Exit
+            "4\n"  # SlidingWindowStrategy
+            "15\n"  # window_size=15
+            "/branch\n"  # Create branch
+            "\n"  # Accept name
+            "n\n"  # Stay
+            "4\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -1242,4 +1307,5 @@ class TestUC011_CreateChatBranch:
 # Allow running tests directly with: python test_cli_e2e.py
 if __name__ == "__main__":
     import pytest
+
     sys.exit(pytest.main([__file__, "-v"]))

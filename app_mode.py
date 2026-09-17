@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Final
 
+import config
+
 
 class AppMode(Enum):
     """Режимы работы приложения."""
@@ -33,16 +35,13 @@ TEST_MODE: Final = ModeConfig(
 )
 
 
-def get_mode_config(is_test_mode: bool) -> ModeConfig:
-    """Возвращает конфигурацию для указанного режима.
-
-    Args:
-        is_test_mode: True для тестового режима, False для продакшен.
+def get_mode_config() -> ModeConfig:
+    """Возвращает конфигурацию на основе APPLICATION_MODE из config.py.
 
     Returns:
         ModeConfig: Конфигурация режима.
     """
-    return TEST_MODE if is_test_mode else PRODUCTION_MODE
+    return TEST_MODE if config.APPLICATION_MODE == "TEST" else PRODUCTION_MODE
 
 
 def validate_production_env(

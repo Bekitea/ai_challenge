@@ -478,9 +478,10 @@ class TestUC002_SelectExistingChatFromList:
 
         Steps:
         1. Create chat with system prompt only
-        2. Return to menu
-        3. Verify preview shows "(нет сообщений)"
-        4. Verify count shows "Сообщений: 0"
+        2. Return to menu using /menu command
+        3. Exit app
+        4. Verify preview shows "(нет сообщений)"
+        5. Verify count shows "Сообщений: 0"
         """
         create_input = (
             "1\n"  # Новый чат
@@ -489,7 +490,8 @@ class TestUC002_SelectExistingChatFromList:
             "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
             "1\n"  # DefaultStrategy
-            "4\n"  # Exit
+            "/menu\n"  # Return to main menu (NOT "4" which would be sent as a message)
+            "4\n"  # Exit app
         )
         run_cli_command(create_input)
 

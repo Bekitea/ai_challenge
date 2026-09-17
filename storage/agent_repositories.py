@@ -124,14 +124,33 @@ class PersistentAgentRepository(AgentRepository):
             llm_provider_factory: Фабрика для создания LLM провайдера.
                                   Вызывается при загрузке каждого агента.
         """
-        self._engine = create_engine(DATABASE_URL, echo=False)
-        self._session_factory = sessionmaker(bind=self._engine, autoflush=False)
+        # Для Windows: отключаем проверку потока и добавляем таймаут
+        self._engine = create_engine(
+            DATABASE_URL,
+            echo=False,
+            connect_args={"check_same_thread": False, "timeout": 30},
+        )
+        self._session_factory = sessionmaker(
+            bind=self._engine, autoflush=False, expire_on_commit=False
+        )
         self._llm_provider = llm_provider
         self._chat_storage = ChatHistoryStorage()
+        self._local_session = None  # Для явного закрытия в тестах
 
     def init_db(self) -> None:
         """Создаёт таблицы в БД, если они не существуют."""
         Base.metadata.create_all(bind=self._engine)
+
+    def close(self) -> None:
+        """Явно закрывает все соединения с БД. Необходимо для Windows тестов."""
+        if self._local_session:
+            try:
+                self._local_session.close()
+            except Exception:
+                pass
+            self._local_session = None
+        # Закрываем все соединения в пуле
+        self._engine.dispose()
 
     def _get_session(self) -> Session:
         """Возвращает новую сессию БД."""
@@ -286,7 +305,9 @@ class PersistentAgentRepository(AgentRepository):
             if strategy:
                 orm.strategy_type = strategy.strategy_type
                 strategy_dict = strategy.to_dict()
-                params = {k: v for k, v in strategy_dict.items() if k != "strategy_type"}
+                params = {
+                    k: v for k, v in strategy_dict.items() if k != "strategy_type"
+                }
                 orm.set_strategy_params(params if params else None)
             else:
                 orm.strategy_type = "DefaultStrategy"
@@ -347,7 +368,11 @@ class PersistentAgentRepository(AgentRepository):
 
             # Сортировка: None в конце, остальные по убыванию
             previews.sort(
-                key=lambda p: p.last_message_timestamp if p.last_message_timestamp else datetime.min,
+                key=lambda p: (
+                    p.last_message_timestamp
+                    if p.last_message_timestamp
+                    else datetime.min
+                ),
                 reverse=True,
             )
             return previews
@@ -437,9 +462,13 @@ class PersistentAgentRepository(AgentRepository):
         # Восстанавливаем счетчики токенов
         parent_counters = parent_agent.token_counters
         agent._token_counters.chat_prompt_tokens = parent_counters.chat_prompt_tokens
-        agent._token_counters.chat_completion_tokens = parent_counters.chat_completion_tokens
+        agent._token_counters.chat_completion_tokens = (
+            parent_counters.chat_completion_tokens
+        )
         agent._token_counters.tech_prompt_tokens = parent_counters.tech_prompt_tokens
-        agent._token_counters.tech_completion_tokens = parent_counters.tech_completion_tokens
+        agent._token_counters.tech_completion_tokens = (
+            parent_counters.tech_completion_tokens
+        )
 
         # Восстанавливаем last_message_timestamp
         if parent_history:
@@ -466,7 +495,9 @@ class PersistentAgentRepository(AgentRepository):
             # Сохраняем стратегию
             orm.strategy_type = new_strategy.strategy_type
             strategy_params_dict = new_strategy.to_dict()
-            params = {k: v for k, v in strategy_params_dict.items() if k != "strategy_type"}
+            params = {
+                k: v for k, v in strategy_params_dict.items() if k != "strategy_type"
+            }
             orm.set_strategy_params(params if params else None)
 
             # Сохраняем счетчики токенов

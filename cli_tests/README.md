@@ -315,6 +315,8 @@ pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings -v
 pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings::test_tc_001_create_chat_default_values -v
 ```
 
+**Note for Windows Users:** If you encounter `[WinError 32] Process cannot access file` errors, see the "Windows-Specific: SQLite File Locking Issue" section below for solutions.
+
 ### Test Organization and Naming Convention
 
 **IMPORTANT:** All E2E tests follow a strict naming convention for direct traceability to the specification:
@@ -717,6 +719,8 @@ pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings::test_tc_0
 python cli_tests/smoke_test.py
 ```
 
+**Windows Users:** Always use `-p no:libtmux` flag to avoid SQLite file locking issues. See "Windows-Specific: SQLite File Locking Issue" section for details.
+
 ### Test Coverage
 - **40 test cases** covering all requirements from `cli_spec.md`
 - **11 Use Cases** organized by user workflow
@@ -753,3 +757,40 @@ python cli_tests/smoke_test.py
 | Tests use production data                  | Verify `APPLICATION_MODE=TEST` is set before running CLI              |
 | Mock provider not used                     | Check `APPLICATION_MODE=TEST` is set; verify app_mode module          |
 | Database path conflicts                    | Confirm test-data and data directories are separate                   |
+| `[WinError 32] Process cannot access file` (Windows) | **SQLite file locking issue on Windows**. See dedicated section below. |
+
+## Windows-Specific: SQLite File Locking Issue
+
+### Problem
+
+On Windows, you may encounter errors like:
+```
+PermissionError: [WinError 32] Процесс не может получить доступ к файлу,
+так как этот файл занят другим процессом: 'D:\\projects\\ai_challenge\\test-data\\agents.db'
+```
+
+This occurs because SQLite on Windows aggressively locks database files, and the lock may not be released immediately after the CLI process exits, especially when tests run in rapid succession.
+
+### Root Cause
+
+- Windows file locking is more strict than Unix/Linux
+- SQLite connections may not close instantly
+- pytest runs tests quickly, sometimes before the OS releases the file lock
+- The `tearDown()` cleanup may attempt to delete `test-data/` while a handle is still open
+
+### Solution
+
+**Manual cleanup between runs**
+
+If errors persist, manually remove the test-data directory before running tests:
+```powershell
+# PowerShell
+Remove-Item -Recurse -Force test-data
+
+# Then run tests
+python -m pytest cli_tests/test_cli_e2e.py -v -p no:libtmux
+```
+
+### Prevention
+
+The test framework includes proper cleanup in `tearDown()`.

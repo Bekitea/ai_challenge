@@ -5,6 +5,11 @@ Tests basic interaction with the mock provider in test mode.
 """
 
 import os
+
+# ВАЖНО: Установить APPLICATION_MODE ДО импорта любых модулей проекта,
+# так как config.py читает эту переменную при загрузке модуля
+os.environ["APPLICATION_MODE"] = "TEST"
+
 import subprocess
 import sys
 from pathlib import Path
@@ -42,21 +47,22 @@ def run_smoke_test():
     print("-" * 50)
 
     try:
-        # Устанавливаем переменную окружения для тестового режима
-        env = os.environ.copy()
-        env["APPLICATION_MODE"] = "TEST"
-
-        # Очищаем тестовую директорию и инициализируем БД
+        # Очищаем тестовую директорию
         import shutil
-
-        from llm_providers import MockLlmProvider
 
         test_data_dir = project_root / "test-data"
         if test_data_dir.exists():
             shutil.rmtree(test_data_dir)
         test_data_dir.mkdir(parents=True, exist_ok=True)
 
+        # Устанавливаем переменную окружения для тестового режима
+        env = os.environ.copy()
+        env["APPLICATION_MODE"] = "TEST"
+
         # Инициализируем базу данных через репозиторий с mock провайдером
+        # Используем тот же путь к БД, который будет использоваться приложением
+        from llm_providers import MockLlmProvider
+
         repo = PersistentAgentRepository(llm_provider=MockLlmProvider())
         repo.init_db()
         print("✓ Test database initialized")
@@ -69,7 +75,7 @@ def run_smoke_test():
             stderr=subprocess.PIPE,
             text=True,
             cwd=str(project_root),
-            env=env,
+            env=env,  # Передаем переменные окружения с APPLICATION_MODE=TEST
         )
 
         stdout, stderr = process.communicate(input=test_input, timeout=30)

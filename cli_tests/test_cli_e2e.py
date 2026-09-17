@@ -11,6 +11,11 @@ where XXX is the test case number from cli_spec.md specification.
 """
 
 import os
+
+# ВАЖНО: Установить APPLICATION_MODE ДО импорта любых модулей проекта,
+# так как config.py читает эту переменную при загрузке модуля
+os.environ["APPLICATION_MODE"] = "TEST"
+
 import shutil
 import subprocess
 import sys
@@ -51,6 +56,8 @@ def setup_clean_test_environment():
 
     repo = PersistentAgentRepository(llm_provider=MockLlmProvider())
     repo.init_db()
+    # Явно закрываем все соединения, чтобы освободить файл БД для subprocess на Windows
+    repo.close()
 
     yield
     # Optional: cleanup after test as well

@@ -51,13 +51,12 @@ def setup_clean_test_environment():
 
     # Initialize database
     sys.path.insert(0, str(get_project_root()))
-    from llm_providers import MockLlmProvider
-    from storage.agent_repositories import PersistentAgentRepository
+    from storage.db_connection import DatabaseConnection
 
-    repo = PersistentAgentRepository(llm_provider=MockLlmProvider())
-    repo.init_db()
-    # Явно закрываем все соединения, чтобы освободить файл БД для subprocess на Windows
-    repo.close()
+    db = DatabaseConnection(connect_args={"check_same_thread": False, "timeout": 30})
+    db.init_tables(__import__("storage.orm_models", fromlist=["Base"]).Base.metadata)
+    # Явно закрываем соединение, чтобы освободить файл БД для subprocess на Windows
+    db.close()
 
     yield
     # Optional: cleanup after test as well

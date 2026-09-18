@@ -8,10 +8,13 @@ application mode (production vs test) from the CLI layer.
 
 from dataclasses import dataclass
 
+from storage.db_connection import DatabaseConnection
+
 from app_mode import get_mode_config
 from config import YANDEX_API_KEY, YANDEX_FOLDER_ID
 from llm_providers import MockLlmProvider, YandexCloudLlmProvider
 from storage.agent_repositories import PersistentAgentRepository
+from storage.orm_models import Base
 from use_cases import (
     ChangeSettingsUseCase,
     CreateBranchUseCase,
@@ -77,8 +80,17 @@ def initialize_application() -> UseCasesBundle:
             folder_id=YANDEX_FOLDER_ID,
         )
 
-    # Initialize repository
-    repository = PersistentAgentRepository(llm_provider)
+    # Initialize database connection and tables
+    db_connection = DatabaseConnection(
+        connect_args={"check_same_thread": False, "timeout": 30}
+    )
+    db_connection.init_tables(Base.metadata)
+
+    # Initialize repository with session factory
+    repository = PersistentAgentRepository(
+        llm_provider=llm_provider,
+        session_factory=db_connection.get_session,
+    )
 
     # Create and return all use cases
     return UseCasesBundle(

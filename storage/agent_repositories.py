@@ -1,15 +1,15 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import datetime
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from agents import (
     Agent,
     AgentPreview,
     AgentSettings,
 )
-from config import DATABASE_URL
 from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
@@ -17,7 +17,7 @@ from context_strategies import (
 )
 from llm_providers import LlmProvider
 from storage.chat_storage import ChatHistoryStorage
-from storage.orm_models import AgentORM, Base
+from storage.orm_models import AgentORM
 
 
 class AgentRepository(ABC):
@@ -116,41 +116,22 @@ class PersistentAgentRepository(AgentRepository):
     Полная история сообщений (Prompt objects) хранится в pickle-файлах.
     """
 
-    def __init__(self, llm_provider: LlmProvider):
+    def __init__(
+        self,
+        llm_provider: LlmProvider,
+        session_factory: Callable[[], Session],
+    ):
         """
         Инициализирует репозиторий.
 
         Args:
-            llm_provider_factory: Фабрика для создания LLM провайдера.
-                                  Вызывается при загрузке каждого агента.
+            llm_provider: Провайдер LLM для запросов.
+            session_factory: Фабрика сессий БД. Внешняя зависимость,
+                            предоставляемая слоем инфраструктуры.
         """
-        # Для Windows: отключаем проверку потока и добавляем таймаут
-        self._engine = create_engine(
-            DATABASE_URL,
-            echo=False,
-            connect_args={"check_same_thread": False, "timeout": 30},
-        )
-        self._session_factory = sessionmaker(
-            bind=self._engine, autoflush=False, expire_on_commit=False
-        )
+        self._session_factory = session_factory
         self._llm_provider = llm_provider
         self._chat_storage = ChatHistoryStorage()
-        self._local_session = None  # Для явного закрытия в тестах
-
-    def init_db(self) -> None:
-        """Создаёт таблицы в БД, если они не существуют."""
-        Base.metadata.create_all(bind=self._engine)
-
-    def close(self) -> None:
-        """Явно закрывает все соединения с БД. Необходимо для Windows тестов."""
-        if self._local_session:
-            try:
-                self._local_session.close()
-            except Exception:
-                pass
-            self._local_session = None
-        # Закрываем все соединения в пуле
-        self._engine.dispose()
 
     def _get_session(self) -> Session:
         """Возвращает новую сессию БД."""

@@ -230,9 +230,12 @@ python cli_tests/smoke_test.py
 
 #### 5. `storage/` — Слой доступа к данным
 **Модули:**
+- `db_connection.py` — управление соединениями с базой данных (инфраструктурный класс)
 - `agent_repositories.py` — репозиторий для агентов (CRUD операции)
 - `chat_storage.py` — хранение истории чатов
 - `orm_models.py` — SQLAlchemy модели для базы данных
+
+**Важно:** Репозитории не должны знать о соединениях с БД. Они получают фабрику сессий как внешнюю зависимость. Управление подключениями инкапсулировано в классе `DatabaseConnection`.
 
 #### 6. `llm_providers.py` — LLM провайдеры
 **Реализации:**
@@ -322,6 +325,19 @@ python cli_tests/smoke_test.py
 
    # ХОРОШО: фабрика скрывает эту логику
    use_cases = initialize_application()  # Фабрика сама определит режим
+   ```
+
+5. **Не создавайте соединения с БД в репозиториях**
+   ```python
+   # ПЛОХО: в репозитории
+   class PersistentAgentRepository:
+       def __init__(self, db_path):
+           self.engine = create_engine(f"sqlite:///{db_path}")
+
+   # ХОРОШО: репозиторий получает фабрику сессий
+   class PersistentAgentRepository:
+       def __init__(self, session_factory):
+           self._session_factory = session_factory
    ```
 
 ### Добавление новой функциональности

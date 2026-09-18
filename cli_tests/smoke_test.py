@@ -19,8 +19,6 @@ script_dir = Path(__file__).parent.absolute()
 project_root = script_dir.parent
 sys.path.insert(0, str(project_root))
 
-from storage.agent_repositories import PersistentAgentRepository
-
 
 def run_smoke_test():
     """Run basic smoke test scenario in test mode."""
@@ -61,11 +59,16 @@ def run_smoke_test():
 
         # Инициализируем базу данных через репозиторий с mock провайдером
         # Используем тот же путь к БД, который будет использоваться приложением
-        from llm_providers import MockLlmProvider
+        from storage.db_connection import DatabaseConnection
 
-        repo = PersistentAgentRepository(llm_provider=MockLlmProvider())
-        repo.init_db()
+        db = DatabaseConnection(
+            connect_args={"check_same_thread": False, "timeout": 30}
+        )
+        db.init_tables(
+            __import__("storage.orm_models", fromlist=["Base"]).Base.metadata
+        )
         print("✓ Test database initialized")
+        db.close()
 
         # Run the CLI application with APPLICATION_MODE=TEST for mock provider
         process = subprocess.Popen(

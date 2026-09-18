@@ -57,6 +57,7 @@ class AgentSettings:
 @dataclass
 class TokenCounters:
     """Счетчики токенов для чата."""
+
     chat_prompt_tokens: int = 0
     chat_completion_tokens: int = 0
     tech_prompt_tokens: int = 0
@@ -79,9 +80,13 @@ class Prompt:
 
     role: str  # "system", "user", "assistant"
     content: str
-    timestamp: datetime | None = None  # None для system, обязательно для user и assistant
+    timestamp: datetime | None = (
+        None  # None для system, обязательно для user и assistant
+    )
     reasoning: str | None = None  # Только для assistant
-    settings: AgentSettings | None = None  # Только для assistant (настройки на момент генерации)
+    settings: AgentSettings | None = (
+        None  # Только для assistant (настройки на момент генерации)
+    )
     prompt_tokens: int | None = None  # Только для assistant
     completion_tokens: int | None = None  # Только для assistant
 
@@ -190,8 +195,13 @@ class Agent:
         response = self._llm_provider.generate(messages=messages_for_llm, **kwargs)
 
         # Проверяем лимит контекстного окна (только для assistant prompt)
-        context_window_size = settings.context_window_size or 200_000  # По умолчанию 200k
-        if response.prompt_tokens is not None and response.prompt_tokens > context_window_size:
+        context_window_size = (
+            settings.context_window_size or 200_000
+        )  # По умолчанию 200k
+        if (
+            response.prompt_tokens is not None
+            and response.prompt_tokens > context_window_size
+        ):
             raise ContextWindowExceededError(
                 f"Превышен лимит контекстного окна: {response.prompt_tokens} токенов (лимит: {context_window_size})"
             )
@@ -213,9 +223,13 @@ class Agent:
 
         if response.completion_tokens is not None:
             if is_tech_request:
-                self._token_counters.tech_completion_tokens += response.completion_tokens
+                self._token_counters.tech_completion_tokens += (
+                    response.completion_tokens
+                )
             else:
-                self._token_counters.chat_completion_tokens += response.completion_tokens
+                self._token_counters.chat_completion_tokens += (
+                    response.completion_tokens
+                )
 
         # Сохраняем ответ ассистента
         assistant_timestamp = datetime.now()

@@ -379,6 +379,15 @@ class TestUC001_CreateChatWithAllSettings:
 pytest cli_tests/test_cli_e2e.py -v
 ```
 
+**Smoke Test (comprehensive scenario):**
+```bash
+# Runs multiple test cases via pytest to verify critical paths:
+# - TC-009: Multiple message exchange (mock provider + history)
+# - TC-027: Settings modification (storage read/write)
+# - TC-024: Branching operations (storage + navigation)
+python cli_tests/smoke_test.py
+```
+
 **Manual Exploration:**
 ```bash
 # Run CLI manually in test mode (Mock provider, ./test-data/)

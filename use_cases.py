@@ -246,9 +246,6 @@ class ShowChatInfoUseCase:
 class CreateBranchUseCase:
     """Use case для создания ветки текущего чата."""
 
-    def __init__(self, repository: AgentRepository):
-        self.repository = repository
-
     def execute(self, parent_agent: Agent, new_name: str | None = None) -> Agent:
         """
         Создаёт ветку текущего чата.
@@ -260,10 +257,7 @@ class CreateBranchUseCase:
         Returns:
             Agent: Новый агент-ветка.
         """
-        return self.repository.branch_agent(
-            parent_agent=parent_agent,
-            new_name=new_name,
-        )
+        return parent_agent.branch(new_name=new_name)
 
 
 class SelectContextStrategyUseCase:

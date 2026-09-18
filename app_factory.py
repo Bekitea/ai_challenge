@@ -8,12 +8,11 @@ application mode (production vs test) from the CLI layer.
 
 from dataclasses import dataclass
 
-from storage.db_connection import DatabaseConnection
-
 from app_mode import get_mode_config
 from config import YANDEX_API_KEY, YANDEX_FOLDER_ID
 from llm_providers import MockLlmProvider, YandexCloudLlmProvider
 from storage.agent_repositories import PersistentAgentRepository
+from storage.db_connection import DatabaseConnection
 from storage.orm_models import Base
 from use_cases import (
     ChangeSettingsUseCase,
@@ -102,6 +101,6 @@ def initialize_application() -> UseCasesBundle:
         show_history=ShowHistoryUseCase(),
         show_summary=ShowSummaryUseCase(),
         show_chat_info=ShowChatInfoUseCase(),
-        create_branch=CreateBranchUseCase(repository),
+        create_branch=CreateBranchUseCase(),
         select_strategy=SelectContextStrategyUseCase(),
     )

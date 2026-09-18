@@ -294,3 +294,73 @@ class Agent:
         if len(last_msg.content) > max_length:
             preview += "..."
         return preview
+
+    def branch(
+        self,
+        new_name: str | None = None,
+    ) -> Agent:
+        """
+        Создаёт нового агента-ветку на основе текущего.
+
+        Копируются настройки, вся история сообщений, счетчики токенов и стратегия.
+
+        Args:
+            new_name: Новое название для ветки (опционально).
+
+        Returns:
+            Agent: Новый агент-ветка.
+        """
+        from datetime import datetime
+        from uuid import uuid4
+
+        from context_strategies import create_strategy_from_dict
+
+        new_agent_id = str(uuid4())
+        if not new_name:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            new_name = f"{self.name} (branch {timestamp})"
+
+        current_settings = self.get_settings()
+        current_history = self.get_history()
+
+        current_strategy = self.strategy
+        strategy_dict = current_strategy.to_dict()
+        new_strategy = create_strategy_from_dict(strategy_dict)
+
+        branched_agent = Agent(
+            agent_id=new_agent_id,
+            name=new_name,
+            llm_provider=self._llm_provider,
+            initial_settings=current_settings,
+            system_prompt=None,
+            history_storage=self._history_storage,
+            messages=current_history.copy(),
+            strategy=new_strategy,
+            auto_save=True,
+        )
+
+        branched_agent._repository = self._repository
+
+        current_counters = self.token_counters
+        branched_agent._token_counters.chat_prompt_tokens = (
+            current_counters.chat_prompt_tokens
+        )
+        branched_agent._token_counters.chat_completion_tokens = (
+            current_counters.chat_completion_tokens
+        )
+        branched_agent._token_counters.tech_prompt_tokens = (
+            current_counters.tech_prompt_tokens
+        )
+        branched_agent._token_counters.tech_completion_tokens = (
+            current_counters.tech_completion_tokens
+        )
+
+        if current_history:
+            non_system_msgs = [m for m in current_history if m.role != "system"]
+            if non_system_msgs:
+                branched_agent._last_message_timestamp = non_system_msgs[-1].timestamp
+
+        if self._repository is not None:
+            self._repository.update_agent(branched_agent)
+
+        return branched_agent

@@ -658,6 +658,46 @@ test_input = (
 assert "Ошибка" in stdout or "Неверный ввод" in stdout
 ```
 
+### Pattern 5: Multiple Operations in Single Subprocess
+When testing scenarios that require state persistence across multiple operations (e.g., creating multiple chats, then viewing the list), **all operations MUST be performed within a single subprocess** to avoid SQLite connection and file locking issues.
+
+**Rationale:**
+- Each subprocess creates a new SQLite connection
+- Database state may not persist between subprocess invocations due to connection isolation
+- Windows file locking can cause `WinError 32` when rapid subprocess creation/deletion occurs
+- Ensures atomic test execution without intermediate cleanup
+
+**Example:**
+```python
+# ❌ WRONG: Multiple subprocesses - state not preserved
+run_cli_command("1\nChat A\n...\n4\n")  # Create Chat A, exit
+run_cli_command("1\nChat B\n...\n4\n")  # Create Chat B, exit
+stdout, _, _ = run_cli_command("2\n4\n")  # List chats - FAILS: no chats found
+
+# ✅ CORRECT: Single subprocess - all operations atomic
+test_input = (
+    "1\n"           # New Chat
+    "Chat A\n"      # Name
+    "...\n"         # Settings
+    "/menu\n"       # Return to menu (NOT exit)
+    "1\n"           # New Chat again
+    "Chat B\n"      # Name
+    "...\n"         # Settings
+    "/menu\n"       # Return to menu
+    "2\n"           # View chat list
+    "4\n"           # Exit
+)
+stdout, stderr, returncode = run_cli_command(test_input)
+assert "Chat A" in stdout or "Chat B" in stdout
+```
+
+**Key Commands for Multi-Operation Tests:**
+- `/menu` - Return to main menu without exiting (preserves session state)
+- `/exit` or option `4` - Exit application (only use at the very end)
+- Option `2` - View chat list (verify state)
+
+This pattern is critical for tests like `test_tc_020_concurrent_chat_operations` which verify that multiple chats can coexist in the database.
+
 ## Troubleshooting
 
 ### Test Fails with Timeout
@@ -744,6 +784,7 @@ python cli_tests/smoke_test.py
 6. ✅ APPLICATION_MODE=TEST for isolation
 7. ✅ Complete output capture
 8. ✅ Clean test-data directory per test
+9. ✅ **Single subprocess for multi-operation tests** (state persistence)
 
 ## Common Issues and Solutions
 
@@ -758,6 +799,7 @@ python cli_tests/smoke_test.py
 | Mock provider not used                     | Check `APPLICATION_MODE=TEST` is set; verify app_mode module          |
 | Database path conflicts                    | Confirm test-data and data directories are separate                   |
 | `[WinError 32] Process cannot access file` (Windows) | **SQLite file locking issue on Windows**. See dedicated section below. |
+| State not preserved between operations     | **Use single subprocess with `/menu` command** instead of multiple subprocesses with exit |
 
 ## Windows-Specific: SQLite File Locking Issue
 

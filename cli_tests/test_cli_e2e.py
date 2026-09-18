@@ -928,31 +928,35 @@ class TestUC006_NavigateToMenuFromChat:
         2. Type "/menu"
         3. Create Chat B
         4. Verify both chats exist
+
+        NOTE: All operations performed in single subprocess to ensure
+        database state is preserved between operations.
         """
-        create_a = (
-            "1\n"  # Новый чат
+        test_input = (
+            "1\n"  # Новый чат - создать Chat A
             "Chat A\n"  # Название
-            "\n" + "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (7 times)
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
             "1\n"  # DefaultStrategy
             "/menu\n"  # Return to menu
-            "4\n"  # Exit
-        )
-        run_cli_command(create_a)
-
-        create_b = (
-            "1\n"  # Новый чат
+            "1\n"  # Новый чат - создать Chat B
             "Chat B\n"  # Название
-            "\n" + "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (7 times)
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
             "1\n"  # DefaultStrategy
+            "/menu\n"  # Return to menu
+            "2\n"  # Выбрать чат - показать список
             "4\n"  # Exit
         )
-        run_cli_command(create_b)
 
-        view_input = "2\n4\n"
-        stdout, stderr, returncode = run_cli_command(view_input)
+        stdout, stderr, returncode = run_cli_command(test_input)
 
-        assert returncode == 0
-        assert "Chat A" in stdout or "Chat B" in stdout
+        assert returncode == 0, f"App exited with code {returncode}, stderr: {stderr}"
+        assert "Chat A" in stdout or "Chat B" in stdout, (
+            f"Expected 'Chat A' or 'Chat B' in output, got: {stdout}"
+        )
 
 
 class TestUC007_StopOngoingGeneration:

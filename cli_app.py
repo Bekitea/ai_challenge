@@ -15,6 +15,7 @@ It only interacts with use cases.
 import os
 
 from agents import Agent, AgentSettings, ContextWindowExceededError
+from config import AVAILABLE_MODELS, REASONING_EFFORTS
 from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
@@ -43,12 +44,6 @@ class CLIChat:
     def __init__(self, use_cases: UseCasesBundle):
         self.use_cases = use_cases
         self.current_agent: Agent | None = None
-        self.available_models = {
-            "1": ("gpt-oss-120b/latest", "GPT OSS 120B"),
-            "2": ("qwen3.6-35b-a3b/latest", "Qwen3.6-35B"),
-            "3": ("aliceai-llm-flash/latest", "Alice AI LLM Flash"),
-        }
-        self.reasoning_efforts = ["none", "low", "medium", "high"]
 
     def clear_screen(self):
         """Очищает экран консоли."""
@@ -105,13 +100,13 @@ class CLIChat:
 
         # Выбор модели
         print("\nВыберите модель:")
-        for key, (model_id, name) in self.available_models.items():
+        for key, (model_id, name) in AVAILABLE_MODELS.items():
             print(f"  {key}. {name} ({model_id})")
 
         while True:
             model_choice = input("\nВаш выбор (1-3): ").strip()
-            if model_choice in self.available_models:
-                model_id = self.available_models[model_choice][0]
+            if model_choice in AVAILABLE_MODELS:
+                model_id = AVAILABLE_MODELS[model_choice][0]
                 break
             print("Неверный выбор, попробуйте снова.")
 
@@ -166,21 +161,21 @@ class CLIChat:
 
         # Reasoning effort
         print("\nReasoning Effort:")
-        for i, effort in enumerate(self.reasoning_efforts, 1):
+        for i, effort in enumerate(REASONING_EFFORTS, 1):
             print(f"  {i}. {effort}")
 
         while True:
             try:
                 re_choice = int(
                     input(
-                        f"\nВаш выбор (1-{len(self.reasoning_efforts)}, по умолчанию 1): "
+                        f"\nВаш выбор (1-{len(REASONING_EFFORTS)}, по умолчанию 1): "
                     ).strip()
                     or "1"
                 )
-                if 1 <= re_choice <= len(self.reasoning_efforts):
-                    reasoning_effort = self.reasoning_efforts[re_choice - 1]
+                if 1 <= re_choice <= len(REASONING_EFFORTS):
+                    reasoning_effort = REASONING_EFFORTS[re_choice - 1]
                     break
-                print(f"Выбор должен быть от 1 до {len(self.reasoning_efforts)}")
+                print(f"Выбор должен быть от 1 до {len(REASONING_EFFORTS)}")
             except ValueError:
                 print("Введите корректное число")
 

@@ -5,6 +5,8 @@ This module encapsulates all business logic interactions,
 separating them from the CLI presentation layer.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from agents import (

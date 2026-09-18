@@ -11,7 +11,7 @@ YANDEX_FOLDER_ID = os.getenv("YANDEX_CLOUD_FOLDER")
 YANDEX_DEFAULT_MODEL = "aliceai-llm-flash/latest"
 
 # Определение режима работы приложения
-APPLICATION_MODE = os.getenv("APPLICATION_MODE", "PROD").upper()
+APPLICATION_MODE = os.getenv("APPLICATION_MODE", "PROD").upper()  # TEST, PROD
 
 if APPLICATION_MODE == "TEST":
     # Тестовый режим: изолированное хранилище

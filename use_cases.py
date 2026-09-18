@@ -1,5 +1,5 @@
 """
-Use Cases module for CLI application.
+Use Cases module.
 
 This module encapsulates all business logic interactions,
 separating them from the CLI presentation layer.
@@ -138,7 +138,6 @@ class SendMessageUseCase:
             ContextWindowExceededError: Если превышен лимит контекстного окна.
         """
         response = agent.continue_dialog(user_message)
-        self.repository.update_agent(agent)
         return response, agent
 
 
@@ -167,7 +166,6 @@ class ChangeSettingsUseCase:
             new_settings: Новые настройки.
         """
         agent.update_settings(new_settings)
-        self.repository.update_agent(agent)
 
 
 class ShowHistoryUseCase:

@@ -170,7 +170,11 @@ class PersistentAgentRepository(AgentRepository):
             history_storage=self._chat_storage,
             messages=history if history else None,
             strategy=strategy,
+            auto_save=True,  # Включаем автосохранение для загруженных агентов
         )
+
+        # Устанавливаем ссылку на репозиторий для автосохранения
+        agent._repository = self
 
         # Восстанавливаем счетчики токенов
         agent._token_counters.chat_prompt_tokens = orm.chat_prompt_tokens
@@ -269,7 +273,11 @@ class PersistentAgentRepository(AgentRepository):
             initial_settings=initial_settings,
             system_prompt=system_prompt,
             strategy=strategy,
+            auto_save=True,  # Включаем автосохранение для новых агентов
         )
+
+        # Устанавливаем ссылку на репозиторий для автосохранения
+        agent._repository = self
 
         # Сохраняем метаданные в БД
         with self._get_session() as session:
@@ -438,7 +446,11 @@ class PersistentAgentRepository(AgentRepository):
             history_storage=self._chat_storage,
             messages=parent_history.copy(),  # Копируем всю историю
             strategy=new_strategy,
+            auto_save=True,  # Включаем автосохранение для новых агентов-веток
         )
+
+        # Устанавливаем ссылку на репозиторий для автосохранения
+        agent._repository = self
 
         # Восстанавливаем счетчики токенов
         parent_counters = parent_agent.token_counters

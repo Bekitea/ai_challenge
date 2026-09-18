@@ -115,6 +115,7 @@ class Agent:
         history_storage: Any | None = None,
         messages: list[Prompt] | None = None,
         strategy: ContextWindowStrategy | None = None,
+        auto_save: bool = True,
     ):
         self.agent_id = agent_id
         self.name = name
@@ -123,6 +124,8 @@ class Agent:
         self._messages: list[Prompt] = messages if messages is not None else []
         self._history_storage = history_storage
         self._strategy = strategy or DefaultStrategy()
+        self._auto_save = auto_save
+        self._repository = None  # Устанавливается при регистрации в репозитории
 
         # Добавляем системный промпт только если сообщений ещё нет
         if system_prompt and not self._messages:
@@ -152,10 +155,22 @@ class Agent:
     def update_settings(self, new_settings: AgentSettings) -> None:
         """Обновляет настройки агента."""
         self._settings = new_settings
+        if self._repository is not None and self._auto_save:
+            self.save()
 
     def get_history(self) -> list[Prompt]:
         """Возвращает всю историю диалога (включая системный промпт)."""
         return self._messages.copy()
+
+    def save(self) -> None:
+        """
+        Сохраняет текущее состояние агента.
+
+        Если агент зарегистрирован в репозитории и включен auto_save,
+        сохраняет метаданные и историю через репозиторий.
+        """
+        if self._repository is not None and self._auto_save:
+            self._repository.update_agent(self)
 
     def continue_dialog(self, user_prompt: str) -> LlmResponse:
         """
@@ -251,6 +266,10 @@ class Agent:
         )
         self._messages.append(assistant_message)
         self._last_message_timestamp = assistant_timestamp
+
+        # Автосохранение после каждого сообщения
+        if self._auto_save:
+            self.save()
 
         return response
 

@@ -95,7 +95,7 @@ class Prompt:
 class AgentPreview:
     """Превью агента для отображения в списке."""
 
-    agent_id: str
+    agent_id: int
     name: str
     last_message_timestamp: datetime | None
     message_count: int
@@ -107,7 +107,7 @@ class Agent:
 
     def __init__(
         self,
-        agent_id: str,
+        agent_id: int | None,
         name: str,
         llm_provider: LlmProvider,
         initial_settings: AgentSettings | None = None,
@@ -116,8 +116,10 @@ class Agent:
         messages: list[Prompt] | None = None,
         strategy: ContextWindowStrategy | None = None,
         auto_save: bool = True,
+        conversation_id: str | None = None,
     ):
         self.agent_id = agent_id
+        self.conversation_id = conversation_id  # UUID для связи с файловым хранилищем
         self.name = name
         self._llm_provider = llm_provider
         self._settings = initial_settings or AgentSettings()
@@ -303,6 +305,7 @@ class Agent:
         Создаёт нового агента-ветку на основе текущего.
 
         Копируются настройки, вся история сообщений, счетчики токенов и стратегия.
+        Ветка получает новый conversation_id (UUID) для отдельного хранения истории.
 
         Args:
             new_name: Новое название для ветки (опционально).
@@ -315,7 +318,7 @@ class Agent:
 
         from context_strategies import create_strategy_from_dict
 
-        new_agent_id = str(uuid4())
+        # Новый агент создается без ID - он будет установлен при сохранении в репозиторий
         if not new_name:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             new_name = f"{self.name} (branch {timestamp})"
@@ -328,7 +331,8 @@ class Agent:
         new_strategy = create_strategy_from_dict(strategy_dict)
 
         branched_agent = Agent(
-            agent_id=new_agent_id,
+            agent_id=None,
+            conversation_id=str(uuid4()),  # Новый UUID для ветки
             name=new_name,
             llm_provider=self._llm_provider,
             initial_settings=current_settings,

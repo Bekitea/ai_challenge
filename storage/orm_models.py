@@ -32,7 +32,8 @@ class AgentORM(Base):
     ORM модель для хранения метаданных агента.
 
     Атрибуты:
-        id: UUID агента (primary key).
+        id: Числовой ID агента (primary key), отображается пользователю.
+        conversation_id: UUID для связи с историей переписки в файловом хранилище.
         name: Название агента/чата.
         last_message_timestamp: Время последнего сообщения (для сортировки).
         message_count: Количество сообщений в диалоге (без системного промпта).
@@ -48,7 +49,8 @@ class AgentORM(Base):
     """
     __tablename__ = "agents"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     last_message_timestamp: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

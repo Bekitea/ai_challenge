@@ -44,12 +44,12 @@ class AgentRepository(ABC):
         """
 
     @abstractmethod
-    def get_agent(self, agent_id: str) -> Agent | None:
+    def get_agent(self, agent_id: int) -> Agent | None:
         """
         Получает агента по идентификатору.
 
         Args:
-            agent_id: Уникальный идентификатор агента.
+            agent_id: Уникальный числовой идентификатор агента.
 
         Returns:
             Agent или None, если агент не найден.
@@ -77,12 +77,12 @@ class AgentRepository(ABC):
         """
 
     @abstractmethod
-    def delete_agent(self, agent_id: str) -> bool:
+    def delete_agent(self, agent_id: int) -> bool:
         """
         Удаляет агента из БД и удаляет файл истории.
 
         Args:
-            agent_id: UUID агента.
+            agent_id: Числовой ID агента.
 
         Returns:
             True, если агент был удалён, False если не найден.
@@ -139,11 +139,12 @@ class PersistentAgentRepository(AgentRepository):
         else:
             strategy = DefaultStrategy()
 
-        # Загружаем историю из файла
-        history = self._chat_storage.load_history(orm.id)
+        # Загружаем историю из файла по conversation_id (UUID)
+        history = self._chat_storage.load_history(orm.conversation_id)
 
         agent = Agent(
             agent_id=orm.id,
+            conversation_id=orm.conversation_id,  # Передаем conversation_id
             name=orm.name,
             llm_provider=self._llm_provider,
             initial_settings=settings,
@@ -182,7 +183,6 @@ class PersistentAgentRepository(AgentRepository):
             orm = session.get(AgentORM, agent.agent_id)
             if orm is None:
                 orm = AgentORM()
-                orm.id = agent.agent_id
                 session.add(orm)
 
             orm.name = agent.name
@@ -190,6 +190,10 @@ class PersistentAgentRepository(AgentRepository):
             orm.message_count = agent.message_count
             orm.last_message_preview = agent.get_last_message_preview()
             orm.set_settings(agent.get_settings())
+
+            # Сохраняем conversation_id, если он установлен (например, при ветвлении)
+            if agent.conversation_id:
+                orm.conversation_id = agent.conversation_id
 
             # Сохраняем системный промпт, если он есть
             history = agent.get_history()
@@ -214,6 +218,10 @@ class PersistentAgentRepository(AgentRepository):
 
             session.commit()
 
+            # После commit получаем сгенерированный ID и conversation_id, если это новый агент
+            if agent.agent_id is None:
+                agent.agent_id = orm.id
+
     def _save_agent_history(self, agent: Agent) -> None:
         """
         Сохраняет историю сообщений агента в файл.
@@ -221,8 +229,9 @@ class PersistentAgentRepository(AgentRepository):
         Args:
             agent: Агент для сохранения.
         """
+        conversation_id = agent.conversation_id
         history = agent.get_history()
-        self._chat_storage.save_history(agent.agent_id, history)
+        self._chat_storage.save_history(conversation_id, history)
 
     def create_agent(
         self,
@@ -244,11 +253,9 @@ class PersistentAgentRepository(AgentRepository):
         Returns:
             Agent: Новый экземпляр агента.
         """
-        from uuid import uuid4
-
-        agent_id = str(uuid4())
+        # conversation_id генерируется автоматически в ORM
         agent = Agent(
-            agent_id=agent_id,
+            agent_id=None,  # Будет установлен после сохранения в БД
             name=name,
             llm_provider=self._llm_provider,
             initial_settings=initial_settings,
@@ -260,10 +267,9 @@ class PersistentAgentRepository(AgentRepository):
         # Устанавливаем ссылку на репозиторий для автосохранения
         agent._repository = self
 
-        # Сохраняем метаданные в БД
+        # Сохраняем метаданные в БД и получаем сгенерированные ID
         with self._get_session() as session:
             orm = AgentORM()
-            orm.id = agent_id
             orm.name = name
             orm.set_settings(initial_settings)
             orm.system_prompt = system_prompt
@@ -291,18 +297,20 @@ class PersistentAgentRepository(AgentRepository):
 
             session.add(orm)
             session.commit()
+            # После commit ORM получает сгенерированный числовой id и conversation_id
+            agent.agent_id = orm.id
 
-        # Сохраняем начальную историю (системный промпт) в файл
-        self._save_agent_history(agent)
+        # Сохраняем начальную историю (системный промпт) в файл по conversation_id
+        self._chat_storage.save_history(agent.conversation_id, agent.get_history())
 
         return agent
 
-    def get_agent(self, agent_id: str) -> Agent | None:
+    def get_agent(self, agent_id: int) -> Agent | None:
         """
-        Получает агента по ID, загружая историю из файла.
+        Получает агента по числовому ID, загружая историю из файла.
 
         Args:
-            agent_id: UUID агента.
+            agent_id: Числовой ID агента.
 
         Returns:
             Agent или None, если не найден.
@@ -328,7 +336,7 @@ class PersistentAgentRepository(AgentRepository):
             previews = []
             for orm in orms:
                 preview = AgentPreview(
-                    agent_id=orm.id,
+                    agent_id=orm.id,  # Числовой ID для отображения пользователю
                     name=orm.name,
                     last_message_timestamp=orm.last_message_timestamp,
                     message_count=orm.message_count,
@@ -359,12 +367,12 @@ class PersistentAgentRepository(AgentRepository):
         self._save_agent_metadata(agent)
         self._save_agent_history(agent)
 
-    def delete_agent(self, agent_id: str) -> bool:
+    def delete_agent(self, agent_id: int) -> bool:
         """
         Удаляет агента из БД и удаляет файл истории.
 
         Args:
-            agent_id: UUID агента.
+            agent_id: Числовой ID агента.
 
         Returns:
             True, если агент был удалён, False если не найден.
@@ -374,9 +382,11 @@ class PersistentAgentRepository(AgentRepository):
             if orm is None:
                 return False
 
+            # Получаем conversation_id перед удалением записи из БД
+            conversation_id = orm.conversation_id
             session.delete(orm)
             session.commit()
 
-        # Удаляем файл истории
-        self._chat_storage.delete_history(agent_id)
+        # Удаляем файл истории по conversation_id
+        self._chat_storage.delete_history(conversation_id)
         return True

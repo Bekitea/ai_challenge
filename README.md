@@ -312,6 +312,13 @@ python cli_tests/smoke_test.py
    - Параметр `auto_save=True` включен по умолчанию для всех агентов
    - Use cases не должны явно вызывать `repository.update_agent()` — это ответственность агента
 
+7. **Минимизируйте количество запросов к базе данных (ORM)**
+   - **Подгружайте все необходимые данные сразу при первом обращении к агенту.** Например, при получении агента из репозитория убедитесь, что все нужные поля и данные загружены сразу. То же самое касается внешних ключей, если связанные объекты реально нужны. 
+   - **Избегай лишних join'ов в запросах** Но если не нужны - нельзя допускать лишних join'ов и подгрузки ненужных данных.
+   - **Избегайте лишних запросов внутри методов агента.** Если методу `_save_agent_history()` нужен `conversation_id`, он должен быть уже загружен в объекте `Agent` при инициализации, а не запрашиваться отдельно из БД на каждый вызов.
+   - **Принцип "один раз загрузить, много раз использовать":** При создании или получении агента через `get_agent()` загрузите все связанные данные одним запросом. Это критично для производительности, особенно в сценариях с частыми операциями записи/чтения.
+   - **Проверяйте код на наличие N+1 запросов:** Убедитесь, что циклические операции не вызывают повторных обращений к БД за одними и теми же данными.
+
 #### ❌ DON'T (Не делайте)
 
 1. **Не добавляйте бизнес-логику в CLI слой**
@@ -379,6 +386,32 @@ python cli_tests/smoke_test.py
        def execute(self, agent, message):
            response = agent.continue_dialog(message)  # ✅ Агент сам сохранит
            return response, agent
+   ```
+
+7. **Не делайте лишние запросы к БД при работе с ORM**
+   ```python
+   # ПЛОХО: conversation_id запрашивается из БД на каждый вызов метода
+   class Agent:
+       def _save_agent_history(self, messages):
+           # ❌ Отдельный запрос к БД внутри метода
+           conv_id = self._repository.get_conversation_id(self.id)
+           self._chat_storage.save(conv_id, messages)
+
+   # ХОРОШО: conversation_id загружен один раз при инициализации агента
+   class Agent:
+       def __init__(self, ..., conversation_id: UUID):
+           self._conversation_id = conversation_id  # ✅ Загружено заранее
+
+       def _save_agent_history(self, messages):
+           # Использует уже загруженное значение без запроса к БД
+           self._chat_storage.save(self._conversation_id, messages)
+
+   # В репозитории - загрузка всех данных одним запросом:
+   def get_agent(self, agent_id: int) -> Agent:
+       with self._session_factory() as session:
+           db_agent = session.query(AgentORM).filter_by(id=agent_id).first()
+           # ✅ Возвращаем агента со всеми данными, включая conversation_id
+           return Agent(id=db_agent.id, conversation_id=db_agent.conversation_id, ...)
    ```
 
 ### Добавление новой функциональности

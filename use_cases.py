@@ -1,10 +1,3 @@
-"""
-Use Cases module.
-
-This module encapsulates all business logic interactions,
-separating them from the CLI presentation layer.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -47,7 +40,7 @@ class ChatInfo:
     """Информация о чате для отображения."""
 
     name: str
-    agent_id: str
+    agent_id: int
     strategy_type: str
     message_count: int
     total_prompt_tokens: int
@@ -112,8 +105,8 @@ class SelectChatUseCase:
         """Получает список всех чатов."""
         return self.repository.get_all_previews()
 
-    def get_agent(self, agent_id: str) -> Agent | None:
-        """Получает агент по ID."""
+    def get_agent(self, agent_id: int) -> Agent | None:
+        """Получает агент по числовому ID."""
         return self.repository.get_agent(agent_id)
 
 

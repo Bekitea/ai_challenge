@@ -2,7 +2,7 @@ import pickle
 from pathlib import Path
 
 from agents import Prompt
-from config import CHAT_HISTORY_DIR
+from config import FILE_STORAGE_DIR
 
 
 class ChatHistoryStorage:
@@ -22,7 +22,7 @@ class ChatHistoryStorage:
             storage_dir: Путь к директории для хранения файлов.
                          По умолчанию используется config.CHAT_HISTORY_DIR.
         """
-        self.storage_dir = Path(storage_dir) if storage_dir else Path(CHAT_HISTORY_DIR)
+        self.storage_dir = Path(storage_dir) if storage_dir else Path(FILE_STORAGE_DIR)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_file_path(self, agent_id: str) -> Path:

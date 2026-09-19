@@ -23,13 +23,13 @@ APPLICATION_MODE = os.getenv("APPLICATION_MODE", "PROD").upper()  # TEST, PROD
 if APPLICATION_MODE == "TEST":
     # Тестовый режим: изолированное хранилище
     DATABASE_PATH = "./test-data/agents.db"
-    CHAT_HISTORY_DIR = "./test-data/chat_history"
+    FILE_STORAGE_DIR = "./test-data/file_storage"
 else:
     # Продакшен режим: основное хранилище
     DATABASE_PATH = "./data/agents.db"
-    CHAT_HISTORY_DIR = "./data/chat_history"
+    FILE_STORAGE_DIR = "./data/file_storage"
 
 DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 
 Path(DATABASE_PATH).parent.mkdir(parents=True, exist_ok=True)
-Path(CHAT_HISTORY_DIR).mkdir(parents=True, exist_ok=True)
+Path(FILE_STORAGE_DIR).mkdir(parents=True, exist_ok=True)

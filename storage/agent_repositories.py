@@ -16,7 +16,7 @@ from context_strategies import (
     create_strategy_from_dict,
 )
 from llm_providers import LlmProvider
-from storage.chat_storage import ChatHistoryStorage
+from storage.conversation_repository import ConversationRepository
 from storage.orm_models import AgentORM
 
 
@@ -112,7 +112,7 @@ class PersistentAgentRepository(AgentRepository):
         """
         self._session_factory = session_factory
         self._llm_provider = llm_provider
-        self._chat_storage = ChatHistoryStorage()
+        self._chat_storage = ConversationRepository()
 
     def _get_session(self) -> Session:
         """Возвращает новую сессию БД."""

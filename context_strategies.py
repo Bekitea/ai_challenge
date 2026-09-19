@@ -35,6 +35,7 @@ class ContextWindowStrategy(ABC):
         self,
         history: list[Any],  # Список Prompt объектов
         llm_provider: LlmProvider | None = None,
+        agent_memory_text: str | None = None,  # Текст памяти о пользователе
     ) -> PreparedMessages:
         """
         Подготавливает сообщения для отправки в LLM провайдер.
@@ -42,6 +43,7 @@ class ContextWindowStrategy(ABC):
         Args:
             history: Полная история сообщений (включая системный промпт).
             llm_provider: Провайдер LLM для выполнения суммаризации (если нужен).
+            agent_memory_text: Текст памяти о пользователе (опционально).
 
         Returns:
             PreparedMessages: Сообщения для отправки в LLM и метаданные.
@@ -53,7 +55,7 @@ class ContextWindowStrategy(ABC):
 
     @classmethod
     @abstractmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ContextWindowStrategy":
+    def from_dict(cls, data: dict[str, Any]) -> ContextWindowStrategy:
         """Десериализует стратегию из словаря."""
 
     @property
@@ -72,19 +74,27 @@ class DefaultStrategy(ContextWindowStrategy):
         self,
         history: list[Any],
         llm_provider: LlmProvider | None = None,
+        agent_memory_text: str | None = None,
     ) -> PreparedMessages:
         """Просто возвращает все сообщения как есть."""
         messages = []
         for msg in history:
             msg_dict: dict[str, Any] = {"role": msg.role, "content": msg.content}
             messages.append(msg_dict)
+
+        # Добавляем память о пользователе если есть
+        if agent_memory_text and messages and messages[0]["role"] == "system":
+            messages[0]["content"] = f"{messages[0]['content']}\n\n{agent_memory_text}"
+        elif agent_memory_text:
+            messages.insert(0, {"role": "system", "content": agent_memory_text})
+
         return PreparedMessages(messages=messages)
 
     def to_dict(self) -> dict[str, Any]:
         return {"strategy_type": self.strategy_type}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "DefaultStrategy":
+    def from_dict(cls, data: dict[str, Any]) -> DefaultStrategy:
         return cls()
 
     @property
@@ -133,6 +143,7 @@ class SummarizationStrategy(ContextWindowStrategy):
         self,
         history: list[Any],
         llm_provider: LlmProvider | None = None,
+        agent_memory_text: str | None = None,
     ) -> PreparedMessages:
         """
         Подготавливает сообщения для отправки в LLM.
@@ -202,6 +213,12 @@ class SummarizationStrategy(ContextWindowStrategy):
 
         for msg in other_messages:
             messages.append({"role": msg.role, "content": msg.content})
+
+        # Добавляем память о пользователе если есть
+        if agent_memory_text and messages and messages[0]["role"] == "system":
+            messages[0]["content"] = f"{messages[0]['content']}\n\n{agent_memory_text}"
+        elif agent_memory_text:
+            messages.insert(0, {"role": "system", "content": agent_memory_text})
 
         return PreparedMessages(
             messages=messages,
@@ -273,7 +290,7 @@ class SummarizationStrategy(ContextWindowStrategy):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SummarizationStrategy":
+    def from_dict(cls, data: dict[str, Any]) -> SummarizationStrategy:
         instance = cls(
             non_compressible_count=data["non_compressible_count"],
             buffer_size=data["buffer_size"],
@@ -328,6 +345,7 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
         self,
         history: list[Any],
         llm_provider: LlmProvider | None = None,
+        agent_memory_text: str | None = None,
     ) -> PreparedMessages:
         """
         Подготавливает сообщения для отправки в LLM.
@@ -375,6 +393,10 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
                 if new_summary:
                     result_messages.append({"role": "system", "content": f"История диалога: {new_summary}"})
 
+                # Добавляем память о пользователе если есть
+                if agent_memory_text:
+                    result_messages.append({"role": "system", "content": agent_memory_text})
+
                 # Добавляем оставшиеся сообщения
                 for msg in remaining_messages:
                     result_messages.append({"role": msg.role, "content": msg.content})
@@ -394,6 +416,10 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
         # Добавляем существующий саммари если есть
         if self._summary:
             messages.append({"role": "system", "content": f"История диалога: {self._summary}"})
+
+        # Добавляем память о пользователе если есть
+        if agent_memory_text:
+            messages.append({"role": "system", "content": agent_memory_text})
 
         for msg in other_messages:
             messages.append({"role": msg.role, "content": msg.content})
@@ -480,7 +506,7 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "KeyValueMemoryStrategy":
+    def from_dict(cls, data: dict[str, Any]) -> KeyValueMemoryStrategy:
         instance = cls(
             non_compressible_count=data["non_compressible_count"],
             buffer_size=data["buffer_size"],
@@ -517,6 +543,7 @@ class SlidingWindowStrategy(ContextWindowStrategy):
         self,
         history: list[Any],
         llm_provider: LlmProvider | None = None,
+        agent_memory_text: str | None = None,
     ) -> PreparedMessages:
         """
         Подготавливает сообщения для отправки в LLM.
@@ -540,6 +567,10 @@ class SlidingWindowStrategy(ContextWindowStrategy):
         if system_msg:
             messages.append({"role": "system", "content": system_msg.content})
 
+        # Добавляем память о пользователе если есть
+        if agent_memory_text:
+            messages.append({"role": "system", "content": agent_memory_text})
+
         for msg in recent_messages:
             messages.append({"role": msg.role, "content": msg.content})
 
@@ -556,7 +587,7 @@ class SlidingWindowStrategy(ContextWindowStrategy):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SlidingWindowStrategy":
+    def from_dict(cls, data: dict[str, Any]) -> SlidingWindowStrategy:
         return cls(window_size=data["window_size"])
 
     @property

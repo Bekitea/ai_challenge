@@ -184,6 +184,16 @@ class MockLlmProvider(LlmProvider):
         Returns:
             LlmResponse: Mock-объект с содержимым ответа.
         """
+        # Проверяем, запрошен ли JSON формат (для извлечения фактов памяти)
+        if response_format and response_format.get("type") == "json_object":
+            # Возвращаем пустой JSON для memory extraction в тестах
+            return LlmResponse(
+                content='{"facts": []}',
+                reasoning="[MOCK REASONING] JSON ответ для извлечения фактов.",
+                prompt_tokens=100,
+                completion_tokens=20,
+            )
+
         # Получаем последнее сообщение пользователя для формирования ответа
         last_user_message = ""
         for msg in reversed(messages):

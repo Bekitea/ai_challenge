@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -89,6 +89,14 @@ class Prompt:
     )
     prompt_tokens: int | None = None  # Только для assistant
     completion_tokens: int | None = None  # Только для assistant
+    is_remembered: bool = False  # Пометка о прохождении через сохранение памяти
+
+
+@dataclass
+class GlobalMemory:
+    """Общесистемная память о пользователе."""
+
+    facts: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -129,12 +137,19 @@ class Agent:
         self._auto_save = auto_save
         self._repository = None  # Устанавливается при регистрации в репозитории
 
+        # Global memory fields
+        self.global_memory = GlobalMemory()
+        self.is_dialog_remembered = False
+
         # Добавляем системный промпт только если сообщений ещё нет
         if system_prompt and not self._messages:
             self._messages.append(Prompt(role="system", content=system_prompt))
 
         self._last_message_timestamp: datetime | None = None
         self._token_counters = TokenCounters()
+
+        # Загружаем память из файла при инициализации
+        self.refresh_memory()
 
     @property
     def token_counters(self) -> TokenCounters:
@@ -189,7 +204,7 @@ class Agent:
             ContextWindowExceededError: Если prompt_tokens превысил размер контекстного окна.
         """
         # Добавляем сообщение пользователя
-        user_timestamp = datetime.now()
+        user_timestamp = datetime.now().astimezone()
         user_message = Prompt(
             role="user",
             content=user_prompt,
@@ -199,9 +214,11 @@ class Agent:
         self._last_message_timestamp = user_timestamp
 
         # Подготавливаем сообщения через стратегию
+        memory_text = self.get_system_prompt_with_memory(None)
         prepared = self._strategy.prepare_messages(
             history=self._messages,
             llm_provider=self._llm_provider,
+            agent_memory_text=memory_text if self.global_memory.facts else None,
         )
         messages_for_llm = prepared.messages
 
@@ -249,7 +266,7 @@ class Agent:
                 )
 
         # Сохраняем ответ ассистента
-        assistant_timestamp = datetime.now()
+        assistant_timestamp = datetime.now().astimezone()
         assistant_message = Prompt(
             role="assistant",
             content=response.content,
@@ -268,6 +285,9 @@ class Agent:
         )
         self._messages.append(assistant_message)
         self._last_message_timestamp = assistant_timestamp
+
+        # Помечаем диалог как непрошедший через сохранение памяти
+        self.is_dialog_remembered = False
 
         # Автосохранение после каждого сообщения
         if self._auto_save:
@@ -320,7 +340,7 @@ class Agent:
 
         # Новый агент создается без ID - он будет установлен при сохранении в репозиторий
         if not new_name:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
             new_name = f"{self.name} (branch {timestamp})"
 
         current_settings = self.get_settings()
@@ -368,3 +388,150 @@ class Agent:
             self._repository.update_agent(branched_agent)
 
         return branched_agent
+
+    def refresh_memory(self) -> None:
+        """
+        Загружает общесистемную память из файла.
+
+        Если файл не существует, создаётся пустой GlobalMemory.
+        Вызывается при инициализации агента и при входе в чат.
+        """
+        import pickle
+        from pathlib import Path
+
+        from config import GLOBAL_MEMORY_PATH
+
+        memory_path = Path(GLOBAL_MEMORY_PATH)
+        if memory_path.exists():
+            try:
+                with open(memory_path, "rb") as f:
+                    self.global_memory = pickle.load(f)
+            except (pickle.UnpicklingError, EOFError, AttributeError):
+                # При ошибке десериализации используем пустую память
+                self.global_memory = GlobalMemory()
+        else:
+            # Файл не существует - создаём пустую память
+            self.global_memory = GlobalMemory()
+
+    def save_memory(self) -> None:
+        """
+        Сохраняет общесистемную память о пользователе.
+
+        Если is_dialog_remembered == False:
+        1. Достает все промпты с is_remembered == False
+        2. Отправляет их вместе со старой памятью в ЛЛМ для получения новых фактов
+        3. Объединяет старые и новые факты
+        4. Сериализует через pickle и сохраняет в файл
+        5. Помечает все промпты и агент как remembered
+
+        Расход токенов записывается в tech_prompt_tokens и tech_completion_tokens.
+        """
+        import json
+        import pickle
+        from pathlib import Path
+
+        from config import GLOBAL_MEMORY_PATH
+
+        if self.is_dialog_remembered:
+            return  # Нечего сохранять
+
+        # Находим все непромпты с is_remembered == False (только user и assistant)
+        unremembered_prompts = [
+            msg for msg in self._messages
+            if not msg.is_remembered and msg.role in ("user", "assistant")
+        ]
+
+        if not unremembered_prompts:
+            return  # Нет новых данных для запоминания
+
+        # Формируем промпт для ЛЛМ
+        old_facts_text = ""
+        if self.global_memory.facts:
+            old_facts_text = "Текущие факты о пользователе:\\n" + "\\n".join(f"- {f}" for f in self.global_memory.facts)
+
+        dialog_text = ""
+        for msg in unremembered_prompts:
+            role_ru = "Пользователь" if msg.role == "user" else "Ассистент"
+            dialog_text += f"{role_ru}: {msg.content}\\n"
+
+        system_prompt = (
+            "Ты ассистент для извлечения фактов о пользователе из диалога. "
+            "Твоя задача — найти новую информацию о пользователе (предпочтения, факты биографии, интересы и т.д.) "
+            "и вернуть её в формате JSON.\\n\\n"
+            "Важные правила:\\n"
+            "1. Возвращай ТОЛЬКО новые факты, которых нет в текущем списке.\\n"
+            "2. Игнорируй противоречия — просто добавляй новые факты.\\n"
+            "3. Факты должны быть краткими и конкретными.\\n"
+            "4. Если новых фактов нет, верни пустой список.\\n\\n"
+            f"{old_facts_text}\\n\\n"
+            f"Диалог для анализа:\\n{dialog_text}\\n\\n"
+            "Верни ответ в формате JSON со схемой: "
+            '{"facts": ["факт 1", "факт 2", ...]}'
+        )
+
+        messages_for_llm = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "Извлеки факты из диалога выше."}
+        ]
+
+        # Делаем запрос к ЛЛМ с требованием JSON формата
+        response = self._llm_provider.generate(
+            messages=messages_for_llm,
+            temperature=0.1,
+            max_tokens=1000,
+            response_format={"type": "json_object"}
+        )
+
+        # Обновляем счетчики технических токенов
+        if response.prompt_tokens is not None:
+            self._token_counters.tech_prompt_tokens += response.prompt_tokens
+        if response.completion_tokens is not None:
+            self._token_counters.tech_completion_tokens += response.completion_tokens
+
+        # Парсим ответ и извлекаем факты
+        try:
+            result = json.loads(response.content)
+            new_facts = result.get("facts", [])
+        except json.JSONDecodeError:
+            new_facts = []
+
+        # Объединяем старые и новые факты (избегаем дубликатов)
+        all_facts = list(self.global_memory.facts)
+        for fact in new_facts:
+            if fact not in all_facts:
+                all_facts.append(fact)
+
+        self.global_memory.facts = all_facts
+
+        # Сериализуем и сохраняем в файл
+        memory_path = Path(GLOBAL_MEMORY_PATH)
+        memory_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(memory_path, "wb") as f:
+            pickle.dump(self.global_memory, f)
+
+        # Помечаем все промпты как remembered
+        for msg in self._messages:
+            msg.is_remembered = True
+
+        # Помечаем агента как remembered
+        self.is_dialog_remembered = True
+
+    def get_system_prompt_with_memory(self, base_system_prompt: str | None) -> str:
+        """
+        Формирует системный промпт с добавлением памяти о пользователе.
+
+        Args:
+            base_system_prompt: Базовый системный промпт (если есть).
+
+        Returns:
+            Полный системный промпт с памятью.
+        """
+        memory_text = ""
+        if self.global_memory.facts:
+            facts_list = "\\n".join(f"- {fact}" for fact in self.global_memory.facts)
+            memory_text = f"\\n\\nПамять о пользователе:\\n{facts_list}"
+
+        if base_system_prompt:
+            return f"{base_system_prompt}{memory_text}"
+        else:
+            return f"Ты полезный ассистент.{memory_text}" if memory_text else "Ты полезный ассистент."

@@ -24,12 +24,15 @@ if APPLICATION_MODE == "TEST":
     # Тестовый режим: изолированное хранилище
     DATABASE_PATH = "./test-data/agents.db"
     FILE_STORAGE_DIR = "./test-data/file_storage"
+    GLOBAL_MEMORY_PATH = "./test-data/global_memory.pkl"
 else:
     # Продакшен режим: основное хранилище
     DATABASE_PATH = "./data/agents.db"
     FILE_STORAGE_DIR = "./data/file_storage"
+    GLOBAL_MEMORY_PATH = "./data/global_memory.pkl"
 
 DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 
 Path(DATABASE_PATH).parent.mkdir(parents=True, exist_ok=True)
 Path(FILE_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
+Path(GLOBAL_MEMORY_PATH).parent.mkdir(parents=True, exist_ok=True)

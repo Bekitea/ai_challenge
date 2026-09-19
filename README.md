@@ -23,9 +23,6 @@ pip install -r requirements.txt
 ```env
 YANDEX_CLOUD_API_KEY=your_api_key_here
 YANDEX_CLOUD_FOLDER=your_folder_id_here
-
-DATABASE_PATH=./data/agents.db
-CHAT_HISTORY_DIR=./data/chat_history
 ```
 
 ### 3. Инициализация базы данных

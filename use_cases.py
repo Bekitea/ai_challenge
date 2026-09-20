@@ -72,9 +72,10 @@ class StrategySelection:
 class CreateChatUseCase:
     """Use case для создания нового чата."""
 
-    def __init__(self, repository: AgentRepository, llm_provider: LlmProvider):
+    def __init__(self, repository: AgentRepository, llm_provider: LlmProvider, task_profile_repository=None):
         self.repository = repository
         self.llm_provider = llm_provider
+        self.task_profile_repository = task_profile_repository
 
     def execute(
         self,
@@ -82,6 +83,7 @@ class CreateChatUseCase:
         system_prompt: str | None,
         settings: AgentSettings,
         strategy: ContextWindowStrategy,
+        task_profile_id: str | None = None,
     ) -> Agent:
         """
         Создаёт новый чат с указанными настройками.
@@ -91,15 +93,26 @@ class CreateChatUseCase:
             system_prompt: Системный промпт (опционально).
             settings: Настройки агента.
             strategy: Стратегия управления контекстным окном.
+            task_profile_id: UUID профиля задачи (опционально).
 
         Returns:
             Agent: Созданный агент.
+
+        Raises:
+            ValueError: Если указан несуществующий профиль задачи.
         """
+        # Проверка существования профиля задачи, если он указан
+        if task_profile_id is not None and self.task_profile_repository is not None:
+            profile = self.task_profile_repository.get_profile_by_id(task_profile_id)
+            if profile is None:
+                raise ValueError(f"Профиль задачи с ID {task_profile_id} не найден")
+
         agent = self.repository.create_agent(
             name=name,
             initial_settings=settings,
             system_prompt=system_prompt,
             strategy=strategy,
+            task_profile_id=task_profile_id,
         )
         return agent
 

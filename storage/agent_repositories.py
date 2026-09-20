@@ -29,6 +29,8 @@ class AgentRepository(ABC):
         name: str,
         initial_settings: AgentSettings | None = None,
         system_prompt: str | None = None,
+        strategy: ContextWindowStrategy | None = None,
+        task_profile_id: str | None = None,
     ) -> Agent:
         """
         Создаёт нового агента с уникальным идентификатором.
@@ -38,6 +40,8 @@ class AgentRepository(ABC):
             llm_provider: Провайдер LLM для запросов.
             initial_settings: Начальные настройки агента.
             system_prompt: Системный промпт (опционально).
+            strategy: Стратегия управления контекстным окном (опционально).
+            task_profile_id: UUID профиля задачи (опционально).
 
         Returns:
             Agent: Newly created agent instance.
@@ -69,7 +73,6 @@ class AgentRepository(ABC):
     def update_agent(self, agent: Agent) -> None:
         """
         Обновляет метаданные и историю агента.
-
         Вызывается после каждого изменения состояния агента.
 
         Args:
@@ -92,7 +95,6 @@ class AgentRepository(ABC):
     def get_agents_with_unsaved_memory(self) -> list[Agent]:
         """
         Получает всех агентов с несохранённой памятью.
-
         Агент считается имеющим несохранённую память, если:
         - is_dialog_remembered == False
         - Есть сообщения с is_remembered == False
@@ -161,9 +163,14 @@ class PersistentAgentRepository(AgentRepository):
         # Загружаем историю из файла по conversation_id (UUID)
         history = self._chat_storage.load_history(orm.conversation_id)
 
+        # Загружаем профиль задачи, если он привязан
+        task_profile = None
+        if orm.task_profile_id is not None and self._task_profile_repository is not None:
+            task_profile = self._task_profile_repository.get_profile_by_id(orm.task_profile_id)
+
         agent = Agent(
             agent_id=orm.id,
-            conversation_id=orm.conversation_id,  # Передаем conversation_id
+            conversation_id=orm.conversation_id,
             name=orm.name,
             llm_provider=self._llm_provider,
             initial_settings=settings,
@@ -171,8 +178,10 @@ class PersistentAgentRepository(AgentRepository):
             history_storage=self._chat_storage,
             messages=history if history else None,
             strategy=strategy,
-            auto_save=True,  # Включаем автосохранение для загруженных агентов
+            auto_save=True,
             global_memory_repository=self._global_memory_repository,
+            task_profile=task_profile,                              # ✅ ДОБАВЛЕНО
+            task_profile_repository=self._task_profile_repository,  # ✅ ДОБАВЛЕНО
         )
 
         # Устанавливаем ссылку на репозиторий для автосохранения
@@ -265,6 +274,7 @@ class PersistentAgentRepository(AgentRepository):
         initial_settings: AgentSettings | None = None,
         system_prompt: str | None = None,
         strategy: ContextWindowStrategy | None = None,
+        task_profile_id: str | None = None,
     ) -> Agent:
         """
         Создаёт нового агента и сохраняет в БД и файл.
@@ -275,13 +285,20 @@ class PersistentAgentRepository(AgentRepository):
             initial_settings: Начальные настройки.
             system_prompt: Системный промпт.
             strategy: Стратегия управления контекстным окном (по умолчанию DefaultStrategy).
+            task_profile_id: UUID профиля задачи (опционально).
 
         Returns:
             Agent: Новый экземпляр агента.
         """
         # Создаем агента с conversation_id - он будет установлен после сохранения ORM
         from uuid import uuid4
+
         temp_conversation_id = str(uuid4())  # Временный ID до сохранения в БД
+
+        # Загружаем профиль задачи, если указан
+        task_profile = None
+        if task_profile_id is not None and self._task_profile_repository is not None:
+            task_profile = self._task_profile_repository.get_profile_by_id(task_profile_id)
 
         agent = Agent(
             agent_id=None,  # Будет установлен после сохранения в БД
@@ -293,6 +310,8 @@ class PersistentAgentRepository(AgentRepository):
             strategy=strategy,
             auto_save=True,  # Включаем автосохранение для новых агентов
             global_memory_repository=self._global_memory_repository,
+            task_profile=task_profile,                              # ✅ ДОБАВЛЕНО
+            task_profile_repository=self._task_profile_repository,  # ✅ ДОБАВЛЕНО
         )
 
         # Устанавливаем ссылку на репозиторий для автосохранения
@@ -326,8 +345,13 @@ class PersistentAgentRepository(AgentRepository):
             orm.tech_prompt_tokens = 0
             orm.tech_completion_tokens = 0
 
+            # Привязываем профиль задачи, если указан
+            if task_profile_id is not None:
+                orm.task_profile_id = task_profile_id
+
             session.add(orm)
             session.commit()
+
             # После commit ORM получает сгенерированный числовой id и conversation_id
             agent.agent_id = orm.id
             agent.conversation_id = orm.conversation_id
@@ -390,7 +414,6 @@ class PersistentAgentRepository(AgentRepository):
     def update_agent(self, agent: Agent) -> None:
         """
         Обновляет метаданные и историю агента.
-
         Вызывается после каждого изменения состояния агента.
 
         Args:
@@ -416,6 +439,7 @@ class PersistentAgentRepository(AgentRepository):
 
             # Получаем conversation_id перед удалением записи из БД
             conversation_id = orm.conversation_id
+
             session.delete(orm)
             session.commit()
 
@@ -426,7 +450,6 @@ class PersistentAgentRepository(AgentRepository):
     def get_agents_with_unsaved_memory(self) -> list[Agent]:
         """
         Получает всех агентов с несохранённой памятью.
-
         Агент считается имеющим несохранённую память, если:
         - is_dialog_remembered == False
         - Есть сообщения с is_remembered == False

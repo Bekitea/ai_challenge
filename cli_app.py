@@ -208,6 +208,9 @@ class CLIChat:
         # Выбор стратегии управления контекстным окном
         strategy = self._select_context_strategy()
 
+        # Выбор профиля задачи
+        task_profile_id = self._select_task_profile()
+
         # Генерируем имя если пустое
         if not name:
             previews = self.use_cases.select_chat.get_all_previews()
@@ -219,11 +222,23 @@ class CLIChat:
             system_prompt=system_prompt if system_prompt else None,
             settings=settings,
             strategy=strategy,
+            task_profile_id=task_profile_id,
         )
         self.current_agent = agent
+
+        # Формируем информацию о профиле для вывода
+        profile_name = "(не привязан)"
+        if task_profile_id is not None:
+            profiles = self.use_cases.list_task_profiles.execute()
+            for p in profiles:
+                if p.id == task_profile_id:
+                    profile_name = p.name
+                    break
+
         print(f"\n[OK] Чат '{name}' создан!")
         print(f"  ID: {agent.agent_id}")
         print(f"  Стратегия: {strategy.strategy_type}")
+        print(f"  Профиль задачи: {profile_name}")
 
         # Показываем всю историю (пустую для нового чата) и переходим к общению
         self.show_history()
@@ -299,6 +314,40 @@ class CLIChat:
                     print(f"Ошибка: {e}. Попробуйте снова.")
             else:
                 print("Неверный выбор, попробуйте снова.")
+
+    def _select_task_profile(self) -> str | None:
+        """Запрашивает у пользователя выбор профиля задачи для привязки к чату."""
+        print("\n--- ПРИВЯЗКА ПРОФИЛЯ ЗАДАЧИ ---")
+
+        profiles = self.use_cases.list_task_profiles.execute()
+
+        if not profiles:
+            print("(нет доступных профилей)")
+            return None
+
+        # Сортируем профили по первичному ключу (id) в порядке возрастания
+        sorted_profiles = sorted(profiles, key=lambda p: p.id)
+
+        print("Доступные профили задач:")
+        for i, profile in enumerate(sorted_profiles, 1):
+            print(f"  {i}. {profile.name}")
+        print("  0. Не привязывать профиль")
+
+        while True:
+            choice = input(f"\nВыберите профиль задачи (0-{len(sorted_profiles)}, по умолчанию 0): ").strip() or "0"
+
+            try:
+                choice_num = int(choice)
+                if choice_num == 0:
+                    return None
+                elif 1 <= choice_num <= len(sorted_profiles):
+                    return sorted_profiles[choice_num - 1].id
+                else:
+                    print("[WARN] Некорректный выбор. Профиль не привязан.")
+                    return None
+            except ValueError:
+                print("[WARN] Некорректный выбор. Профиль не привязан.")
+                return None
 
     def select_chat(self):
         """Выбирает существующий чат."""

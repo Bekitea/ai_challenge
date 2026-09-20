@@ -141,23 +141,30 @@ class Agent:
         task_profile: TaskProfile | None = None,
         task_profile_repository: Any | None = None,
     ):
-        if conversation_id is None:
-            raise ValueError("conversation_id is required")
+        if llm_provider is None:
+            raise ValueError("llm_provider is required")
         if global_memory_repository is None:
             raise ValueError("global_memory_repository is required")
+        if task_profile_repository is None:
+            raise ValueError("task_profile_repository is required")
+        if conversation_id is None:
+            raise ValueError("conversation_id is required")
+        if history_storage is None:
+            raise ValueError("history_storage is required")
 
-        self.agent_id = agent_id
-        self.conversation_id = conversation_id  # UUID для связи с файловым хранилищем
-        self.name = name
         self._llm_provider = llm_provider
-        self._settings = initial_settings or AgentSettings()
-        self._messages: list[Prompt] = messages if messages is not None else []
-        self._history_storage = history_storage
-        self._strategy = strategy or DefaultStrategy()
-        self._auto_save = auto_save
         self._repository = None  # Устанавливается при регистрации в репозитории
         self._global_memory_repository = global_memory_repository
         self._task_profile_repository = task_profile_repository
+        self.conversation_id = conversation_id  # UUID для связи с файловым хранилищем
+        self._history_storage = history_storage
+
+        self.agent_id = agent_id
+        self.name = name
+        self._settings = initial_settings or AgentSettings()
+        self._messages: list[Prompt] = messages if messages is not None else []
+        self._strategy = strategy or DefaultStrategy()
+        self._auto_save = auto_save
 
         # Global memory fields
         self.global_memory = GlobalMemory()
@@ -377,7 +384,7 @@ class Agent:
 
         branched_agent = Agent(
             agent_id=None,
-            conversation_id=str(uuid4()),  # Новый UUID для ветки
+            conversation_id=str(uuid4()),
             name=new_name,
             llm_provider=self._llm_provider,
             initial_settings=current_settings,
@@ -387,6 +394,8 @@ class Agent:
             strategy=new_strategy,
             auto_save=True,
             global_memory_repository=self._global_memory_repository,
+            task_profile=self.task_profile,
+            task_profile_repository=self._task_profile_repository,
         )
 
         branched_agent._repository = self._repository

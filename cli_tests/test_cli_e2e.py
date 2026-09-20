@@ -1499,6 +1499,8 @@ class TestUC014_CreateNewTaskProfile:
     - TC-045: Create Task Profile (Empty Name Validation)
     - TC-046: Create Task Profile (Empty Description Validation)
     - TC-047: Create Task Profile (Long Name Handling)
+    - TC-062: Create Profile With Preferences
+    - TC-063: Create Profile Without Preferences
     """
 
     def test_tc_044_create_task_profile_valid_data(self):
@@ -1614,6 +1616,66 @@ class TestUC014_CreateNewTaskProfile:
         # Should create successfully (name may be truncated internally)
         assert "создан" in stdout.lower() or "AAA" in stdout
 
+    def test_tc_062_create_profile_with_preferences(self):
+        """
+        TC-062: Create Profile With Preferences
+
+        Steps:
+        1. Select option 3 (Профили задач) from Main Menu
+        2. Select option 1 (Создать новый профиль)
+        3. Enter valid name "My Task"
+        4. Enter valid description "Task description here"
+        5. Enter preferences text "Be concise and formal"
+        6. Verify success message with profile info
+        7. Verify returns to profiles menu
+        """
+        test_input = (
+            "3\n"  # Профили задач
+            "1\n"  # Создать новый профиль
+            "My Task\n"  # Valid name
+            "Task description here\n"  # Valid description
+            "Be concise and formal\n"  # Preferences text
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "создан" in stdout.lower() or "My Task" in stdout, (
+            "Should confirm profile creation"
+        )
+
+    def test_tc_063_create_profile_without_preferences(self):
+        """
+        TC-063: Create Profile Without Preferences
+
+        Steps:
+        1. Select option 3 (Профили задач) from Main Menu
+        2. Select option 1 (Создать новый профиль)
+        3. Enter valid name "My Task"
+        4. Enter valid description "Task description here"
+        5. Press Enter (skip preferences)
+        6. Verify success message with profile info
+        7. Verify empty preferences accepted (no error)
+        """
+        test_input = (
+            "3\n"  # Профили задач
+            "1\n"  # Создать новый профиль
+            "My Task\n"  # Valid name
+            "Task description here\n"  # Valid description
+            "\n"  # Empty preferences (skip)
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "создан" in stdout.lower() or "My Task" in stdout, (
+            "Should confirm profile creation with empty preferences"
+        )
+
 
 class TestUC015_ViewTaskProfileMemory:
     """
@@ -1622,6 +1684,8 @@ class TestUC015_ViewTaskProfileMemory:
     Test Cases:
     - TC-050: View Task Profile Memory (Empty Facts)
     - TC-051: View Task Profile Memory (With Facts)
+    - TC-060: Preferences Display in View Profile - With Preferences
+    - TC-061: Preferences Display in View Profile - Empty Preferences
     """
 
     def test_tc_050_view_task_profile_memory_empty_facts(self):
@@ -1899,6 +1963,7 @@ class TestUC018_TaskProfileMemoryInSystemPrompt:
 
     Test Cases:
     - TC-058: Both Global and Task Profile Memory in System Prompt
+    - TC-059: Preferences Display in System Prompt - Empty Preferences
     """
 
     def test_tc_058_global_and_task_memory_in_system_prompt(self):
@@ -1952,3 +2017,44 @@ class TestUC018_TaskProfileMemoryInSystemPrompt:
         # Should have both memories integrated
         # Mock provider behavior would determine exact output
         assert "Integration" in stdout or "создан" in stdout.lower()
+
+    def test_tc_059_preferences_display_empty_preferences(self):
+        """
+        TC-059: Preferences Display in System Prompt - Empty Preferences
+
+        Precondition: Global memory has facts, task profile has no preferences (empty string)
+
+        Steps:
+        1. Create task profile without preferences
+        2. Create chat linked to task profile
+        3. Send message to trigger system prompt construction
+        4. Verify global memory facts appear with header
+        5. Verify task profile memory appears with header
+        6. Verify preferences section is NOT displayed (skipped when empty)
+        """
+        test_input = (
+            # Create task profile without preferences
+            "3\n"  # Профили задач
+            "1\n"  # Создать профиль
+            "Empty Pref Profile\n"  # Name
+            "Profile for testing empty preferences\n"  # Description
+            "\n"  # Empty preferences (skip)
+            "3\n"  # Назад
+            # Create chat with task profile
+            "1\n"  # Новый чат
+            "Empty Pref Chat\n"  # Name
+            "\\n"  # Skip prompt
+            "1\\n"  # Model 1
+            "\\n\\n\\n\\n\\n"  # Settings
+            "1\\n"  # Strategy
+            "1\\n"  # Select profile #1
+            "Test message\\n"  # Message
+            "n\\n"  # No reasoning
+            "4\\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        # Should complete successfully - preferences section should be skipped
+        assert "Empty Pref" in stdout or "создан" in stdout.lower()

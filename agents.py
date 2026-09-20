@@ -109,6 +109,7 @@ class TaskProfile:
     description: str
     created_at: datetime | None
     facts: list[str] = field(default_factory=list)
+    preferences: str = ""
 
 
 @dataclass

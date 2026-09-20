@@ -389,6 +389,7 @@ class TaskProfileInfo:
     description: str
     created_at: datetime | None
     facts_count: int
+    preferences: str = ""
 
 
 class ListTaskProfilesUseCase:
@@ -412,6 +413,7 @@ class ListTaskProfilesUseCase:
                 description=p.description,
                 created_at=p.created_at,
                 facts_count=len(p.facts),
+                preferences=p.preferences or "",
             )
             for p in profiles
         ]
@@ -423,18 +425,19 @@ class CreateTaskProfileUseCase:
     def __init__(self, task_profile_repository):
         self.task_profile_repository = task_profile_repository
 
-    def execute(self, name: str, description: str) -> TaskProfile:
+    def execute(self, name: str, description: str, preferences: str = "") -> TaskProfile:
         """
         Создаёт новый профиль задачи.
 
         Args:
             name: Название профиля.
             description: Описание задачи.
+            preferences: Инструкции и предпочтения пользователя (опционально).
 
         Returns:
             TaskProfile: Созданный профиль.
         """
-        return self.task_profile_repository.create_profile(name, description)
+        return self.task_profile_repository.create_profile(name, description, preferences)
 
 
 class GetTaskProfileMemoryUseCase:

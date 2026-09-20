@@ -92,6 +92,7 @@ class TaskProfile:
     description: str            # Task description (max 500 chars)
     created_at: str             # ISO 8601 timestamp
     facts: list[str]            # List of task-related facts (auto-updated)
+    preferences: str            # User instructions/preferences (free-form text, no length limit)
 ```
 
 ### 3.4 Agent Settings Extended
@@ -166,6 +167,22 @@ When displaying memory (global or task profile), facts are shown as a numbered l
 If memory is empty: `(память пуста)`
 
 Memory facts are auto-extracted from dialogues by LLM and saved to respective repositories.
+
+---
+
+### 3.8 Preferences Display Format
+
+When displaying user preferences in the system prompt, preferences text is shown as a separate block:
+
+```
+--- ПРЕДПОЧТЕНИЯ ПОЛЬЗОВАТЕЛЯ ---
+{preferences_text}
+----------------------------------------
+```
+
+If preferences is empty (empty string): The entire preferences section is omitted from the system prompt.
+
+Preferences are user-provided instructions entered during task profile creation and remain static (not auto-updated).
 
 ---
 
@@ -1031,18 +1048,21 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 4. System displays description prompt: `Введите описание профиля (макс. 500 символов):`
 5. User enters description
 6. System validates description (non-empty, max 500 chars)
-7. System generates UUID for profile
-8. System records current timestamp as `created_at`
-9. System creates empty facts list
-10. System saves profile to TaskProfileRepository
-11. System displays success message:
+7. System displays preferences prompt: `Введите предпочтения и инструкции пользователя (Enter для пропуска):`
+8. User enters preferences text (or presses Enter to skip)
+9. System accepts preferences (no validation, empty input allowed)
+10. System generates UUID for profile
+11. System records current timestamp as `created_at`
+12. System creates empty facts list
+13. System saves profile to TaskProfileRepository
+14. System displays success message:
     ```
     [OK] Профиль задачи '{name}' создан!
       ID: {full_id}
       Создан: {timestamp}
     ```
-12. System returns to Task Profiles menu
-13. Use case ends
+15. System returns to Task Profiles menu
+16. Use case ends
 
 #### 5.14.3 Alternative Flows
 
@@ -1062,10 +1082,15 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
   - Step 6: User enters >500 characters
   - Truncate to 500 characters with warning `[WARN] Описание сокращено до 500 символов.`
 
+- **A5: Empty Preferences**
+  - Step 9: User presses Enter without entering text
+  - Accept empty string as valid preferences value (no error)
+
 #### 5.14.4 Postconditions
 
 - New TaskProfile created with unique UUID
 - Profile saved to repository with empty facts list
+- Profile saved with preferences (may be empty string)
 - User returned to Task Profiles menu
 
 ---
@@ -1091,6 +1116,7 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
    ID: {full_id}
    Создан: {created_at}
    Описание: {description}
+   Предпочтения: {preferences}|(не указаны)
    ----------------------------------------
 
    --- ПАМЯТЬ ПРОФИЛЯ ---
@@ -1100,10 +1126,11 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
    ----------------------------------------
    ```
 6. If memory is empty: display `(память пуста)` instead of facts list
-7. System displays `[Нажмите Enter для возврата]`
-8. User presses Enter
-9. System returns to Task Profiles menu
-10. Use case ends
+7. If preferences is empty: display `(не указаны)` instead of preferences text
+8. System displays `[Нажмите Enter для возврата]`
+9. User presses Enter
+10. System returns to Task Profiles menu
+11. Use case ends
 
 #### 5.15.3 Alternative Flows
 
@@ -1968,14 +1995,88 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 **Related UC**: UC-004
 
-**Precondition**: Global memory has facts, task profile has facts, agent attached to task profile
+**Precondition**: Global memory has facts, task profile has facts and preferences, agent attached to task profile
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | Enter chat loop with agent attached to task profile | Send message to agent                        |
 | 2    | Verify system prompt construction             | Global memory facts appear first with header `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---` |
 | 3    | Verify task profile memory                    | Task facts appear after with header `--- ПАМЯТЬ ЗАДАЧИ: {profile_name} ---` |
-| 4    | Verify correct ordering                       | Global → Task profile                        |
+| 4    | Verify user preferences                       | Preferences text appears after task memory with header `--- ПРЕДПОЧТЕНИЯ ПОЛЬЗОВАТЕЛЯ ---` |
+| 5    | Verify correct ordering                       | Global → Task profile → Preferences          |
+
+---
+
+### TC-059: Preferences Display in System Prompt - Empty Preferences
+
+**Related UC**: UC-004
+
+**Precondition**: Global memory has facts, task profile has no preferences (empty string), agent attached to task profile
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter chat loop with agent attached to task profile | Send message to agent                        |
+| 2    | Verify system prompt construction             | Global memory facts appear with header `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---` |
+| 3    | Verify task profile memory                    | Task facts appear with header `--- ПАМЯТЬ ЗАДАЧИ: {profile_name} ---` |
+| 4    | Verify preferences section                    | Preferences section is NOT displayed (skipped when empty) |
+
+---
+
+### TC-060: Preferences Display in View Profile - With Preferences
+
+**Related UC**: UC-015
+
+**Precondition**: Task profile exists with non-empty preferences text
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Navigate to Task Profiles menu, select "View memory" | Profile selection prompt displayed           |
+| 2    | Select profile with preferences               | Profile details displayed                    |
+| 3    | Verify preferences display                    | `Предпочтения: {preferences_text}` shown     |
+
+---
+
+### TC-061: Preferences Display in View Profile - Empty Preferences
+
+**Related UC**: UC-015
+
+**Precondition**: Task profile exists with empty preferences
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Navigate to Task Profiles menu, select "View memory" | Profile selection prompt displayed           |
+| 2    | Select profile with empty preferences         | Profile details displayed                    |
+| 3    | Verify preferences display                    | `Предпочтения: (не указаны)` shown           |
+
+---
+
+### TC-062: Create Profile With Preferences
+
+**Related UC**: UC-014
+
+**Precondition**: User is creating a new task profile
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter name and description                    | Preferences prompt displayed                 |
+| 2    | Enter multi-line preferences text             | Preferences accepted without validation      |
+| 3    | Complete profile creation                     | Profile saved with preferences text          |
+| 4    | View created profile                          | Preferences displayed correctly              |
+
+---
+
+### TC-063: Create Profile Without Preferences
+
+**Related UC**: UC-014
+
+**Precondition**: User is creating a new task profile
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter name and description                    | Preferences prompt displayed                 |
+| 2    | Press Enter without entering preferences      | Empty preferences accepted (no error)        |
+| 3    | Complete profile creation                     | Profile saved with empty preferences         |
+| 4    | View created profile                          | `Предпочтения: (не указаны)` displayed       |
 
 ---
 
@@ -2107,6 +2208,7 @@ pytest --cov=cli --cov-report=html
 | 1.1     | 2026-09-13 | AI Assistant | Added detailed test cases, error matrix                                                                                                                                                                                                       |
 | 1.2     | 2026-09-13 | AI Assistant | Added new features: SlidingWindowStrategy, /summary, /info, /branch commands; Updated UC-005, UC-007, UC-009, UC-010, UC-011; Added TC-021 to TC-032; Updated error matrix; Clarified context_window_size retained for backward compatibility |
 | 1.3     | 2026-09-13 | AI Assistant | Added TaskProfile feature: new entity (UC-013 to UC-016), task profile management CLI menu option, chat creation step for profile attachment, memory integration in system prompt (global + task); Added TC-044 to TC-058; Updated error matrix |
+| 1.4     | 2026-09-13 | AI Assistant | Added preferences field to TaskProfile: updated entity definition, UC-014 (create profile with preferences), UC-015 (view profile with preferences display); Added TC-059 to TC-063 for preferences functionality; Updated TC-058 for preferences ordering in system prompt |
 
 ---
 

@@ -38,6 +38,7 @@ class TaskProfileORM(Base):
         name: Название профиля задачи.
         description: Описание задачи.
         created_at: Дата создания профиля.
+        preferences: Инструкции и предпочтения пользователя (текст).
         agents: Связь с агентами (many-to-one).
 
     Примечание: Факты задачи хранятся в файловом хранилище через TaskProfileRepository,
@@ -49,6 +50,7 @@ class TaskProfileORM(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now().astimezone())
+    preferences: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
 
     # Связь с агентами
     agents: Mapped[list[AgentORM]] = relationship(back_populates="task_profile", foreign_keys="AgentORM.task_profile_id")

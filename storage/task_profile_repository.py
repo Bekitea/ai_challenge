@@ -1,4 +1,3 @@
-
 import pickle
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -41,13 +40,14 @@ class TaskProfileRepository(ABC):
         """
 
     @abstractmethod
-    def create_profile(self, name: str, description: str) -> TaskProfile:
+    def create_profile(self, name: str, description: str, preferences: str = "") -> TaskProfile:
         """
         Создаёт новый профиль задачи.
 
         Args:
             name: Название профиля.
             description: Описание задачи.
+            preferences: Инструкции и предпочтения пользователя (опционально).
 
         Returns:
             TaskProfile: Созданный профиль задачи.
@@ -153,7 +153,8 @@ class DatabaseTaskProfileRepository(TaskProfileRepository):
                 name=orm.name,
                 description=orm.description,
                 created_at=orm.created_at,
-                facts=facts
+                facts=facts,
+                preferences=orm.preferences or ""
             ))
 
         return profiles
@@ -175,10 +176,11 @@ class DatabaseTaskProfileRepository(TaskProfileRepository):
             name=orm.name,
             description=orm.description,
             created_at=orm.created_at,
-            facts=facts
+            facts=facts,
+            preferences=orm.preferences or ""
         )
 
-    def create_profile(self, name: str, description: str) -> TaskProfile:
+    def create_profile(self, name: str, description: str, preferences: str = "") -> TaskProfile:
         """Создаёт новый профиль задачи в БД и пустой файл фактов."""
         from uuid import uuid4
 
@@ -191,7 +193,8 @@ class DatabaseTaskProfileRepository(TaskProfileRepository):
             id=profile_id,
             name=name,
             description=description,
-            created_at=created_at
+            created_at=created_at,
+            preferences=preferences or ""
         )
 
         with self._get_session() as session:
@@ -206,7 +209,8 @@ class DatabaseTaskProfileRepository(TaskProfileRepository):
             name=name,
             description=description,
             created_at=created_at,
-            facts=[]
+            facts=[],
+            preferences=preferences or ""
         )
 
     def delete_profile(self, profile_id: str) -> bool:

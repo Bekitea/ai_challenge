@@ -562,8 +562,11 @@ class CLIChat:
                 break
             print("[ERROR] Описание задачи не может быть пустым.")
 
+        # Ввод предпочтений (опционально)
+        preferences = input("Введите предпочтения/инструкции (Enter для пропуска): ").strip()
+
         # Создание профиля через use case
-        profile = self.use_cases.create_task_profile.execute(name, description)
+        profile = self.use_cases.create_task_profile.execute(name, description, preferences)
 
         print(f"\n[OK] Профиль задачи '{name}' создан!")
         print(f"  ID: {profile.id}")
@@ -635,6 +638,8 @@ class CLIChat:
         print(f"  Название: {profile.name}")
         print(f"  Описание: {profile.description}")
         print(f"  Дата создания: {profile.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        if profile.preferences:
+            print(f"  Предпочтения: {profile.preferences}")
         print("\n--- ПАМЯТЬ ПРОФИЛЯ ---")
         if not profile.facts:
             print("  (память пуста)")

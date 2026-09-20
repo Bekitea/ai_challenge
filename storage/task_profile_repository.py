@@ -13,6 +13,7 @@ class TaskProfile:
     description: str
     created_at: datetime
     facts: list[str] = field(default_factory=list)
+    preferences: str = ""
 
 
 class TaskProfileRepository(ABC):

@@ -34,6 +34,9 @@ class UseCasesBundle:
     create_branch: CreateBranchUseCase
     select_strategy: SelectContextStrategyUseCase
     view_global_memory: ViewGlobalMemoryUseCase
+    refresh_agent_memory: RefreshAgentMemoryUseCase
+    save_agent_memory: SaveAgentMemoryUseCase
+    save_unsaved_memories: SaveUnsavedMemoriesUseCase
 
 
 @dataclass
@@ -306,3 +309,55 @@ class ViewGlobalMemoryUseCase:
         """
         memory = self.memory_repository.get_memory()
         return memory.facts
+
+
+class RefreshAgentMemoryUseCase:
+    """Use case для загрузки памяти агента при выборе чата."""
+
+    def __init__(self, global_memory_repository):
+        self.global_memory_repository = global_memory_repository
+
+    def execute(self, agent: Agent) -> None:
+        """
+        Загружает общесистемную память из репозитория.
+
+        Args:
+            agent: Агент, для которого нужно загрузить память.
+        """
+        agent.refresh_memory()
+
+
+class SaveAgentMemoryUseCase:
+    """Use case для сохранения памяти агента при выходе из чата."""
+
+    def __init__(self, global_memory_repository):
+        self.global_memory_repository = global_memory_repository
+
+    def execute(self, agent: Agent) -> None:
+        """
+        Сохраняет общесистемную память о пользователе.
+
+        Args:
+            agent: Агент, для которого нужно сохранить память.
+        """
+        agent.save_memory()
+
+
+class SaveUnsavedMemoriesUseCase:
+    """Use case для сохранения всех несохранённых памятей при старте приложения."""
+
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self) -> None:
+        """
+        Находит все агенты с несохранёнными промптами и вызывает у них save_memory.
+
+        Агент считается имеющим несохранённые промпты, если:
+        - is_dialog_remembered == False
+        - Есть сообщения с is_remembered == False
+        """
+        agents = self.repository.get_agents_with_unsaved_memory()
+
+        for agent in agents:
+            agent.save_memory()

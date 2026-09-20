@@ -88,6 +88,19 @@ class AgentRepository(ABC):
             True, если агент был удалён, False если не найден.
         """
 
+    @abstractmethod
+    def get_agents_with_unsaved_memory(self) -> list[Agent]:
+        """
+        Получает всех агентов с несохранённой памятью.
+
+        Агент считается имеющим несохранённую память, если:
+        - is_dialog_remembered == False
+        - Есть сообщения с is_remembered == False
+
+        Returns:
+            Список агентов с несохранённой памятью.
+        """
+
 
 class PersistentAgentRepository(AgentRepository):
     """
@@ -168,6 +181,9 @@ class PersistentAgentRepository(AgentRepository):
         agent._token_counters.tech_prompt_tokens = orm.tech_prompt_tokens
         agent._token_counters.tech_completion_tokens = orm.tech_completion_tokens
 
+        # Восстанавливаем is_dialog_remembered из БД
+        agent.is_dialog_remembered = orm.is_dialog_remembered
+
         # Восстанавливаем last_message_timestamp из истории
         if history:
             non_system_msgs = [m for m in history if m.role != "system"]
@@ -219,6 +235,9 @@ class PersistentAgentRepository(AgentRepository):
             orm.chat_completion_tokens = counters.chat_completion_tokens
             orm.tech_prompt_tokens = counters.tech_prompt_tokens
             orm.tech_completion_tokens = counters.tech_completion_tokens
+
+            # Сохраняем is_dialog_remembered
+            orm.is_dialog_remembered = agent.is_dialog_remembered
 
             session.commit()
 
@@ -400,3 +419,37 @@ class PersistentAgentRepository(AgentRepository):
         # Удаляем файл истории по conversation_id
         self._chat_storage.delete_history(conversation_id)
         return True
+
+    def get_agents_with_unsaved_memory(self) -> list[Agent]:
+        """
+        Получает всех агентов с несохранённой памятью.
+
+        Агент считается имеющим несохранённую память, если:
+        - is_dialog_remembered == False
+        - Есть сообщения с is_remembered == False
+
+        Сначала делаем SQL запрос для получения агентов с is_dialog_remembered == False,
+        затем загружаем их историю из файлового хранилища и фильтруем тех,
+        у кого есть сообщения с is_remembered == False.
+
+        Returns:
+            Список агентов с несохранённой памятью.
+        """
+        with self._get_session() as session:
+            # Получаем всех агентов с is_dialog_remembered == False
+            stmt = select(AgentORM).where(AgentORM.is_dialog_remembered == False)
+            orms = session.execute(stmt).scalars().all()
+
+            # Загружаем агентов и проверяем их историю из файлового хранилища
+            agents_with_unsaved = []
+            for orm in orms:
+                agent = self._agent_orm_to_agent(orm)
+                # Проверяем, есть ли непромптированные сообщения
+                unremembered_prompts = [
+                    msg for msg in agent.get_history()
+                    if not msg.is_remembered and msg.role in ("user", "assistant")
+                ]
+                if unremembered_prompts:
+                    agents_with_unsaved.append(agent)
+
+            return agents_with_unsaved

@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from agents import AgentSettings
@@ -56,6 +56,7 @@ class AgentORM(Base):
     message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_message_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
     system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_dialog_remembered: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     strategy_type: Mapped[str | None] = mapped_column(String(100), nullable=True, default="DefaultStrategy")
     strategy_params_json: Mapped[str | None] = mapped_column(Text, nullable=True)

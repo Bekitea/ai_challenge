@@ -11,6 +11,9 @@ from use_cases import (
     ChangeSettingsUseCase,
     CreateBranchUseCase,
     CreateChatUseCase,
+    RefreshAgentMemoryUseCase,
+    SaveAgentMemoryUseCase,
+    SaveUnsavedMemoriesUseCase,
     SelectChatUseCase,
     SelectContextStrategyUseCase,
     SendMessageUseCase,
@@ -37,6 +40,9 @@ class UseCasesBundle:
     create_branch: CreateBranchUseCase
     select_strategy: SelectContextStrategyUseCase
     view_global_memory: ViewGlobalMemoryUseCase
+    refresh_agent_memory: RefreshAgentMemoryUseCase
+    save_agent_memory: SaveAgentMemoryUseCase
+    save_unsaved_memories: SaveUnsavedMemoriesUseCase
 
 
 def initialize_application() -> UseCasesBundle:
@@ -104,4 +110,7 @@ def initialize_application() -> UseCasesBundle:
         create_branch=CreateBranchUseCase(),
         select_strategy=SelectContextStrategyUseCase(),
         view_global_memory=ViewGlobalMemoryUseCase(memory_repository),
+        refresh_agent_memory=RefreshAgentMemoryUseCase(memory_repository),
+        save_agent_memory=SaveAgentMemoryUseCase(memory_repository),
+        save_unsaved_memories=SaveUnsavedMemoriesUseCase(repository),
     )

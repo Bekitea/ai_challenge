@@ -423,9 +423,6 @@ class Agent:
         """
         import json
 
-        print("Зашли")
-        print(self.is_dialog_remembered)
-
         if self.is_dialog_remembered:
             return  # Нечего сохранять
 
@@ -434,8 +431,6 @@ class Agent:
             msg for msg in self._messages
             if not msg.is_remembered and msg.role in ("user", "assistant")
         ]
-
-        print(unremembered_prompts)
 
         if not unremembered_prompts:
             return  # Нет новых данных для запоминания
@@ -470,8 +465,6 @@ class Agent:
             {"role": "user", "content": "Извлеки факты из диалога выше."}
         ]
 
-        print(messages_for_llm)
-
         # Делаем запрос к ЛЛМ с требованием JSON формата
         response = self._llm_provider.generate(
             messages=messages_for_llm,
@@ -479,8 +472,6 @@ class Agent:
             max_tokens=1000,
             response_format={"type": "json_object"}
         )
-
-        print(response)
 
         # Обновляем счетчики технических токенов
         if response.prompt_tokens is not None:
@@ -493,7 +484,6 @@ class Agent:
             result = json.loads(response.content)
             new_facts = result.get("facts", [])
         except json.JSONDecodeError:
-            print("Ошибка!")
             new_facts = []
 
         # Объединяем старые и новые факты (избегаем дубликатов)

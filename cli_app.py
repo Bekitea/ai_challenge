@@ -316,6 +316,8 @@ class CLIChat:
                     self.current_agent = self.use_cases.select_chat.get_agent(
                         selected_id
                     )
+                    # При выборе чата загружаем память через use case
+                    self.use_cases.refresh_agent_memory.execute(self.current_agent)
                     print(f"\n[OK] Выбран чат: {self.current_agent.name}")
 
                     # Показываем всю историю и переходим к общению
@@ -499,6 +501,9 @@ class CLIChat:
 
                 if user_input.lower() == "/menu":
                     print("\nВозврат в меню...")
+                    # При выходе из чата сохраняем память через use case
+                    if self.current_agent:
+                        self.use_cases.save_agent_memory.execute(self.current_agent)
                     break
 
                 if user_input.lower() == "/stop":
@@ -596,6 +601,10 @@ class CLIChat:
         """Запускает CLI приложение."""
         self.clear_screen()
         self.print_header()
+
+        # При старте приложения достаем все агенты с несохраненными промптами
+        # и у них последовательно вызываем save_memory через use case
+        self.use_cases.save_unsaved_memories.execute()
 
         while True:
             self.print_menu()

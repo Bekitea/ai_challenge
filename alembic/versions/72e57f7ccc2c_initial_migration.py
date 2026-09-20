@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: d0d81c78eb25
+Revision ID: 72e57f7ccc2c
 Revises: 
-Create Date: 2026-09-19 15:27:24.332309
+Create Date: 2026-09-20 16:30:29.269975
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'd0d81c78eb25'
+revision: str = '72e57f7ccc2c'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -29,6 +29,7 @@ def upgrade() -> None:
     sa.Column('message_count', sa.Integer(), nullable=False),
     sa.Column('last_message_preview', sa.Text(), nullable=True),
     sa.Column('system_prompt', sa.Text(), nullable=True),
+    sa.Column('is_dialog_remembered', sa.Boolean(), nullable=False),
     sa.Column('settings_json', sa.Text(), nullable=True),
     sa.Column('strategy_type', sa.String(length=100), nullable=True),
     sa.Column('strategy_params_json', sa.Text(), nullable=True),

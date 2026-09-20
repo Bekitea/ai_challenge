@@ -607,6 +607,10 @@ class Agent:
             task_facts_list = "\\n".join(f"- {fact}" for fact in self.task_profile.facts)
             memory_text += f"\\n\\nПамять задачи ({self.task_profile.name}):\\n{task_facts_list}"
 
+        # Предпочтения задачи
+        if self.task_profile and self.task_profile.preferences:
+            memory_text += f"\\n\\nПредпочтения задачи ({self.task_profile.name}):\\n{self.task_profile.preferences}"
+
         if base_system_prompt:
             return f"{base_system_prompt}{memory_text}"
         else:

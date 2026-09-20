@@ -307,11 +307,12 @@ class PersistentAgentRepository(AgentRepository):
             llm_provider=self._llm_provider,
             initial_settings=initial_settings,
             system_prompt=system_prompt,
+            history_storage=self._chat_storage,
             strategy=strategy,
             auto_save=True,  # Включаем автосохранение для новых агентов
             global_memory_repository=self._global_memory_repository,
-            task_profile=task_profile,                              # ✅ ДОБАВЛЕНО
-            task_profile_repository=self._task_profile_repository,  # ✅ ДОБАВЛЕНО
+            task_profile=task_profile,
+            task_profile_repository=self._task_profile_repository,
         )
 
         # Устанавливаем ссылку на репозиторий для автосохранения

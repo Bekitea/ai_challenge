@@ -226,13 +226,10 @@ class Agent:
         """
         Продолжает диалог: добавляет сообщение пользователя, делает запрос к LLM,
         сохраняет ответ и возвращает результат.
-
         Args:
             user_prompt: Текст сообщения от пользователя.
-
         Returns:
             LlmResponse: Ответ от LLM с контентом и reasoning.
-
         Raises:
             ContextWindowExceededError: Если prompt_tokens превысил размер контекстного окна.
         """
@@ -248,13 +245,22 @@ class Agent:
 
         # Подготавливаем сообщения через стратегию
         memory_text = self.get_system_prompt_with_memory(None)
+
+        # Проверяем наличие ЛЮБЫХ данных памяти или предпочтений,
+        # чтобы не игнорировать профиль задачи, если глобальная память пуста
+        has_memory_data = (
+            bool(self.global_memory.facts)
+            or (self.task_profile and bool(self.task_profile.facts))
+            or (self.task_profile and bool(self.task_profile.preferences))
+        )
+
         prepared = self._strategy.prepare_messages(
             history=self._messages,
             llm_provider=self._llm_provider,
-            agent_memory_text=memory_text if self.global_memory.facts else None,
+            agent_memory_text=memory_text if has_memory_data else None,
         )
-        messages_for_llm = prepared.messages
 
+        messages_for_llm = prepared.messages
         settings = self._settings
         kwargs = settings.to_llm_request_properties()
 

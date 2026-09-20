@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -125,7 +127,13 @@ class Agent:
         strategy: ContextWindowStrategy | None = None,
         auto_save: bool = True,
         conversation_id: str | None = None,
+        global_memory_repository: Any | None = None,
     ):
+        if conversation_id is None:
+            raise ValueError("conversation_id is required")
+        if global_memory_repository is None:
+            raise ValueError("global_memory_repository is required")
+
         self.agent_id = agent_id
         self.conversation_id = conversation_id  # UUID для связи с файловым хранилищем
         self.name = name
@@ -136,6 +144,7 @@ class Agent:
         self._strategy = strategy or DefaultStrategy()
         self._auto_save = auto_save
         self._repository = None  # Устанавливается при регистрации в репозитории
+        self._global_memory_repository = global_memory_repository
 
         # Global memory fields
         self.global_memory = GlobalMemory()
@@ -148,7 +157,7 @@ class Agent:
         self._last_message_timestamp: datetime | None = None
         self._token_counters = TokenCounters()
 
-        # Загружаем память из файла при инициализации
+        # Загружаем память из репозитория при инициализации
         self.refresh_memory()
 
     @property
@@ -361,6 +370,7 @@ class Agent:
             messages=current_history.copy(),
             strategy=new_strategy,
             auto_save=True,
+            global_memory_repository=self._global_memory_repository,
         )
 
         branched_agent._repository = self._repository
@@ -391,27 +401,12 @@ class Agent:
 
     def refresh_memory(self) -> None:
         """
-        Загружает общесистемную память из файла.
+        Загружает общесистемную память из репозитория.
 
-        Если файл не существует, создаётся пустой GlobalMemory.
         Вызывается при инициализации агента и при входе в чат.
+        Репозиторий должен быть установлен (иначе агент не будет создан).
         """
-        import pickle
-        from pathlib import Path
-
-        from config import GLOBAL_MEMORY_PATH
-
-        memory_path = Path(GLOBAL_MEMORY_PATH)
-        if memory_path.exists():
-            try:
-                with open(memory_path, "rb") as f:
-                    self.global_memory = pickle.load(f)
-            except (pickle.UnpicklingError, EOFError, AttributeError):
-                # При ошибке десериализации используем пустую память
-                self.global_memory = GlobalMemory()
-        else:
-            # Файл не существует - создаём пустую память
-            self.global_memory = GlobalMemory()
+        self.global_memory = self._global_memory_repository.get_memory()
 
     def save_memory(self) -> None:
         """
@@ -421,16 +416,15 @@ class Agent:
         1. Достает все промпты с is_remembered == False
         2. Отправляет их вместе со старой памятью в ЛЛМ для получения новых фактов
         3. Объединяет старые и новые факты
-        4. Сериализует через pickle и сохраняет в файл
+        4. Сохраняет через репозиторий глобальной памяти
         5. Помечает все промпты и агент как remembered
 
         Расход токенов записывается в tech_prompt_tokens и tech_completion_tokens.
         """
         import json
-        import pickle
-        from pathlib import Path
 
-        from config import GLOBAL_MEMORY_PATH
+        print("Зашли")
+        print(self.is_dialog_remembered)
 
         if self.is_dialog_remembered:
             return  # Нечего сохранять
@@ -440,6 +434,8 @@ class Agent:
             msg for msg in self._messages
             if not msg.is_remembered and msg.role in ("user", "assistant")
         ]
+
+        print(unremembered_prompts)
 
         if not unremembered_prompts:
             return  # Нет новых данных для запоминания
@@ -474,6 +470,8 @@ class Agent:
             {"role": "user", "content": "Извлеки факты из диалога выше."}
         ]
 
+        print(messages_for_llm)
+
         # Делаем запрос к ЛЛМ с требованием JSON формата
         response = self._llm_provider.generate(
             messages=messages_for_llm,
@@ -481,6 +479,8 @@ class Agent:
             max_tokens=1000,
             response_format={"type": "json_object"}
         )
+
+        print(response)
 
         # Обновляем счетчики технических токенов
         if response.prompt_tokens is not None:
@@ -493,6 +493,7 @@ class Agent:
             result = json.loads(response.content)
             new_facts = result.get("facts", [])
         except json.JSONDecodeError:
+            print("Ошибка!")
             new_facts = []
 
         # Объединяем старые и новые факты (избегаем дубликатов)
@@ -503,11 +504,8 @@ class Agent:
 
         self.global_memory.facts = all_facts
 
-        # Сериализуем и сохраняем в файл
-        memory_path = Path(GLOBAL_MEMORY_PATH)
-        memory_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(memory_path, "wb") as f:
-            pickle.dump(self.global_memory, f)
+        # Сохраняем через репозиторий
+        self._global_memory_repository.save_memory(self.global_memory)
 
         # Помечаем все промпты как remembered
         for msg in self._messages:

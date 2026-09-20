@@ -33,6 +33,7 @@ class UseCasesBundle:
     show_chat_info: ShowChatInfoUseCase
     create_branch: CreateBranchUseCase
     select_strategy: SelectContextStrategyUseCase
+    view_global_memory: ViewGlobalMemoryUseCase
 
 
 @dataclass
@@ -288,3 +289,20 @@ class SelectContextStrategyUseCase:
 
         else:
             return DefaultStrategy()
+
+
+class ViewGlobalMemoryUseCase:
+    """Use case для просмотра глобальной памяти агента."""
+
+    def __init__(self, memory_repository):
+        self.memory_repository = memory_repository
+
+    def execute(self) -> list[str]:
+        """
+        Получает список фактов из глобальной памяти.
+
+        Returns:
+            Список фактов.
+        """
+        memory = self.memory_repository.get_memory()
+        return memory.facts

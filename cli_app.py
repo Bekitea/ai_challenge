@@ -1,17 +1,3 @@
-"""
-CLI Application module.
-
-This module contains the CLI presentation layer, which is responsible for:
-- Displaying menus and prompts to the user
-- Collecting user input
-- Invoking use cases to perform business logic
-- Formatting and displaying results
-
-The CLI layer knows nothing about application modes (production/test),
-repositories, LLM providers, or other infrastructure components.
-It only interacts with use cases.
-"""
-
 import os
 
 from agents import Agent, AgentSettings, ContextWindowExceededError
@@ -60,11 +46,12 @@ class CLIChat:
         print("\n--- МЕНЮ ---")
         print("1. Новый чат")
         print("2. Выбрать чат")
+        print("3. Просмотреть глобальную память")
         if self.current_agent:
-            print(f"3. Вернуться в чат: {self.current_agent.name}")
+            print(f"4. Вернуться в чат: {self.current_agent.name}")
         else:
-            print("3. Вернуться в чат (нет активного чата)")
-        print("4. Выход")
+            print("4. Вернуться в чат (нет активного чата)")
+        print("5. Выход")
         print("-" * 40)
 
     def print_chat_list(self):
@@ -473,6 +460,18 @@ class CLIChat:
         except Exception as e:
             print(f"\n[ERROR] Ошибка при создании ветки: {e}")
 
+    def print_global_memory(self):
+        """Показывает глобальную память (список фактов)."""
+        facts = self.use_cases.view_global_memory.execute()
+
+        print("\n--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---")
+        if not facts:
+            print("  (память пуста)")
+        else:
+            for i, fact in enumerate(facts, 1):
+                print(f"  {i}. {fact}")
+        print("-" * 40)
+
     def chat_loop(self):
         """Основной цикл общения с агентом."""
         if not self.current_agent:
@@ -602,20 +601,22 @@ class CLIChat:
             self.print_menu()
 
             try:
-                choice = input("\nВаш выбор (1-4): ").strip()
+                choice = input("\nВаш выбор (1-5): ").strip()
 
                 if choice == "1":
                     self.create_new_chat()
                 elif choice == "2":
                     self.select_chat()
                 elif choice == "3":
+                    self.print_global_memory()
+                elif choice == "4":
                     if self.current_agent:
                         print(f"\n[OK] Возврат в чат: {self.current_agent.name}")
                         self.show_history()
                         self.chat_loop()
                     else:
                         print("\n[WARN] Нет активного чата. Выберите или создайте чат.")
-                elif choice == "4":
+                elif choice == "5":
                     print("\nДо свидания!\n")
                     break
                 else:

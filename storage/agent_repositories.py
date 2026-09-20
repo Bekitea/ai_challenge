@@ -101,6 +101,7 @@ class PersistentAgentRepository(AgentRepository):
         self,
         llm_provider: LlmProvider,
         session_factory: Callable[[], Session],
+        global_memory_repository=None,
     ):
         """
         Инициализирует репозиторий.
@@ -109,10 +110,12 @@ class PersistentAgentRepository(AgentRepository):
             llm_provider: Провайдер LLM для запросов.
             session_factory: Фабрика сессий БД. Внешняя зависимость,
                             предоставляемая слоем инфраструктуры.
+            global_memory_repository: Репозиторий глобальной памяти (опционально).
         """
         self._session_factory = session_factory
         self._llm_provider = llm_provider
         self._chat_storage = ConversationRepository()
+        self._global_memory_repository = global_memory_repository
 
     def _get_session(self) -> Session:
         """Возвращает новую сессию БД."""
@@ -153,6 +156,7 @@ class PersistentAgentRepository(AgentRepository):
             messages=history if history else None,
             strategy=strategy,
             auto_save=True,  # Включаем автосохранение для загруженных агентов
+            global_memory_repository=self._global_memory_repository,
         )
 
         # Устанавливаем ссылку на репозиторий для автосохранения
@@ -253,15 +257,20 @@ class PersistentAgentRepository(AgentRepository):
         Returns:
             Agent: Новый экземпляр агента.
         """
-        # conversation_id генерируется автоматически в ORM
+        # Создаем агента с conversation_id - он будет установлен после сохранения ORM
+        from uuid import uuid4
+        temp_conversation_id = str(uuid4())  # Временный ID до сохранения в БД
+
         agent = Agent(
             agent_id=None,  # Будет установлен после сохранения в БД
+            conversation_id=temp_conversation_id,  # Временный ID, заменится после commit
             name=name,
             llm_provider=self._llm_provider,
             initial_settings=initial_settings,
             system_prompt=system_prompt,
             strategy=strategy,
             auto_save=True,  # Включаем автосохранение для новых агентов
+            global_memory_repository=self._global_memory_repository,
         )
 
         # Устанавливаем ссылку на репозиторий для автосохранения
@@ -299,6 +308,7 @@ class PersistentAgentRepository(AgentRepository):
             session.commit()
             # После commit ORM получает сгенерированный числовой id и conversation_id
             agent.agent_id = orm.id
+            agent.conversation_id = orm.conversation_id
 
         # Сохраняем начальную историю (системный промпт) в файл по conversation_id
         self._chat_storage.save_history(agent.conversation_id, agent.get_history())

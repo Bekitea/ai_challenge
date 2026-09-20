@@ -1,11 +1,3 @@
-"""
-Application Factory module for initializing application components.
-
-This module encapsulates the initialization logic for all application components,
-including LLM providers, repositories, and use cases. It abstracts away the
-application mode (production vs test) from the CLI layer.
-"""
-
 from dataclasses import dataclass
 
 from app_mode import get_mode_config
@@ -13,6 +5,7 @@ from config import YANDEX_API_KEY, YANDEX_FOLDER_ID
 from llm_providers import MockLlmProvider, YandexCloudLlmProvider
 from storage.agent_repositories import PersistentAgentRepository
 from storage.db_connection import DatabaseConnection
+from storage.global_memory_repository import FileGlobalMemoryRepository
 from storage.orm_models import Base
 from use_cases import (
     ChangeSettingsUseCase,
@@ -24,6 +17,7 @@ from use_cases import (
     ShowChatInfoUseCase,
     ShowHistoryUseCase,
     ShowSummaryUseCase,
+    ViewGlobalMemoryUseCase,
     ViewSettingsUseCase,
 )
 
@@ -42,6 +36,7 @@ class UseCasesBundle:
     show_chat_info: ShowChatInfoUseCase
     create_branch: CreateBranchUseCase
     select_strategy: SelectContextStrategyUseCase
+    view_global_memory: ViewGlobalMemoryUseCase
 
 
 def initialize_application() -> UseCasesBundle:
@@ -85,10 +80,15 @@ def initialize_application() -> UseCasesBundle:
     )
     db_connection.init_tables(Base.metadata)
 
+    # Initialize global memory repository
+    from config import GLOBAL_MEMORY_PATH
+    memory_repository = FileGlobalMemoryRepository(GLOBAL_MEMORY_PATH)
+
     # Initialize repository with session factory
     repository = PersistentAgentRepository(
         llm_provider=llm_provider,
         session_factory=db_connection.get_session,
+        global_memory_repository=memory_repository,
     )
 
     # Create and return all use cases
@@ -103,4 +103,5 @@ def initialize_application() -> UseCasesBundle:
         show_chat_info=ShowChatInfoUseCase(),
         create_branch=CreateBranchUseCase(),
         select_strategy=SelectContextStrategyUseCase(),
+        view_global_memory=ViewGlobalMemoryUseCase(memory_repository),
     )

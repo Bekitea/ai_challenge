@@ -164,23 +164,24 @@ class ContextWindowStrategy:
 --- МЕНЮ ---
 1. Новый чат
 2. Выбрать чат
-3. Вернуться в чат: {chat_name}|(нет активного чата)
-4. Выход
+3. Просмотр глобальной памяти
+4. Вернуться в чат: {chat_name}|(нет активного чата)
+5. Выход
 ----------------------------------------
 
-Ваш выбор (1-4):
+Ваш выбор (1-5):
 ```
 
 #### 4.2.2 Dynamic Behavior
 
-- Option 3 label changes based on `current_chat_id` state:
+- Option 4 label changes based on `current_chat_id` state:
   - If active chat exists: `Вернуться в чат: {chat_name}`
   - If no active chat: `Вернуться в чат (нет активного чата)`
 
 #### 4.2.3 Input Validation
 
-- Accept only integers 1-4
-- Invalid input: Display `[ERROR] Неверный выбор. Введите число от 1 до 4.` and re-prompt
+- Accept only integers 1-5
+- Invalid input: Display `[ERROR] Неверный выбор. Введите число от 1 до 5.` and re-prompt
 - Empty input: Re-prompt without error message
 
 ### 4.3 Chat List Display (Select Chat Option)
@@ -872,6 +873,40 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 ---
 
+### UC-012: View Global Memory from Menu
+
+#### 5.12.1 Preconditions
+
+- Application is running
+- User is in Main Menu
+- No active chat required (global memory is independent of chats/agents)
+
+#### 5.12.2 Main Success Scenario
+
+1. User selects option 3 (Global Memory) from Main Menu
+2. System retrieves global memory facts from GlobalMemoryRepository
+3. System displays header: `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---`
+4. If memory is empty: displays `(память пуста)`
+5. If memory has facts: displays numbered list of facts (one fact per line)
+6. System displays separator line (40 dashes)
+7. System returns to Main Menu
+8. Use case ends
+
+#### 5.12.3 Alternative Flows
+
+- **A1: Empty Global Memory**
+  - Step 3: Repository returns empty list of facts
+  - System displays `(память пуста)` instead of fact list
+  - Continue with step 6
+
+#### 5.12.4 Postconditions
+
+- User viewed global memory facts (or empty state)
+- Returned to Main Menu
+- No active chat required or changed
+
+---
+
 ## 6. Test Cases
 
 ### TC-001: Create Chat with Default Values
@@ -880,7 +915,7 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 | Step | Action                      | Expected Result                        |
 | ---- | --------------------------- | -------------------------------------- |
-| 1    | Select "New Chat"           | Name prompt displayed                  |
+| 1    | Select option 1 (New Chat)  | Name prompt displayed                  |
 | 2    | Press Enter (default name)  | System prompt prompt displayed         |
 | 3    | Press Enter (skip prompt)   | Model selection displayed              |
 | 4    | Select model 1              | Temperature prompt displayed           |
@@ -898,7 +933,7 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 | Step | Action              | Expected Result            |
 | ---- | ------------------- | -------------------------- |
-| 1    | Select "New Chat"   | Name prompt                |
+| 1    | Select option 1 (New Chat)   | Name prompt                |
 | 2    | Enter "Test Chat"   | System prompt prompt       |
 | 3    | Enter "Be concise"  | Model selection            |
 | 4    | Select model 2      | Temperature prompt         |
@@ -928,11 +963,11 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 **Related UC**: UC-002
 
-| Step | Action                | Expected Result               |
-| ---- | --------------------- | ----------------------------- |
-| 1    | Ensure no chats exist | Empty storage                 |
-| 2    | Select "Выбрать чат"  | Message "Нет доступных чатов" |
-| 3    | Verify navigation     | Returns to Main Menu          |
+| Step | Action                      | Expected Result               |
+| ---- | --------------------------- | ----------------------------- |
+| 1    | Ensure no chats exist       | Empty storage                 |
+| 2    | Select option 2 (Select Chat)| Message "Нет доступных чатов" |
+| 3    | Verify navigation           | Returns to Main Menu          |
 
 ---
 
@@ -971,8 +1006,8 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 | Step | Action            | Expected Result              |
 | ---- | ----------------- | ---------------------------- |
 | 1    | Start application | Main Menu                    |
-| 2    | Verify option 3   | Shows "(нет активного чата)" |
-| 3    | Select option 3   | Warning displayed            |
+| 2    | Verify option 4   | Shows "(нет активного чата)" |
+| 3    | Select option 4   | Warning displayed            |
 | 4    | Verify state      | Remains in Main Menu         |
 
 ---
@@ -985,8 +1020,8 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 | ---- | --------------------- | ------------------------------- |
 | 1    | Create or select chat | Chat loop entered               |
 | 2    | Type "/menu"          | Main Menu displayed             |
-| 3    | Verify option 3       | Shows "Вернуться в чат: {name}" |
-| 4    | Select option 3       | Chat loop entered               |
+| 3    | Verify option 4       | Shows "Вернуться в чат: {name}" |
+| 4    | Select option 4       | Chat loop entered               |
 | 5    | Verify context        | Same chat, history intact       |
 
 ---
@@ -1143,9 +1178,9 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 | ---- | --------------- | ---------------- |
 | 1    | Create Chat A   | Active = A       |
 | 2    | Type "/menu"    | Main Menu        |
-| 3    | Select Chat B   | Active = B       |
+| 3    | Select option 2, choose Chat B   | Active = B       |
 | 4    | Type "/menu"    | Main Menu        |
-| 5    | Return to Chat  | Returns to B     |
+| 5    | Select option 4 (Return to Chat)  | Returns to B     |
 | 6    | Verify A intact | Chat A unchanged |
 
 ---
@@ -1423,6 +1458,54 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 | 1    | Open chat with SlidingWindowStrategy (window_size=15) | Type /branch, create branch             |
 | 2    | Verify new branch                                     | Strategy type = "SlidingWindowStrategy" |
 | 3    | Verify window_size copied                             | window_size = 15 in new branch          |
+
+---
+
+### TC-041: View Global Memory from Main Menu (No Chat Required)
+
+**Related UC**: UC-012
+
+| Step | Action                                    | Expected Result                                       |
+| ---- | ----------------------------------------- | ----------------------------------------------------- |
+| 1    | Start application, stay in Main Menu      | No active chat selected                               |
+| 2    | Select option 3 (Global Memory) from menu | System displays global memory view                    |
+| 3    | Verify header displayed                   | `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---` is shown                  |
+| 4    | Verify facts or empty state               | Either numbered facts list OR `(память пуста)`        |
+| 5    | Verify separator line                     | 40 dashes are displayed                               |
+| 6    | Verify return to menu                     | Main Menu is displayed again                          |
+
+### TC-042: View Global Memory - Empty State
+
+**Related UC**: UC-012
+
+| Step | Action                                    | Expected Result                                       |
+| ---- | ----------------------------------------- | ----------------------------------------------------- |
+| 1    | Start application                         | Application running                                   |
+| 2    | Ensure no chats exist and memory is empty | Repository returns empty list                         |
+| 3    | Select option 3 (Global Memory) from menu | System displays global memory view                    |
+| 4    | Verify header displayed                   | `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---` is shown                  |
+| 5    | Verify empty state message                | `(память пуста)` is displayed                         |
+| 6    | Verify separator line                     | 40 dashes are displayed                               |
+| 7    | Verify return to menu                     | Main Menu is displayed again                          |
+
+### TC-043: View Global Memory - With Facts (End-to-End Flow)
+
+**Related UC**: UC-012
+
+**Purpose**: Verify that memory is populated during chat interaction, saved when exiting to menu, and correctly displayed from the repository.
+
+| Step | Action                                           | Expected Result                                          |
+| ---- | ------------------------------------------------ | -------------------------------------------------------- |
+| 1    | Start application                                | Application running                                      |
+| 2    | Select option 1 (New Chat) from menu             | Chat creation workflow starts                            |
+| 3    | Complete chat creation with any settings         | Chat created, entered chat loop                          |
+| 4    | Send a message to the agent                      | Agent responds (Mock provider generates test facts)      |
+| 5    | Type `/menu` command to exit to main menu        | System saves agent state and global memory               |
+| 6    | Select option 3 (Global Memory) from menu        | System retrieves facts from FileGlobalMemoryRepository   |
+| 7    | Verify header displayed                          | `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---` is shown                     |
+| 8    | Verify facts are displayed as numbered list      | At least 1-2 test facts shown as `{i}. {fact}`           |
+| 9    | Verify separator line                            | 40 dashes are displayed                                  |
+| 10   | Verify return to menu                            | Main Menu is displayed again                             |
 
 ---
 

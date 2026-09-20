@@ -768,8 +768,6 @@ pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings::test_tc_0
 python cli_tests/smoke_test.py
 ```
 
-**Windows Users:** Always use `-p no:libtmux` flag to avoid SQLite file locking issues. See "Windows-Specific: SQLite File Locking Issue" section for details.
-
 ### Test Coverage
 - **40 test cases** covering all requirements from `cli_spec.md`
 - **11 Use Cases** organized by user workflow
@@ -839,7 +837,7 @@ If errors persist, manually remove the test-data directory before running tests:
 Remove-Item -Recurse -Force test-data
 
 # Then run tests
-python -m pytest cli_tests/test_cli_e2e.py -v -p no:libtmux
+python -m pytest cli_tests/test_cli_e2e.py -v
 ```
 
 ### Prevention

@@ -7,7 +7,9 @@ from storage.agent_repositories import PersistentAgentRepository
 from storage.db_connection import DatabaseConnection
 from storage.global_memory_repository import FileGlobalMemoryRepository
 from storage.orm_models import Base
-from storage.task_profile_repository import FileTaskProfileRepository
+from storage.task_profile_repository import (
+    DatabaseTaskProfileRepository,
+)
 from use_cases import (
     ChangeSettingsUseCase,
     CreateBranchUseCase,
@@ -101,7 +103,7 @@ def initialize_application() -> UseCasesBundle:
 
     # Initialize task profile repository
     from config import FILE_STORAGE_DIR
-    task_profile_repository = FileTaskProfileRepository(FILE_STORAGE_DIR, db_connection.get_session)
+    task_profile_repository = DatabaseTaskProfileRepository(FILE_STORAGE_DIR, db_connection.get_session)
 
     # Initialize repository with session factory
     repository = PersistentAgentRepository(

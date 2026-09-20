@@ -2,8 +2,8 @@ import json
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from agents import AgentSettings
 
@@ -25,6 +25,34 @@ def _deserialize_settings(json_str: str | None) -> AgentSettings | None:
         return None
     data = json.loads(json_str)
     return AgentSettings(**data)
+
+
+class TaskProfileORM(Base):
+    """
+    ORM модель для хранения метаданных профиля задачи.
+
+    Атрибуты:
+        id: UUID профиля (primary key).
+        name: Название профиля задачи.
+        description: Описание задачи.
+        created_at: Дата создания профиля.
+        agents: Связь с агентами (many-to-one).
+
+    Примечание: Факты задачи хранятся в файловом хранилище через TaskProfileRepository,
+    а не в БД. Эта модель содержит только метаданные для отображения в списке профилей.
+    """
+    __tablename__ = "task_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now().astimezone())
+
+    # Связь с агентами
+    agents: Mapped[list[AgentORM]] = relationship(back_populates="task_profile", foreign_keys="AgentORM.task_profile_id")
+
+    def __repr__(self) -> str:
+        return f"<TaskProfileORM(id={self.id}, name={self.name})>"
 
 
 class AgentORM(Base):
@@ -64,6 +92,12 @@ class AgentORM(Base):
     chat_completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     tech_prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     tech_completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Foreign key to TaskProfile (optional, set only at creation)
+    task_profile_id: Mapped[str | None] = mapped_column(ForeignKey("task_profiles.id"), nullable=True)
+
+    # Relationship back to TaskProfile
+    task_profile: Mapped[TaskProfileORM | None] = relationship(back_populates="agents")
 
     def get_settings(self) -> AgentSettings | None:
         """Возвращает десериализованные настройки агента."""

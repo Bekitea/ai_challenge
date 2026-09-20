@@ -102,6 +102,16 @@ class GlobalMemory:
 
 
 @dataclass
+class TaskProfile:
+    """Профиль задачи с памятью о фактах задачи."""
+    id: str
+    name: str
+    description: str
+    created_at: datetime | None
+    facts: list[str] = field(default_factory=list)
+
+
+@dataclass
 class AgentPreview:
     """Превью агента для отображения в списке."""
 
@@ -128,6 +138,8 @@ class Agent:
         auto_save: bool = True,
         conversation_id: str | None = None,
         global_memory_repository: Any | None = None,
+        task_profile: TaskProfile | None = None,
+        task_profile_repository: Any | None = None,
     ):
         if conversation_id is None:
             raise ValueError("conversation_id is required")
@@ -145,10 +157,14 @@ class Agent:
         self._auto_save = auto_save
         self._repository = None  # Устанавливается при регистрации в репозитории
         self._global_memory_repository = global_memory_repository
+        self._task_profile_repository = task_profile_repository
 
         # Global memory fields
         self.global_memory = GlobalMemory()
         self.is_dialog_remembered = False
+
+        # Task profile fields
+        self.task_profile = task_profile
 
         # Добавляем системный промпт только если сообщений ещё нет
         if system_prompt and not self._messages:
@@ -410,13 +426,15 @@ class Agent:
 
     def save_memory(self) -> None:
         """
-        Сохраняет общесистемную память о пользователе.
+        Сохраняет общесистемную память о пользователе и память задачи.
 
         Если is_dialog_remembered == False:
         1. Достает все промпты с is_remembered == False
-        2. Отправляет их вместе со старой памятью в ЛЛМ для получения новых фактов
+        2. Отправляет их в ЛЛМ для получения новых фактов:
+           - Для глобальной памяти: факты о личности пользователя
+           - Для памяти задачи: факты, относящиеся к задаче (если агент привязан к профилю)
         3. Объединяет старые и новые факты
-        4. Сохраняет через репозиторий глобальной памяти
+        4. Сохраняет через соответствующие репозитории
         5. Помечает все промпты и агент как remembered
 
         Расход токенов записывается в tech_prompt_tokens и tech_completion_tokens.
@@ -435,17 +453,17 @@ class Agent:
         if not unremembered_prompts:
             return  # Нет новых данных для запоминания
 
-        # Формируем промпт для ЛЛМ
-        old_facts_text = ""
-        if self.global_memory.facts:
-            old_facts_text = "Текущие факты о пользователе:\\n" + "\\n".join(f"- {f}" for f in self.global_memory.facts)
-
         dialog_text = ""
         for msg in unremembered_prompts:
             role_ru = "Пользователь" if msg.role == "user" else "Ассистент"
             dialog_text += f"{role_ru}: {msg.content}\\n"
 
-        system_prompt = (
+        # === Сохранение глобальной памяти (факты о пользователе) ===
+        old_facts_text = ""
+        if self.global_memory.facts:
+            old_facts_text = "Текущие факты о пользователе:\\n" + "\\n".join(f"- {f}" for f in self.global_memory.facts)
+
+        global_system_prompt = (
             "Ты ассистент для извлечения фактов о пользователе из диалога. "
             "Твоя задача — найти новую информацию о пользователе (предпочтения, факты биографии, интересы и т.д.) "
             "и вернуть её в формате JSON.\\n\\n"
@@ -461,11 +479,10 @@ class Agent:
         )
 
         messages_for_llm = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "Извлеки факты из диалога выше."}
+            {"role": "system", "content": global_system_prompt},
+            {"role": "user", "content": "Извлеки факты о пользователе из диалога выше."}
         ]
 
-        # Делаем запрос к ЛЛМ с требованием JSON формата
         response = self._llm_provider.generate(
             messages=messages_for_llm,
             temperature=0.1,
@@ -479,23 +496,77 @@ class Agent:
         if response.completion_tokens is not None:
             self._token_counters.tech_completion_tokens += response.completion_tokens
 
-        # Парсим ответ и извлекаем факты
         try:
             result = json.loads(response.content)
-            new_facts = result.get("facts", [])
+            new_global_facts = result.get("facts", [])
         except json.JSONDecodeError:
-            new_facts = []
+            new_global_facts = []
 
-        # Объединяем старые и новые факты (избегаем дубликатов)
-        all_facts = list(self.global_memory.facts)
-        for fact in new_facts:
-            if fact not in all_facts:
-                all_facts.append(fact)
+        all_global_facts = list(self.global_memory.facts)
+        for fact in new_global_facts:
+            if fact not in all_global_facts:
+                all_global_facts.append(fact)
 
-        self.global_memory.facts = all_facts
-
-        # Сохраняем через репозиторий
+        self.global_memory.facts = all_global_facts
         self._global_memory_repository.save_memory(self.global_memory)
+
+        # === Сохранение памяти задачи (если агент привязан к профилю) ===
+        if self.task_profile and self._task_profile_repository:
+            task_old_facts_text = ""
+            if self.task_profile.facts:
+                task_old_facts_text = (
+                    f"Текущие факты о задаче \"{self.task_profile.name}\":\\n"
+                    + "\\n".join(f"- {f}" for f in self.task_profile.facts)
+                )
+
+            task_system_prompt = (
+                f"Ты ассистент для извлечения фактов о задаче из диалога. "
+                f"Задача: {self.task_profile.name}. Описание: {self.task_profile.description}.\\n"
+                "Твоя задача — найти новую информацию, относящуюся к задаче (прогресс, решения, ограничения, требования, результаты) "
+                "и вернуть её в формате JSON.\\n\\n"
+                "Важные правила:\\n"
+                "1. Возвращай ТОЛЬКО новые факты, которых нет в текущем списке.\\n"
+                "2. Игнорируй противоречия — просто добавляй новые факты.\\n"
+                "3. Факты должны быть краткими и конкретными.\\n"
+                "4. Если новых фактов нет, верни пустой список.\\n"
+                "5. Извлекай только факты, относящиеся к задаче, а не к пользователю.\\n\\n"
+                f"{task_old_facts_text}\\n\\n"
+                f"Диалог для анализа:\\n{dialog_text}\\n\\n"
+                "Верни ответ в формате JSON со схемой: "
+                '{"facts": ["факт 1", "факт 2", ...]}'
+            )
+
+            messages_for_task_llm = [
+                {"role": "system", "content": task_system_prompt},
+                {"role": "user", "content": "Извлеки факты о задаче из диалога выше."}
+            ]
+
+            task_response = self._llm_provider.generate(
+                messages=messages_for_task_llm,
+                temperature=0.1,
+                max_tokens=1000,
+                response_format={"type": "json_object"}
+            )
+
+            # Обновляем счетчики технических токенов
+            if task_response.prompt_tokens is not None:
+                self._token_counters.tech_prompt_tokens += task_response.prompt_tokens
+            if task_response.completion_tokens is not None:
+                self._token_counters.tech_completion_tokens += task_response.completion_tokens
+
+            try:
+                task_result = json.loads(task_response.content)
+                new_task_facts = task_result.get("facts", [])
+            except json.JSONDecodeError:
+                new_task_facts = []
+
+            all_task_facts = list(self.task_profile.facts)
+            for fact in new_task_facts:
+                if fact not in all_task_facts:
+                    all_task_facts.append(fact)
+
+            self.task_profile.facts = all_task_facts
+            self._task_profile_repository.save_facts(self.task_profile.id, all_task_facts)
 
         # Помечаем все промпты как remembered
         for msg in self._messages:
@@ -506,18 +577,25 @@ class Agent:
 
     def get_system_prompt_with_memory(self, base_system_prompt: str | None) -> str:
         """
-        Формирует системный промпт с добавлением памяти о пользователе.
+        Формирует системный промпт с добавлением памяти о пользователе и памяти задачи.
 
         Args:
             base_system_prompt: Базовый системный промпт (если есть).
 
         Returns:
-            Полный системный промпт с памятью.
+            Полный системный промпт с памятью (глобальной и задачи).
         """
         memory_text = ""
+
+        # Глобальная память
         if self.global_memory.facts:
             facts_list = "\\n".join(f"- {fact}" for fact in self.global_memory.facts)
             memory_text = f"\\n\\nПамять о пользователе:\\n{facts_list}"
+
+        # Память задачи
+        if self.task_profile and self.task_profile.facts:
+            task_facts_list = "\\n".join(f"- {fact}" for fact in self.task_profile.facts)
+            memory_text += f"\\n\\nПамять задачи ({self.task_profile.name}):\\n{task_facts_list}"
 
         if base_system_prompt:
             return f"{base_system_prompt}{memory_text}"

@@ -81,7 +81,37 @@ class AgentPreview:
     last_message_preview: str  # First 50 chars of last message content
 ```
 
-### 3.4 Context Window Strategy Object
+### 3.3 TaskProfile Object
+
+Represents a task-specific memory profile that can be attached to an agent:
+
+```python
+class TaskProfile:
+    id: str                     # UUID format, unique identifier
+    name: str                   # Task profile name (max 100 chars)
+    description: str            # Task description (max 500 chars)
+    created_at: str             # ISO 8601 timestamp
+    facts: list[str]            # List of task-related facts (auto-updated)
+```
+
+### 3.4 Agent Settings Extended
+
+```json
+{
+  "model": "string (model identifier)",
+  "temperature": "float|null (0.0-2.0)",
+  "top_p": "float|null (0.0-1.0)",
+  "top_k": "integer (0 = disabled)",
+  "reasoning_effort": "string (none|low|medium|high)",
+  "context_window_size": "integer (default 200000, tokens, retained for backward compatibility)",
+  "strategy": "ContextWindowStrategy object (see section 3.4)",
+  "task_profile_id": "string|null (UUID of attached TaskProfile, optional)"
+}
+```
+
+**Note**: `task_profile_id` is set only at chat creation time and cannot be changed afterwards. If `null`, the agent uses only global memory.
+
+### 3.5 Context Window Strategy Object
 
 Strategy for managing context window when it exceeds limits:
 
@@ -111,22 +141,6 @@ class ContextWindowStrategy:
 
 ---
 
-### 3.5 Chat Settings Extended
-
-```json
-{
-  "model": "string (model identifier)",
-  "temperature": "float|null (0.0-2.0)",
-  "top_p": "float|null (0.0-1.0)",
-  "top_k": "integer (0 = disabled)",
-  "reasoning_effort": "string (none|low|medium|high)",
-  "context_window_size": "integer (default 200000, tokens, retained for backward compatibility)",
-  "strategy": "ContextWindowStrategy object (see section 3.4)"
-}
-```
-
-**Note**: `context_window_size` is retained in the data structure for backward compatibility but is no longer prompted during chat creation or settings change. Context window management is now handled internally by the selected strategy.
-
 ### 3.6 Message Roles
 
 | Role      | Description               | Display Prefix | Editable              |
@@ -134,6 +148,24 @@ class ContextWindowStrategy:
 | system    | Initial agent instruction | [SYSTEM]       | No (only at creation) |
 | user      | User input                | [USER]         | No                    |
 | assistant | AI response               | [AGENT]        | No                    |
+
+---
+
+### 3.7 Memory Display Format
+
+When displaying memory (global or task profile), facts are shown as a numbered list:
+
+```
+--- {MEMORY_TITLE} ---
+{fact_1}
+{fact_2}
+...
+----------------------------------------
+```
+
+If memory is empty: `(память пуста)`
+
+Memory facts are auto-extracted from dialogues by LLM and saved to respective repositories.
 
 ---
 
@@ -164,12 +196,13 @@ class ContextWindowStrategy:
 --- МЕНЮ ---
 1. Новый чат
 2. Выбрать чат
-3. Просмотр глобальной памяти
-4. Вернуться в чат: {chat_name}|(нет активного чата)
-5. Выход
+3. Профили задач
+4. Просмотр глобальной памяти
+5. Вернуться в чат: {chat_name}|(нет активного чата)
+6. Выход
 ----------------------------------------
 
-Ваш выбор (1-5):
+Ваш выбор (1-6):
 ```
 
 #### 4.2.2 Dynamic Behavior
@@ -180,8 +213,8 @@ class ContextWindowStrategy:
 
 #### 4.2.3 Input Validation
 
-- Accept only integers 1-5
-- Invalid input: Display `[ERROR] Неверный выбор. Введите число от 1 до 5.` and re-prompt
+- Accept only integers 1-6
+- Invalid input: Display `[ERROR] Неверный выбор. Введите число от 1 до 6.` and re-prompt
 - Empty input: Re-prompt without error message
 
 ### 4.3 Chat List Display (Select Chat Option)
@@ -337,12 +370,34 @@ Reasoning Effort:
   - `window_size` (default 10)
 - Invalid input: Default to 1
 
+#### 4.4.9 Step 9: Task Profile Selection (Optional)
+
+After context strategy selection, prompt for task profile attachment:
+
+```
+--- ПРИВЯЗКА ПРОФИЛЯ ЗАДАЧИ ---
+Доступные профили задач:
+  1. {profile_name_1} ({description_preview_1})
+  2. {profile_name_2} ({description_preview_2})
+  ...
+  0. Не привязывать профиль
+
+Выберите профиль задачи (0-{n}, по умолчанию 0):
+```
+
+- `description_preview`: First 50 characters of description, truncated with `...` if longer
+- If no profiles exist: Display `(нет доступных профилей)` and skip to completion
+- Default: 0 (no profile attached)
+- Invalid input: Default to 0
+- **Note**: Once set, `task_profile_id` cannot be changed for this chat
+
 #### 4.4.10 Completion Message
 
 ```
 [OK] Чат '{name}' создан!
   ID: {full_id}
   Стратегия: {strategy_type}
+  Профиль задачи: {profile_name}|(не привязан)
 ```
 
 **Note**: `{full_id}` displays the complete UUID without truncation or ellipsis.
@@ -883,7 +938,7 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 #### 5.12.2 Main Success Scenario
 
-1. User selects option 3 (Global Memory) from Main Menu
+1. User selects option 4 (Global Memory) from Main Menu
 2. System retrieves global memory facts from GlobalMemoryRepository
 3. System displays header: `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---`
 4. If memory is empty: displays `(память пуста)`
@@ -904,6 +959,216 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 - User viewed global memory facts (or empty state)
 - Returned to Main Menu
 - No active chat required or changed
+
+---
+
+### UC-013: View Task Profiles List from Menu
+
+#### 5.13.1 Preconditions
+
+- Application is running
+- User is in Main Menu
+- No active chat required
+
+#### 5.13.2 Main Success Scenario
+
+1. User selects option 3 (Task Profiles) from Main Menu
+2. System retrieves all task profiles from TaskProfileRepository
+3. If no profiles exist:
+   - Display `(нет доступных профилей)`
+   - Display menu options: `[1. Создать новый профиль]`, `[2. Назад в меню]`
+   - Handle selection and proceed accordingly
+4. If profiles exist:
+   - Display header: `--- ПРОФИЛИ ЗАДАЧ ---`
+   - Display numbered list of profiles (one per block):
+     ```
+     {index}. {name}
+        Описание: {description_preview}
+        Создан: {created_at}
+        ID: {full_id}
+     ----------------------------------------
+     ```
+   - Display menu options: `[1. Создать новый профиль]`, `[2. Просмотреть память профиля]`, `[3. Удалить профиль]`, `[4. Назад в меню]`
+   - Wait for user selection
+5. System processes user choice:
+   - If "Create new": Execute UC-014
+   - If "View memory": Execute UC-015
+   - If "Delete": Execute UC-016
+   - If "Back": Return to Main Menu
+6. Use case ends
+
+#### 5.13.3 Alternative Flows
+
+- **A1: Empty Task Profiles List**
+  - Step 3: Repository returns empty list
+  - System shows only "Create new" option
+  - Continue with UC-014 or return to menu
+
+- **A2: Invalid Menu Choice**
+  - Step 5: User enters invalid option
+  - Display `[ERROR] Неверный выбор.` and re-prompt
+
+#### 5.13.4 Postconditions
+
+- User viewed task profiles list (or empty state)
+- Optionally created, viewed, or deleted a profile
+- Returned to Main Menu if "Back" selected
+
+---
+
+### UC-014: Create New Task Profile
+
+#### 5.14.1 Preconditions
+
+- Application is running
+- User initiated profile creation from Task Profiles menu
+
+#### 5.14.2 Main Success Scenario
+
+1. System displays name prompt: `Введите название профиля задачи (макс. 100 символов):`
+2. User enters profile name
+3. System validates name (non-empty, max 100 chars)
+4. System displays description prompt: `Введите описание профиля (макс. 500 символов):`
+5. User enters description
+6. System validates description (non-empty, max 500 chars)
+7. System generates UUID for profile
+8. System records current timestamp as `created_at`
+9. System creates empty facts list
+10. System saves profile to TaskProfileRepository
+11. System displays success message:
+    ```
+    [OK] Профиль задачи '{name}' создан!
+      ID: {full_id}
+      Создан: {timestamp}
+    ```
+12. System returns to Task Profiles menu
+13. Use case ends
+
+#### 5.14.3 Alternative Flows
+
+- **A1: Empty Name**
+  - Step 3: User enters empty string
+  - Display `[ERROR] Название не может быть пустым.` and re-prompt
+
+- **A2: Name Too Long**
+  - Step 3: User enters >100 characters
+  - Truncate to 100 characters with warning `[WARN] Название сокращено до 100 символов.`
+
+- **A3: Empty Description**
+  - Step 6: User enters empty string
+  - Display `[ERROR] Описание не может быть пустым.` and re-prompt
+
+- **A4: Description Too Long**
+  - Step 6: User enters >500 characters
+  - Truncate to 500 characters with warning `[WARN] Описание сокращено до 500 символов.`
+
+#### 5.14.4 Postconditions
+
+- New TaskProfile created with unique UUID
+- Profile saved to repository with empty facts list
+- User returned to Task Profiles menu
+
+---
+
+### UC-015: View Task Profile Memory
+
+#### 5.15.1 Preconditions
+
+- Application is running
+- User is in Task Profiles menu
+- At least one task profile exists
+
+#### 5.15.2 Main Success Scenario
+
+1. System displays prompt: `Выберите профиль для просмотра памяти (1-{n}):`
+2. User selects profile by index
+3. System validates selection
+4. System retrieves profile details and facts from TaskProfileRepository
+5. System displays profile information:
+   ```
+   --- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---
+   Название: {name}
+   ID: {full_id}
+   Создан: {created_at}
+   Описание: {description}
+   ----------------------------------------
+
+   --- ПАМЯТЬ ПРОФИЛЯ ---
+   {fact_1}
+   {fact_2}
+   ...
+   ----------------------------------------
+   ```
+6. If memory is empty: display `(память пуста)` instead of facts list
+7. System displays `[Нажмите Enter для возврата]`
+8. User presses Enter
+9. System returns to Task Profiles menu
+10. Use case ends
+
+#### 5.15.3 Alternative Flows
+
+- **A1: Invalid Profile Selection**
+  - Step 3: User enters invalid index
+  - Display `[ERROR] Неверный выбор профиля.` and re-prompt
+
+- **A2: Empty Memory**
+  - Step 6: Repository returns empty facts list
+  - Display `(память пуста)` instead of fact list
+
+#### 5.15.4 Postconditions
+
+- User viewed task profile details and memory facts
+- Returned to Task Profiles menu
+
+---
+
+### UC-016: Delete Task Profile
+
+#### 5.16.1 Preconditions
+
+- Application is running
+- User is in Task Profiles menu
+- At least one task profile exists
+
+#### 5.16.2 Main Success Scenario
+
+1. System displays prompt: `Выберите профиль для удаления (1-{n}):`
+2. User selects profile by index
+3. System validates selection
+4. System checks if profile is attached to any agents
+5. If attached to agents:
+   - Display warning: `[WARN] Этот профиль привязан к {count} чат(а/ов). При удалении профиля чаты останутся без привязки.`
+   - Prompt for confirmation: `Продолжить удаление? (y/n):`
+6. If not attached:
+   - Prompt for confirmation: `Удалить профиль '{name}'? (y/n):`
+7. If user confirms with 'y':
+   - System deletes profile from TaskProfileRepository
+   - Display success: `[OK] Профиль '{name}' удален!`
+8. If user declines ('n' or other):
+   - Display `[INFO] Удаление отменено.`
+9. System returns to Task Profiles menu
+10. Use case ends
+
+#### 5.16.3 Alternative Flows
+
+- **A1: Invalid Profile Selection**
+  - Step 3: User enters invalid index
+  - Display `[ERROR] Неверный выбор профиля.` and re-prompt
+
+- **A2: Confirmation Declined**
+  - Step 7: User enters 'n' or other
+  - Deletion cancelled, return to menu
+
+- **A3: Profile Attached to Agents**
+  - Step 5: System detects attached agents
+  - Show extended warning with agent count
+  - Require explicit confirmation
+
+#### 5.16.4 Postconditions
+
+- If confirmed: TaskProfile deleted from repository
+- If declined: Profile remains unchanged
+- User returned to Task Profiles menu
 
 ---
 
@@ -1501,7 +1766,7 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 | 3    | Complete chat creation with any settings         | Chat created, entered chat loop                          |
 | 4    | Send a message to the agent                      | Agent responds (Mock provider generates test facts)      |
 | 5    | Type `/menu` command to exit to main menu        | System saves agent state and global memory               |
-| 6    | Select option 3 (Global Memory) from menu        | System retrieves facts from FileGlobalMemoryRepository   |
+| 6    | Select option 4 (Global Memory) from menu        | System retrieves facts from FileGlobalMemoryRepository   |
 | 7    | Verify header displayed                          | `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---` is shown                     |
 | 8    | Verify facts are displayed as numbered list      | At least 1-2 test facts shown as `{i}. {fact}`           |
 | 9    | Verify separator line                            | 40 dashes are displayed                                  |
@@ -1509,23 +1774,233 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 ---
 
+### TC-044: Create Task Profile with Valid Data
+
+**Related UC**: UC-014
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Main Menu, select option 3 (Task Profiles) | Task Profiles menu displayed                 |
+| 2    | Select option 1 (Create new profile)          | Name prompt displayed                        |
+| 3    | Enter "Project Alpha"                         | Description prompt displayed                 |
+| 4    | Enter "Development of Project Alpha system"   | Success message displayed with ID and timestamp |
+| 5    | Verify profile saved                          | Profile exists in repository with empty facts |
+
+---
+
+### TC-045: Create Task Profile - Empty Name Validation
+
+**Related UC**: UC-014
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Task Profiles menu, select Create        | Name prompt displayed                        |
+| 2    | Press Enter (empty input)                     | `[ERROR] Название не может быть пустым.` + re-prompt |
+| 3    | Enter valid name                              | Proceed to description prompt                |
+
+---
+
+### TC-046: Create Task Profile - Long Name Truncation
+
+**Related UC**: UC-014
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Task Profiles menu, select Create        | Name prompt displayed                        |
+| 2    | Enter 150-character string                    | `[WARN] Название сокращено до 100 символов.` + proceed |
+| 3    | Verify saved name length                      | Name truncated to exactly 100 characters     |
+
+---
+
+### TC-047: Create Task Profile - Empty Description Validation
+
+**Related UC**: UC-014
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Task Profiles menu, select Create        | Name prompt → enter valid name               |
+| 2    | Description prompt displayed                  | Press Enter (empty input)                    |
+| 3    | Verify error                                  | `[ERROR] Описание не может быть пустым.` + re-prompt |
+
+---
+
+### TC-048: View Task Profiles List - Empty State
+
+**Related UC**: UC-013
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Main Menu, select option 3 (Task Profiles) | `(нет доступных профилей)` displayed         |
+| 2    | Verify menu options                           | Only `[1. Создать новый профиль]`, `[2. Назад в меню]` shown |
+| 3    | Select option 2                               | Return to Main Menu                          |
+
+---
+
+### TC-049: View Task Profiles List - Multiple Profiles
+
+**Related UC**: UC-013
+
+**Precondition**: At least 2 task profiles exist in repository
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Main Menu, select option 3               | `--- ПРОФИЛИ ЗАДАЧ ---` header displayed     |
+| 2    | Verify profile list format                    | Each profile shows: name, description preview, created_at, full ID |
+| 3    | Verify menu options                           | All 4 options displayed (Create, View Memory, Delete, Back) |
+
+---
+
+### TC-050: View Task Profile Memory - With Facts
+
+**Related UC**: UC-015
+
+**Precondition**: Task profile exists with at least 2 facts in memory
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Task Profiles menu, select option 2 (View Memory) | Profile selection prompt displayed           |
+| 2    | Select profile by index                       | Profile info displayed: name, ID, created_at, description |
+| 3    | Verify memory section                         | `--- ПАМЯТЬ ПРОФИЛЯ ---` header + facts listed |
+| 4    | Press Enter                                   | Return to Task Profiles menu                 |
+
+---
+
+### TC-051: View Task Profile Memory - Empty State
+
+**Related UC**: UC-015
+
+**Precondition**: Task profile exists with empty facts list
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Task Profiles menu, select option 2      | Select profile                               |
+| 2    | Verify memory display                         | `(память пуста)` shown instead of facts      |
+| 3    | Press Enter                                   | Return to menu                               |
+
+---
+
+### TC-052: Delete Task Profile - Not Attached
+
+**Related UC**: UC-016
+
+**Precondition**: Task profile exists, not attached to any agents
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Task Profiles menu, select option 3 (Delete) | Profile selection prompt displayed           |
+| 2    | Select profile by index                       | Confirmation prompt: `Удалить профиль '{name}'? (y/n):` |
+| 3    | Enter 'y'                                     | `[OK] Профиль '{name}' удален!`              |
+| 4    | Verify deletion                               | Profile no longer in repository              |
+
+---
+
+### TC-053: Delete Task Profile - Attached to Agents
+
+**Related UC**: UC-016
+
+**Precondition**: Task profile exists, attached to 2 agents
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Task Profiles menu, select option 3      | Select profile                               |
+| 2    | Verify warning                                | `[WARN] Этот профиль привязан к 2 чат(а/ов)...` + confirmation prompt |
+| 3    | Enter 'y'                                     | Profile deleted, agents remain without link  |
+| 4    | Verify agents still exist                     | Agents accessible, task_profile_id = null    |
+
+---
+
+### TC-054: Delete Task Profile - Cancelled
+
+**Related UC**: UC-016
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Task Profiles menu, select option 3      | Select profile                               |
+| 2    | Confirmation prompt displayed                 | Enter 'n'                                    |
+| 3    | Verify cancellation                           | `[INFO] Удаление отменено.`                  |
+| 4    | Verify profile exists                         | Profile still in repository                  |
+
+---
+
+### TC-055: Create Chat with Task Profile Attachment
+
+**Related UC**: UC-001, UC-013
+
+**Precondition**: At least one task profile exists
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Main Menu, select option 1 (New Chat)    | Chat creation workflow starts                |
+| 2    | Complete steps 1-8 (name, prompt, model, settings, strategy) | Task profile selection prompt displayed      |
+| 3    | Select profile index (e.g., 1)                | Chat created with profile attached           |
+| 4    | Verify completion message                     | Shows `Профиль задачи: {profile_name}`       |
+| 5    | Verify agent saved                            | Agent has task_profile_id set to selected UUID |
+
+---
+
+### TC-056: Create Chat Without Task Profile
+
+**Related UC**: UC-001
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Main Menu, select option 1 (New Chat)    | Complete chat creation through step 9        |
+| 2    | At profile selection, choose 0 (none) or press Enter | Chat created without profile attachment      |
+| 3    | Verify completion message                     | Shows `Профиль задачи: (не привязан)`        |
+| 4    | Verify agent saved                            | Agent has task_profile_id = null             |
+
+---
+
+### TC-057: Task Profile Selection - No Profiles Available
+
+**Related UC**: UC-001
+
+**Precondition**: No task profiles exist in repository
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Create new chat, reach step 9 (profile selection) | `(нет доступных профилей)` displayed, skip to completion |
+| 2    | Verify chat created                           | Chat has task_profile_id = null              |
+
+---
+
+### TC-058: Memory Integration - Global + Task Profile in System Prompt
+
+**Related UC**: UC-004
+
+**Precondition**: Global memory has facts, task profile has facts, agent attached to task profile
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter chat loop with agent attached to task profile | Send message to agent                        |
+| 2    | Verify system prompt construction             | Global memory facts appear first with header `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---` |
+| 3    | Verify task profile memory                    | Task facts appear after with header `--- ПАМЯТЬ ЗАДАЧИ: {profile_name} ---` |
+| 4    | Verify correct ordering                       | Global → Task profile                        |
+
+---
+
 ## 7. Error Handling Matrix
 
-| Error Type             | Trigger                  | Display Message                                                | Recovery Action  |
-| ---------------------- | ------------------------ | -------------------------------------------------------------- | ---------------- |
-| InvalidMenuChoice      | Menu input not 1-4       | `[ERROR] Неверный выбор. Введите число от 1 до 4.`             | Re-prompt        |
-| InvalidModelSelection  | Model input not 1-3      | `[ERROR] Неверный выбор модели.`                               | Re-prompt        |
-| InvalidTemperature     | Temp < 0 or > 2.0        | `[WARN] Значение вне диапазона. Температура отключена.`        | Set None         |
-| NonNumericTemperature  | Temp = "abc"             | `[WARN] Некорректное значение. Температура отключена.`         | Set None         |
-| InvalidTopP            | TopP < 0 or > 1.0        | `[WARN] Значение вне диапазона. Top P отключен.`               | Set None         |
-| EmptyChatList          | Select chat with 0 chats | `Нет доступных чатов. Создайте новый.`                         | Return to menu   |
-| NoActiveChat           | Return to chat with none | `[WARN] Нет активного чата.`                                   | Stay in menu     |
-| BackendException       | LLM provider error       | `[ERROR] Ошибка: {message}`                                    | Return to prompt |
-| NetworkTimeout         | Connection timeout       | `[ERROR] Таймаут соединения`                                   | Return to prompt |
-| UnknownCommand         | Input "/xyz"             | `[WARN] Неизвестная команда. Введите /help для списка команд.` | Return to prompt |
-| EmptyInput             | Chat prompt Enter        | (no message)                                                   | Re-prompt        |
-| InvalidSettingsConfirm | Settings y/n != y/n      | Return to chat loop without changes                            | No action        |
-| InvalidBranchConfirm   | Branch y/n != y/n        | Stay in current chat                                           | No action        |
+| Error Type                 | Trigger                          | Display Message                                                                 | Recovery Action  |
+| -------------------------- | -------------------------------- | ------------------------------------------------------------------------------- | ---------------- |
+| InvalidMenuChoice          | Menu input not 1-6               | `[ERROR] Неверный выбор. Введите число от 1 до 6.`                              | Re-prompt        |
+| InvalidModelSelection      | Model input not 1-3              | `[ERROR] Неверный выбор модели.`                                                | Re-prompt        |
+| InvalidTemperature         | Temp < 0 or > 2.0                | `[WARN] Значение вне диапазона. Температура отключена.`                         | Set None         |
+| NonNumericTemperature      | Temp = "abc"                     | `[WARN] Некорректное значение. Температура отключена.`                          | Set None         |
+| InvalidTopP                | TopP < 0 or > 1.0                | `[WARN] Значение вне диапазона. Top P отключен.`                                | Set None         |
+| EmptyChatList              | Select chat with 0 chats         | `Нет доступных чатов. Создайте новый.`                                          | Return to menu   |
+| NoActiveChat               | Return to chat with none         | `[WARN] Нет активного чата.`                                                    | Stay in menu     |
+| BackendException           | LLM provider error               | `[ERROR] Ошибка: {message}`                                                     | Return to prompt |
+| NetworkTimeout             | Connection timeout               | `[ERROR] Таймаут соединения`                                                    | Return to prompt |
+| UnknownCommand             | Input "/xyz"                     | `[WARN] Неизвестная команда. Введите /help для списка команд.`                  | Return to prompt |
+| EmptyInput                 | Chat prompt Enter                | (no message)                                                                    | Re-prompt        |
+| InvalidSettingsConfirm     | Settings y/n != y/n              | Return to chat loop without changes                                             | No action        |
+| InvalidBranchConfirm       | Branch y/n != y/n                | Stay in current chat                                                            | No action        |
+| EmptyProfileName           | Task profile name is empty       | `[ERROR] Название не может быть пустым.`                                        | Re-prompt        |
+| EmptyProfileDescription    | Task profile description empty   | `[ERROR] Описание не может быть пустым.`                                        | Re-prompt        |
+| InvalidProfileSelection    | Profile index out of range       | `[ERROR] Неверный выбор профиля.`                                               | Re-prompt        |
+| InvalidTaskProfileChoice   | Task profile menu invalid input  | `[ERROR] Неверный выбор.`                                                       | Re-prompt        |
+| DeleteConfirmationDeclined | User declines delete confirmation| `[INFO] Удаление отменено.`                                                     | Return to menu   |
 
 ---
 
@@ -1631,6 +2106,7 @@ pytest --cov=cli --cov-report=html
 | 1.0     | 2026-09-13 | AI Assistant | Initial comprehensive specification                                                                                                                                                                                                           |
 | 1.1     | 2026-09-13 | AI Assistant | Added detailed test cases, error matrix                                                                                                                                                                                                       |
 | 1.2     | 2026-09-13 | AI Assistant | Added new features: SlidingWindowStrategy, /summary, /info, /branch commands; Updated UC-005, UC-007, UC-009, UC-010, UC-011; Added TC-021 to TC-032; Updated error matrix; Clarified context_window_size retained for backward compatibility |
+| 1.3     | 2026-09-13 | AI Assistant | Added TaskProfile feature: new entity (UC-013 to UC-016), task profile management CLI menu option, chat creation step for profile attachment, memory integration in system prompt (global + task); Added TC-044 to TC-058; Updated error matrix |
 
 ---
 

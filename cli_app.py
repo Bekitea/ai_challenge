@@ -46,12 +46,13 @@ class CLIChat:
         print("\n--- МЕНЮ ---")
         print("1. Новый чат")
         print("2. Выбрать чат")
-        print("3. Просмотреть глобальную память")
+        print("3. Профили задач")
+        print("4. Просмотреть глобальную память")
         if self.current_agent:
-            print(f"4. Вернуться в чат: {self.current_agent.name}")
+            print(f"5. Вернуться в чат: {self.current_agent.name}")
         else:
-            print("4. Вернуться в чат (нет активного чата)")
-        print("5. Выход")
+            print("5. Вернуться в чат (нет активного чата)")
+        print("6. Выход")
         print("-" * 40)
 
     def print_chat_list(self):
@@ -474,6 +475,157 @@ class CLIChat:
                 print(f"  {i}. {fact}")
         print("-" * 40)
 
+    def task_profiles_menu(self):
+        """Меню управления профилями задач."""
+        while True:
+            print("\n--- ПРОФИЛИ ЗАДАЧ ---")
+            print("1. Создать новый профиль")
+            print("2. Просмотреть список профилей")
+            print("3. Назад в главное меню")
+            print("-" * 40)
+
+            choice = input("\nВаш выбор (1-3): ").strip()
+
+            if choice == "1":
+                self._create_task_profile()
+            elif choice == "2":
+                self._view_task_profiles_list()
+            elif choice == "3":
+                break
+            else:
+                print("\n[WARN] Неверный выбор, попробуйте снова.")
+
+    def _create_task_profile(self):
+        """Создание нового профиля задачи."""
+        print("\n--- СОЗДАНИЕ НОВОГО ПРОФИЛЯ ЗАДАЧИ ---")
+
+        # Ввод названия с валидацией
+        while True:
+            name = input("Введите название профиля: ").strip()
+            if name:
+                break
+            print("[ERROR] Название профиля не может быть пустым.")
+
+        # Ввод описания с валидацией
+        while True:
+            description = input("Введите описание задачи: ").strip()
+            if description:
+                break
+            print("[ERROR] Описание задачи не может быть пустым.")
+
+        # Создание профиля через use case
+        profile = self.use_cases.create_task_profile.execute(name, description)
+
+        print(f"\n[OK] Профиль задачи '{name}' создан!")
+        print(f"  ID: {profile.id}")
+        print(f"  Дата создания: {profile.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        print("-" * 40)
+
+    def _view_task_profiles_list(self):
+        """Просмотр списка профилей задач с возможностью выбора действия."""
+        profiles = self.use_cases.list_task_profiles.execute()
+
+        if not profiles:
+            print("\nНет доступных профилей задач.")
+            print("-" * 40)
+            return
+
+        print("\n--- СПИСОК ПРОФИЛЕЙ ЗАДАЧ ---")
+        for i, profile in enumerate(profiles, 1):
+            created_at_str = ""
+            if profile.created_at:
+                created_at_str = profile.created_at.strftime("%Y-%m-%d %H:%M")
+
+            print(f"{i}. {profile.name}")
+            print(f"   ID: {profile.id}")
+            print(f"   Дата создания: {created_at_str}")
+            print(f"   Фактов в памяти: {profile.facts_count}")
+            print(f"   Описание: {profile.description[:50]}..." if len(profile.description) > 50 else f"   Описание: {profile.description}")
+            print()
+
+        print("-" * 40)
+        print("Действия:")
+        print("1. Просмотреть память профиля")
+        print("2. Удалить профиль")
+        print("3. Назад к списку")
+
+        while True:
+            action = input("\nВыберите действие (1-3): ").strip()
+
+            if action == "1":
+                self._view_profile_memory(profiles)
+                break
+            elif action == "2":
+                self._delete_profile(profiles)
+                break
+            elif action == "3":
+                break
+            else:
+                print("\n[WARN] Неверный выбор, попробуйте снова.")
+
+    def _view_profile_memory(self, profiles: list):
+        """Просмотр памяти выбранного профиля."""
+        while True:
+            try:
+                choice = int(input(f"Выберите профиль (1-{len(profiles)}): ").strip())
+                if 1 <= choice <= len(profiles):
+                    break
+                print(f"Введите число от 1 до {len(profiles)}")
+            except ValueError:
+                print("Введите корректное число")
+
+        profile_info = profiles[choice - 1]
+        profile = self.use_cases.get_task_profile_memory.execute(profile_info.id)
+
+        if profile is None:
+            print("\n[ERROR] Профиль не найден.")
+            return
+
+        print("\n--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---")
+        print(f"  ID: {profile.id}")
+        print(f"  Название: {profile.name}")
+        print(f"  Описание: {profile.description}")
+        print(f"  Дата создания: {profile.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        print("\n--- ПАМЯТЬ ПРОФИЛЯ ---")
+        if not profile.facts:
+            print("  (память пуста)")
+        else:
+            for i, fact in enumerate(profile.facts, 1):
+                print(f"  {i}. {fact}")
+        print("-" * 40)
+
+    def _delete_profile(self, profiles: list):
+        """Удаление выбранного профиля."""
+        while True:
+            try:
+                choice = int(input(f"Выберите профиль для удаления (1-{len(profiles)}): ").strip())
+                if 1 <= choice <= len(profiles):
+                    break
+                print(f"Введите число от 1 до {len(profiles)}")
+            except ValueError:
+                print("Введите корректное число")
+
+        profile_info = profiles[choice - 1]
+
+        # Проверка привязки к агентам
+        if self.use_cases.delete_task_profile.task_profile_repository.is_profile_linked_to_agents(profile_info.id):
+            print(f"\n[WARN] Невозможно удалить профиль '{profile_info.name}': он привязан к одному или нескольким агентам.")
+            print("Сначала удалите или пересоздайте агентов, использующих этот профиль.")
+            return
+
+        # Подтверждение удаления
+        confirm = input(f"\nВы уверены, что хотите удалить профиль '{profile_info.name}'? (y/n): ").strip().lower()
+        if confirm != "y":
+            print("\n[INFO] Удаление отменено.")
+            return
+
+        success = self.use_cases.delete_task_profile.execute(profile_info.id)
+        if success:
+            print(f"\n[OK] Профиль '{profile_info.name}' успешно удалён.")
+        else:
+            print(f"\n[ERROR] Не удалось удалить профиль '{profile_info.name}'.")
+        print("-" * 40)
+
     def chat_loop(self):
         """Основной цикл общения с агентом."""
         if not self.current_agent:
@@ -610,22 +762,24 @@ class CLIChat:
             self.print_menu()
 
             try:
-                choice = input("\nВаш выбор (1-5): ").strip()
+                choice = input("\nВаш выбор (1-6): ").strip()
 
                 if choice == "1":
                     self.create_new_chat()
                 elif choice == "2":
                     self.select_chat()
                 elif choice == "3":
-                    self.print_global_memory()
+                    self.task_profiles_menu()
                 elif choice == "4":
+                    self.print_global_memory()
+                elif choice == "5":
                     if self.current_agent:
                         print(f"\n[OK] Возврат в чат: {self.current_agent.name}")
                         self.show_history()
                         self.chat_loop()
                     else:
                         print("\n[WARN] Нет активного чата. Выберите или создайте чат.")
-                elif choice == "5":
+                elif choice == "6":
                     print("\nДо свидания!\n")
                     break
                 else:

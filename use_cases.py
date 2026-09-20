@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from agents import (
     Agent,
     AgentPreview,
     AgentSettings,
     Prompt,
+    TaskProfile,
 )
 from context_strategies import (
     ContextWindowStrategy,
@@ -37,6 +39,9 @@ class UseCasesBundle:
     refresh_agent_memory: RefreshAgentMemoryUseCase
     save_agent_memory: SaveAgentMemoryUseCase
     save_unsaved_memories: SaveUnsavedMemoriesUseCase
+    list_task_profiles: ListTaskProfilesUseCase
+    create_task_profile: CreateTaskProfileUseCase
+    get_task_profile_memory: GetTaskProfileMemoryUseCase
 
 
 @dataclass
@@ -361,3 +366,101 @@ class SaveUnsavedMemoriesUseCase:
 
         for agent in agents:
             agent.save_memory()
+
+
+@dataclass
+class TaskProfileInfo:
+    """Информация о профиле задачи для отображения."""
+    id: str
+    name: str
+    description: str
+    created_at: datetime | None
+    facts_count: int
+
+
+class ListTaskProfilesUseCase:
+    """Use case для просмотра списка профилей задач."""
+
+    def __init__(self, task_profile_repository):
+        self.task_profile_repository = task_profile_repository
+
+    def execute(self) -> list[TaskProfileInfo]:
+        """
+        Получает список всех профилей задач.
+
+        Returns:
+            Список TaskProfileInfo.
+        """
+        profiles = self.task_profile_repository.get_all_profiles()
+        return [
+            TaskProfileInfo(
+                id=p.id,
+                name=p.name,
+                description=p.description,
+                created_at=p.created_at,
+                facts_count=len(p.facts),
+            )
+            for p in profiles
+        ]
+
+
+class CreateTaskProfileUseCase:
+    """Use case для создания нового профиля задачи."""
+
+    def __init__(self, task_profile_repository):
+        self.task_profile_repository = task_profile_repository
+
+    def execute(self, name: str, description: str) -> TaskProfile:
+        """
+        Создаёт новый профиль задачи.
+
+        Args:
+            name: Название профиля.
+            description: Описание задачи.
+
+        Returns:
+            TaskProfile: Созданный профиль.
+        """
+        return self.task_profile_repository.create_profile(name, description)
+
+
+class GetTaskProfileMemoryUseCase:
+    """Use case для просмотра памяти выбранного профиля задачи."""
+
+    def __init__(self, task_profile_repository):
+        self.task_profile_repository = task_profile_repository
+
+    def execute(self, profile_id: str) -> TaskProfile | None:
+        """
+        Получает информацию о профиле задачи и его память.
+
+        Args:
+            profile_id: UUID профиля задачи.
+
+        Returns:
+            TaskProfile или None, если профиль не найден.
+        """
+        return self.task_profile_repository.get_profile_by_id(profile_id)
+
+
+class DeleteTaskProfileUseCase:
+    """Use case для удаления профиля задачи."""
+
+    def __init__(self, task_profile_repository):
+        self.task_profile_repository = task_profile_repository
+
+    def execute(self, profile_id: str) -> bool:
+        """
+        Удаляет профиль задачи.
+
+        Args:
+            profile_id: UUID профиля для удаления.
+
+        Returns:
+            True, если профиль был удалён, False если не найден или привязан к агентам.
+        """
+        # Проверяем, привязан ли профиль к агентам
+        if self.task_profile_repository.is_profile_linked_to_agents(profile_id):
+            return False
+
+        return self.task_profile_repository.delete_profile(profile_id)

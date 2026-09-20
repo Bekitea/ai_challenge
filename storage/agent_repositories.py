@@ -115,6 +115,7 @@ class PersistentAgentRepository(AgentRepository):
         llm_provider: LlmProvider,
         session_factory: Callable[[], Session],
         global_memory_repository=None,
+        task_profile_repository=None,
     ):
         """
         Инициализирует репозиторий.
@@ -124,11 +125,13 @@ class PersistentAgentRepository(AgentRepository):
             session_factory: Фабрика сессий БД. Внешняя зависимость,
                             предоставляемая слоем инфраструктуры.
             global_memory_repository: Репозиторий глобальной памяти (опционально).
+            task_profile_repository: Репозиторий профилей задач (опционально).
         """
         self._session_factory = session_factory
         self._llm_provider = llm_provider
         self._chat_storage = ConversationRepository()
         self._global_memory_repository = global_memory_repository
+        self._task_profile_repository = task_profile_repository
 
     def _get_session(self) -> Session:
         """Возвращает новую сессию БД."""

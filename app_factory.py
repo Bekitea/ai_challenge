@@ -7,10 +7,15 @@ from storage.agent_repositories import PersistentAgentRepository
 from storage.db_connection import DatabaseConnection
 from storage.global_memory_repository import FileGlobalMemoryRepository
 from storage.orm_models import Base
+from storage.task_profile_repository import FileTaskProfileRepository
 from use_cases import (
     ChangeSettingsUseCase,
     CreateBranchUseCase,
     CreateChatUseCase,
+    CreateTaskProfileUseCase,
+    DeleteTaskProfileUseCase,
+    GetTaskProfileMemoryUseCase,
+    ListTaskProfilesUseCase,
     RefreshAgentMemoryUseCase,
     SaveAgentMemoryUseCase,
     SaveUnsavedMemoriesUseCase,
@@ -43,6 +48,10 @@ class UseCasesBundle:
     refresh_agent_memory: RefreshAgentMemoryUseCase
     save_agent_memory: SaveAgentMemoryUseCase
     save_unsaved_memories: SaveUnsavedMemoriesUseCase
+    list_task_profiles: ListTaskProfilesUseCase
+    create_task_profile: CreateTaskProfileUseCase
+    get_task_profile_memory: GetTaskProfileMemoryUseCase
+    delete_task_profile: DeleteTaskProfileUseCase
 
 
 def initialize_application() -> UseCasesBundle:
@@ -90,11 +99,16 @@ def initialize_application() -> UseCasesBundle:
     from config import GLOBAL_MEMORY_PATH
     memory_repository = FileGlobalMemoryRepository(GLOBAL_MEMORY_PATH)
 
+    # Initialize task profile repository
+    from config import FILE_STORAGE_DIR
+    task_profile_repository = FileTaskProfileRepository(FILE_STORAGE_DIR, db_connection.get_session)
+
     # Initialize repository with session factory
     repository = PersistentAgentRepository(
         llm_provider=llm_provider,
         session_factory=db_connection.get_session,
         global_memory_repository=memory_repository,
+        task_profile_repository=task_profile_repository,
     )
 
     # Create and return all use cases
@@ -113,4 +127,8 @@ def initialize_application() -> UseCasesBundle:
         refresh_agent_memory=RefreshAgentMemoryUseCase(memory_repository),
         save_agent_memory=SaveAgentMemoryUseCase(memory_repository),
         save_unsaved_memories=SaveUnsavedMemoriesUseCase(repository),
+        list_task_profiles=ListTaskProfilesUseCase(task_profile_repository),
+        create_task_profile=CreateTaskProfileUseCase(task_profile_repository),
+        get_task_profile_memory=GetTaskProfileMemoryUseCase(task_profile_repository),
+        delete_task_profile=DeleteTaskProfileUseCase(task_profile_repository),
     )

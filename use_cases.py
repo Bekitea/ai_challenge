@@ -57,6 +57,7 @@ class ChatInfo:
     has_summary: bool = False
     non_compressible_count: int | None = None
     buffer_size: int | None = None
+    task_profile_name: str | None = None
 
 
 @dataclass
@@ -237,6 +238,7 @@ class ShowChatInfoUseCase:
         has_summary = False
         non_compressible_count = None
         buffer_size = None
+        task_profile_name = None
 
         if hasattr(strategy, "summary") and strategy.summary:
             has_summary = True
@@ -244,6 +246,8 @@ class ShowChatInfoUseCase:
             non_compressible_count = strategy.non_compressible_count
         if hasattr(strategy, "buffer_size"):
             buffer_size = strategy.buffer_size
+        if agent.task_profile is not None:
+            task_profile_name = agent.task_profile.name
 
         return ChatInfo(
             name=agent.name,
@@ -255,6 +259,7 @@ class ShowChatInfoUseCase:
             has_summary=has_summary,
             non_compressible_count=non_compressible_count,
             buffer_size=buffer_size,
+            task_profile_name=task_profile_name,
         )
 
 

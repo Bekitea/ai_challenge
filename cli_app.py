@@ -18,7 +18,7 @@ HELP_COMMANDS = [
     "/stop - остановить текущую генерацию",
     "/settings - показать текущие настройки и изменить их",
     "/summary - показать саммари диалога",
-    "/info - показать информацию о чате (счетчики токенов)",
+    "/info - показать информацию о чате (счетчики токенов, профиль задачи)",
     "/branch - создать ветку текущего чата (копируются настройки, история и саммари)",
     "/help - показать этот список команд",
 ]
@@ -471,6 +471,7 @@ class CLIChat:
         print(f"  Название: {info.name}")
         print(f"  ID: {info.agent_id}")
         print(f"  Стратегия: {info.strategy_type}")
+        print(f"  Профиль задачи: {info.task_profile_name if info.task_profile_name else '(не привязан)'}")
         print(f"  Сообщений: {info.message_count}")
         print(f"  Prompt токены: {info.total_prompt_tokens}")
         print(f"  Completion токены: {info.total_completion_tokens}")
@@ -693,7 +694,7 @@ class CLIChat:
         print("  /stop - остановить генерацию")
         print("  /settings - показать настройки и изменить их")
         print("  /summary - показать саммари диалога")
-        print("  /info - показать информацию о чате (счетчики токенов)")
+        print("  /info - показать информацию о чате (счетчики токенов, профиль задачи)")
         print("  /branch - создать ветку текущего чата")
         print("  /help - показать список команд")
         print("-" * 40)

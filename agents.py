@@ -110,6 +110,7 @@ class TaskProfile:
     created_at: datetime | None
     facts: list[str] = field(default_factory=list)
     preferences: str = ""
+    invariants: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -593,7 +594,8 @@ class Agent:
 
     def get_system_prompt_with_memory(self, base_system_prompt: str | None) -> str:
         """
-        Формирует системный промпт с добавлением памяти о пользователе и памяти задачи.
+        Формирует системный промпт с добавлением памяти о пользователе,
+        памяти задачи, предпочтений и инвариантов.
 
         Args:
             base_system_prompt: Базовый системный промпт (если есть).
@@ -616,6 +618,19 @@ class Agent:
         # Предпочтения задачи
         if self.task_profile and self.task_profile.preferences:
             memory_text += f"\\n\\nПредпочтения задачи ({self.task_profile.name}):\\n{self.task_profile.preferences}"
+
+        # Инварианты задачи (строгие правила)
+        if self.task_profile and self.task_profile.invariants:
+            invariants_list = "\n".join(f"- {inv}" for inv in self.task_profile.invariants)
+            memory_text += (
+                f"\n\n--- ИНВАРИАНТЫ ЗАДАЧИ ({self.task_profile.name}) ---\n"
+                f"Строгие правила, которые ДОЛЖНЫ неукоснительно соблюдаться в этом диалоге:\n"
+                f"{invariants_list}\n\n"
+                f"КРИТИЧЕСКИ ВАЖНО: Если запрос пользователя противоречит ЛЮБОМУ из этих инвариантов, "
+                f"ты ОБЯЗАН вежливо отказать в выполнении и объяснить причину, сославшись на конкретный инвариант. "
+                f"Вместо этого предложи альтернативу, которая соответствует инвариантам. "
+                f"Никогда не нарушай инварианты, даже если пользователь настаивает."
+            )
 
         if base_system_prompt:
             return f"{base_system_prompt}{memory_text}"

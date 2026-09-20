@@ -29,6 +29,9 @@ from use_cases import (
     ShowSummaryUseCase,
     ViewGlobalMemoryUseCase,
     ViewSettingsUseCase,
+    AddInvariantUseCase,
+    RemoveInvariantUseCase,
+    ListInvariantsUseCase,
 )
 
 
@@ -54,6 +57,9 @@ class UseCasesBundle:
     create_task_profile: CreateTaskProfileUseCase
     get_task_profile_memory: GetTaskProfileMemoryUseCase
     delete_task_profile: DeleteTaskProfileUseCase
+    add_invariant: AddInvariantUseCase
+    remove_invariant: RemoveInvariantUseCase
+    list_invariants: ListInvariantsUseCase
 
 
 def initialize_application() -> UseCasesBundle:
@@ -133,4 +139,7 @@ def initialize_application() -> UseCasesBundle:
         create_task_profile=CreateTaskProfileUseCase(task_profile_repository),
         get_task_profile_memory=GetTaskProfileMemoryUseCase(task_profile_repository),
         delete_task_profile=DeleteTaskProfileUseCase(task_profile_repository),
+        add_invariant=AddInvariantUseCase(task_profile_repository),
+        remove_invariant=RemoveInvariantUseCase(task_profile_repository),
+        list_invariants=ListInvariantsUseCase(task_profile_repository),
     )

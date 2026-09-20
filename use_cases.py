@@ -58,6 +58,7 @@ class ChatInfo:
     non_compressible_count: int | None = None
     buffer_size: int | None = None
     task_profile_name: str | None = None
+    current_phase: str | None = None
 
 
 @dataclass
@@ -249,6 +250,9 @@ class ShowChatInfoUseCase:
         if agent.task_profile is not None:
             task_profile_name = agent.task_profile.name
 
+        # Получаем текущую фазу агента
+        current_phase = agent.current_phase.value if hasattr(agent, 'current_phase') and agent.current_phase else None
+
         return ChatInfo(
             name=agent.name,
             agent_id=agent.agent_id,
@@ -260,6 +264,7 @@ class ShowChatInfoUseCase:
             non_compressible_count=non_compressible_count,
             buffer_size=buffer_size,
             task_profile_name=task_profile_name,
+            current_phase=current_phase,
         )
 
 

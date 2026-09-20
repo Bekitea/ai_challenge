@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from agents import (
     Agent,
+    AgentPhase,
     AgentPreview,
     AgentSettings,
 )
@@ -196,6 +197,11 @@ class PersistentAgentRepository(AgentRepository):
         # Восстанавливаем is_dialog_remembered из БД
         agent.is_dialog_remembered = orm.is_dialog_remembered
 
+        # Восстанавливаем current_phase из БД
+        phase = orm.get_current_phase()
+        if phase is not None:
+            agent._current_phase = phase
+
         # Восстанавливаем last_message_timestamp из истории
         if history:
             non_system_msgs = [m for m in history if m.role != "system"]
@@ -250,6 +256,9 @@ class PersistentAgentRepository(AgentRepository):
 
             # Сохраняем is_dialog_remembered
             orm.is_dialog_remembered = agent.is_dialog_remembered
+
+            # Сохраняем current_phase
+            orm.set_current_phase(agent.current_phase)
 
             session.commit()
 
@@ -345,6 +354,9 @@ class PersistentAgentRepository(AgentRepository):
             orm.chat_completion_tokens = 0
             orm.tech_prompt_tokens = 0
             orm.tech_completion_tokens = 0
+
+            # Инициализируем фазу по умолчанию (plan)
+            orm.set_current_phase(AgentPhase.PLAN)
 
             # Привязываем профиль задачи, если указан
             if task_profile_id is not None:

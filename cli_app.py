@@ -20,6 +20,10 @@ HELP_COMMANDS = [
     "/summary - показать саммари диалога",
     "/info - показать информацию о чате (счетчики токенов, профиль задачи)",
     "/branch - создать ветку текущего чата (копируются настройки, история и саммари)",
+    "/plan - перейти в фазу планирования",
+    "/execute - перейти в фазу исполнения",
+    "/validate - перейти в фазу тестирования",
+    "/report - перейти в фазу отчета",
     "/help - показать этот список команд",
 ]
 
@@ -472,6 +476,7 @@ class CLIChat:
         print(f"  ID: {info.agent_id}")
         print(f"  Стратегия: {info.strategy_type}")
         print(f"  Профиль задачи: {info.task_profile_name if info.task_profile_name else '(не привязан)'}")
+        print(f"  Текущая фаза: {info.current_phase if info.current_phase else '(не установлена)'}")
         print(f"  Сообщений: {info.message_count}")
         print(f"  Prompt токены: {info.total_prompt_tokens}")
         print(f"  Completion токены: {info.total_completion_tokens}")
@@ -687,7 +692,9 @@ class CLIChat:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
-        print(f"\n--- ЧАТ: {self.current_agent.name} ---")
+        # Отображаем текущую фазу
+        phase_name = self.current_agent.current_phase.name
+        print(f"\n--- ЧАТ: {self.current_agent.name} [Фаза: {phase_name}] ---")
         print("Введите сообщение и нажмите Enter для отправки.")
         print("Команды:")
         print("  /menu - вернуться в меню")
@@ -696,6 +703,10 @@ class CLIChat:
         print("  /summary - показать саммари диалога")
         print("  /info - показать информацию о чате (счетчики токенов, профиль задачи)")
         print("  /branch - создать ветку текущего чата")
+        print("  /plan - перейти в фазу планирования")
+        print("  /execute - перейти в фазу исполнения")
+        print("  /validate - перейти в фазу тестирования")
+        print("  /report - перейти в фазу отчета")
         print("  /help - показать список команд")
         print("-" * 40)
 
@@ -723,6 +734,15 @@ class CLIChat:
                     print("\n--- ДОСТУПНЫЕ КОМАНДЫ ---")
                     for cmd in HELP_COMMANDS:
                         print(f"  {cmd}")
+                    continue
+
+                # Обработка команд фаз
+                if user_input.lower() in ("/plan", "/execute", "/validate", "/report"):
+                    success, message = self.current_agent.handle_phase_command(user_input.lower())
+                    print(f"\n[INFO] {message}")
+                    # Обновляем отображение фазы в заголовке
+                    phase_name = self.current_agent.current_phase.name
+                    print(f"--- ЧАТ: {self.current_agent.name} [Фаза: {phase_name}] ---")
                     continue
 
                 if user_input.lower() == "/summary":

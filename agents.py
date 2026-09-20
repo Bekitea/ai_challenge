@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from context_strategies import (
@@ -13,6 +14,55 @@ from llm_providers import LlmProvider, LlmResponse
 
 class ContextWindowExceededError(Exception):
     """Исключение, выбрасываемое при превышении лимита контекстного окна."""
+
+
+class AgentPhase(Enum):
+    """Фазы работы агента."""
+    PLAN = "plan"
+    EXECUTE = "execute"
+    VALIDATE = "validate"
+    REPORT = "report"
+
+    def get_description(self) -> str:
+        """Возвращает описание фазы."""
+        descriptions = {
+            AgentPhase.PLAN: (
+                "Фаза: Планирование\n"
+                "Действия: Обсуди со мной задачу, задавай вопросы, пока тебе не станут кристально ясны все нюансы. "
+                "Менять на этой фазе содержимое проекта строго запрещено. Переход в другую фазу только по согласию пользователя. "
+                "Если вопросов больше нет, то составь детальный план и явно запроси переход у пользователя."
+            ),
+            AgentPhase.EXECUTE: (
+                "Фаза: Исполнение\n"
+                "Действия: Нужно выполнять план. Выполняй, пока он не будет завершен полностью. "
+                "Если всё сделано, то явно запроси переход у пользователя."
+            ),
+            AgentPhase.VALIDATE: (
+                "Фаза: Тестирование\n"
+                "Действия: Нужно проверить результат на соответствие запросу пользователя. "
+                "Исправь проблемы. Если всё сделано, то явно запроси переход у пользователя."
+            ),
+            AgentPhase.REPORT: (
+                "Фаза: Отчет\n"
+                "Действия: Нужно предоставить отчет по итогам работы."
+            ),
+        }
+        return descriptions.get(self, "")
+
+    @staticmethod
+    def serialize(phase: AgentPhase) -> str:
+        """Сериализует фазу в строку для хранения в БД."""
+        return phase.value
+
+    @staticmethod
+    def deserialize(value: str | None) -> AgentPhase:
+        """Десериализует фазу из строки БД."""
+        if value is None:
+            return AgentPhase.PLAN
+        for phase in AgentPhase:
+            if phase.value == value:
+                return phase
+        return AgentPhase.PLAN
 
 
 @dataclass
@@ -174,6 +224,9 @@ class Agent:
         # Task profile fields
         self.task_profile = task_profile
 
+        # Phase state (default to PLAN)
+        self._current_phase = AgentPhase.PLAN
+
         # Добавляем системный промпт только если сообщений ещё нет
         if system_prompt and not self._messages:
             self._messages.append(Prompt(role="system", content=system_prompt))
@@ -246,18 +299,11 @@ class Agent:
         # Подготавливаем сообщения через стратегию
         memory_text = self.get_system_prompt_with_memory(None)
 
-        # Проверяем наличие ЛЮБЫХ данных памяти или предпочтений,
-        # чтобы не игнорировать профиль задачи, если глобальная память пуста
-        has_memory_data = (
-            bool(self.global_memory.facts)
-            or (self.task_profile and bool(self.task_profile.facts))
-            or (self.task_profile and bool(self.task_profile.preferences))
-        )
-
+        # Передаем memory_text всегда, т.к. он содержит описание фазы
         prepared = self._strategy.prepare_messages(
             history=self._messages,
             llm_provider=self._llm_provider,
-            agent_memory_text=memory_text if has_memory_data else None,
+            agent_memory_text=memory_text,
         )
 
         messages_for_llm = prepared.messages
@@ -599,7 +645,7 @@ class Agent:
             base_system_prompt: Базовый системный промпт (если есть).
 
         Returns:
-            Полный системный промпт с памятью (глобальной и задачи).
+            Полный системный промпт с памятью (глобальной и задачи) и текущей фазой.
         """
         memory_text = ""
 
@@ -617,7 +663,51 @@ class Agent:
         if self.task_profile and self.task_profile.preferences:
             memory_text += f"\\n\\nПредпочтения задачи ({self.task_profile.name}):\\n{self.task_profile.preferences}"
 
+        # Добавляем описание текущей фазы
+        phase_description = self._current_phase.get_description()
+        memory_text += f"\\n\\n{phase_description}"
+
         if base_system_prompt:
             return f"{base_system_prompt}{memory_text}"
         else:
             return f"Ты полезный ассистент.{memory_text}" if memory_text else "Ты полезный ассистент."
+
+    @property
+    def current_phase(self) -> AgentPhase:
+        """Возвращает текущую фазу работы агента."""
+        return self._current_phase
+
+    def set_phase(self, phase: AgentPhase) -> None:
+        """Устанавливает новую фазу работы агента."""
+        self._current_phase = phase
+        if self._repository is not None and self._auto_save:
+            self.save()
+
+    def handle_phase_command(self, command: str) -> tuple[bool, str]:
+        """
+        Обрабатывает команды перехода по фазам.
+
+        Args:
+            command: Команда (/plan, /execute, /validate, /report)
+
+        Returns:
+            Кортеж (успех, сообщение)
+        """
+        command_map = {
+            "/plan": AgentPhase.PLAN,
+            "/execute": AgentPhase.EXECUTE,
+            "/validate": AgentPhase.VALIDATE,
+            "/report": AgentPhase.REPORT,
+        }
+
+        if command.lower() not in command_map:
+            return False, f"Неизвестная команда: {command}"
+
+        new_phase = command_map[command.lower()]
+        old_phase = self._current_phase
+        self._current_phase = new_phase
+
+        if self._repository is not None and self._auto_save:
+            self.save()
+
+        return True, f"Фаза изменена: {old_phase.name} -> {new_phase.name}"

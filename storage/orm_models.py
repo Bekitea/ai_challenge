@@ -7,7 +7,7 @@ from uuid import uuid4
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from agents import AgentSettings
+from agents import AgentPhase, AgentSettings
 
 
 class Base(DeclarativeBase):
@@ -27,6 +27,20 @@ def _deserialize_settings(json_str: str | None) -> AgentSettings | None:
         return None
     data = json.loads(json_str)
     return AgentSettings(**data)
+
+
+def _serialize_phase(phase: AgentPhase | None) -> str | None:
+    """Сериализует AgentPhase в строку."""
+    if phase is None:
+        return None
+    return phase.value
+
+
+def _deserialize_phase(phase_str: str | None) -> AgentPhase | None:
+    """Десериализует строку в AgentPhase."""
+    if phase_str is None:
+        return None
+    return AgentPhase(phase_str)
 
 
 class TaskProfileORM(Base):
@@ -71,6 +85,7 @@ class AgentORM(Base):
         message_count: Количество сообщений в диалоге (без системного промпта).
         last_message_preview: Превью последнего сообщения (первые 50 символов).
         system_prompt: Системный промпт (хранится в БД, так как это настройка).
+        is_dialog_remembered: Флаг сохранения диалога в глобальную память.
         settings_json: JSON сериализованные настройки агента (model_id, temperature и т.д.).
         strategy_type: Тип стратегии управления контекстным окном.
         strategy_params_json: JSON параметры стратегии.
@@ -78,6 +93,7 @@ class AgentORM(Base):
         chat_completion_tokens: Сумма completion_tokens без технических запросов.
         tech_prompt_tokens: Сумма prompt_tokens технических запросов (суммаризация).
         tech_completion_tokens: Сумма completion_tokens технических запросов.
+        current_phase: Текущая фаза работы агента (plan, execute, validate, report).
     """
     __tablename__ = "agents"
 
@@ -96,6 +112,7 @@ class AgentORM(Base):
     chat_completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     tech_prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     tech_completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    current_phase: Mapped[str | None] = mapped_column(String(50), nullable=True, default="plan")
 
     # Foreign key to TaskProfile (optional, set only at creation)
     task_profile_id: Mapped[str | None] = mapped_column(ForeignKey("task_profiles.id"), nullable=True)
@@ -123,6 +140,14 @@ class AgentORM(Base):
             self.strategy_params_json = None
         else:
             self.strategy_params_json = json.dumps(params)
+
+    def get_current_phase(self) -> AgentPhase | None:
+        """Возвращает текущую фазу агента."""
+        return _deserialize_phase(self.current_phase)
+
+    def set_current_phase(self, phase: AgentPhase | None) -> None:
+        """Устанавливает текущую фазу агента."""
+        self.current_phase = _serialize_phase(phase)
 
     @property
     def total_prompt_tokens(self) -> int:

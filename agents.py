@@ -678,7 +678,25 @@ class Agent:
         return self._current_phase
 
     def set_phase(self, phase: AgentPhase) -> None:
-        """Устанавливает новую фазу работы агента."""
+        """
+        Устанавливает новую фазу работы агента.
+
+        Raises:
+            ValueError: Если переход запрещен (перескок этапа вперед).
+        """
+        old_phase = self._current_phase
+
+        # Проверка валидности перехода
+        # Можно перейти на следующий этап или на любой предыдущий
+        # Нельзя перескакивать этапы вперед
+        phase_order = [AgentPhase.PLAN, AgentPhase.EXECUTE, AgentPhase.VALIDATE, AgentPhase.REPORT]
+        old_index = phase_order.index(old_phase)
+        new_index = phase_order.index(phase)
+
+        # Если переход вперед (new_index > old_index), то только на один шаг
+        if new_index > old_index and new_index != old_index + 1:
+            raise ValueError(f"Нельзя перескочить этап: переход из {old_phase.name} сразу в {phase.name} запрещен")
+
         self._current_phase = phase
         if self._repository is not None and self._auto_save:
             self.save()
@@ -705,6 +723,18 @@ class Agent:
 
         new_phase = command_map[command.lower()]
         old_phase = self._current_phase
+
+        # Проверка валидности перехода
+        # Можно перейти на следующий этап или на любой предыдущий
+        # Нельзя перескакивать этапы вперед
+        phase_order = [AgentPhase.PLAN, AgentPhase.EXECUTE, AgentPhase.VALIDATE, AgentPhase.REPORT]
+        old_index = phase_order.index(old_phase)
+        new_index = phase_order.index(new_phase)
+
+        # Если переход вперед (new_index > old_index), то только на один шаг
+        if new_index > old_index and new_index != old_index + 1:
+            return False, f"Нельзя перескочить этап: переход из {old_phase.name} сразу в {new_phase.name} запрещен"
+
         self._current_phase = new_phase
 
         if self._repository is not None and self._auto_save:

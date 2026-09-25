@@ -571,58 +571,78 @@ class CLIChat:
         # Ввод предпочтений (опционально)
         preferences = input("Введите предпочтения/инструкции (Enter для пропуска): ").strip()
 
-        # Создание профиля через use case
-        profile = self.use_cases.create_task_profile.execute(name, description, preferences)
-
+        # Ввод инвариантов
+        print("\n--- ИНВАРИАНТЫ (строгие правила/ограничения) ---")
+        print("Примеры: 'Использовать только Kotlin', 'Не использовать Java',")
+        print("         'Стек: PostgreSQL + Redis', 'Пользователь — веган'")
+        print("Введите инварианты по одному. Пустая строка для завершения:")
+        invariants = []
+        while True:
+            inv = input("  > ").strip()
+            if not inv:
+                break
+            invariants.append(inv)
+        
+        profile = self.use_cases.create_task_profile.execute(
+            name, description, preferences, invariants
+        )
         print(f"\n[OK] Профиль задачи '{name}' создан!")
         print(f"  ID: {profile.id}")
         print(f"  Дата создания: {profile.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        if invariants:
+            print(f"  Инвариантов: {len(invariants)}")
         print("-" * 40)
 
     def _view_task_profiles_list(self):
         """Просмотр списка профилей задач с возможностью выбора действия."""
         profiles = self.use_cases.list_task_profiles.execute()
-
         if not profiles:
             print("\nНет доступных профилей задач.")
             print("-" * 40)
             return
-
+        
         print("\n--- СПИСОК ПРОФИЛЕЙ ЗАДАЧ ---")
         for i, profile in enumerate(profiles, 1):
             created_at_str = ""
             if profile.created_at:
                 created_at_str = profile.created_at.strftime("%Y-%m-%d %H:%M")
-
             print(f"{i}. {profile.name}")
             print(f"   ID: {profile.id}")
             print(f"   Дата создания: {created_at_str}")
             print(f"   Фактов в памяти: {profile.facts_count}")
-            print(f"   Описание: {profile.description[:50]}..." if len(profile.description) > 50 else f"   Описание: {profile.description}")
+            print(f"   Инвариантов: {profile.invariants_count}")
+            desc_preview = (
+                f"{profile.description[:50]}..."
+                if len(profile.description) > 50
+                else profile.description
+            )
+            print(f"   Описание: {desc_preview}")
             print()
-
         print("-" * 40)
         print("Действия:")
         print("1. Просмотреть память профиля")
-        print("2. Удалить профиль")
-        print("3. Назад к списку")
-
+        print("2. Управление инвариантами")
+        print("3. Удалить профиль")
+        print("4. Назад к списку")
+        
         while True:
-            action = input("\nВыберите действие (1-3): ").strip()
-
+            action = input("\nВыберите действие (1-4): ").strip()
             if action == "1":
                 self._view_profile_memory(profiles)
                 break
             elif action == "2":
-                self._delete_profile(profiles)
+                self._manage_invariants(profiles)
                 break
             elif action == "3":
+                self._delete_profile(profiles)
+                break
+            elif action == "4":
                 break
             else:
                 print("\n[WARN] Неверный выбор, попробуйте снова.")
 
-    def _view_profile_memory(self, profiles: list):
-        """Просмотр памяти выбранного профиля."""
+    def _manage_invariants(self, profiles: list):
+        """Управление инвариантами выбранного профиля."""
         while True:
             try:
                 choice = int(input(f"Выберите профиль (1-{len(profiles)}): ").strip())
@@ -631,14 +651,76 @@ class CLIChat:
                 print(f"Введите число от 1 до {len(profiles)}")
             except ValueError:
                 print("Введите корректное число")
+        
+        profile_info = profiles[choice - 1]
+        
+        while True:
+            invariants = self.use_cases.list_invariants.execute(profile_info.id)
+            print(f"\n--- ИНВАРИАНТЫ ПРОФИЛЯ: {profile_info.name} ---")
+            if not invariants:
+                print("  (инварианты не заданы)")
+            else:
+                for i, inv in enumerate(invariants, 1):
+                    print(f"  {i}. {inv.text}")
+            print("-" * 40)
+            print("Действия:")
+            print("1. Добавить инвариант")
+            print("2. Удалить инвариант")
+            print("3. Назад")
+            
+            action = input("\nВыберите действие (1-3): ").strip()
+            if action == "1":
+                text = input("Введите текст инварианта: ").strip()
+                if text:
+                    try:
+                        self.use_cases.add_invariant.execute(profile_info.id, text)
+                        print("[OK] Инвариант добавлен!")
+                    except ValueError as e:
+                        print(f"[ERROR] {e}")
+                else:
+                    print("[WARN] Инвариант не может быть пустым.")
+            elif action == "2":
+                if not invariants:
+                    print("[WARN] Нет инвариантов для удаления.")
+                    continue
+                try:
+                    idx = int(
+                        input(
+                            f"Выберите номер инварианта для удаления (1-{len(invariants)}): "
+                        ).strip()
+                    )
+                    if 1 <= idx <= len(invariants):
+                        inv_id = invariants[idx - 1].id
+                        if self.use_cases.remove_invariant.execute(inv_id):
+                            print("[OK] Инвариант удалён!")
+                        else:
+                            print("[ERROR] Не удалось удалить инвариант.")
+                    else:
+                        print("[WARN] Некорректный номер.")
+                except ValueError:
+                    print("[WARN] Введите корректное число.")
+            elif action == "3":
+                break
+            else:
+                print("[WARN] Неверный выбор.")
 
+    def _view_profile_memory(self, profiles: list):
+        """Просмотр памяти и инвариантов выбранного профиля."""
+        while True:
+            try:
+                choice = int(input(f"Выберите профиль (1-{len(profiles)}): ").strip())
+                if 1 <= choice <= len(profiles):
+                    break
+                print(f"Введите число от 1 до {len(profiles)}")
+            except ValueError:
+                print("Введите корректное число")
+        
         profile_info = profiles[choice - 1]
         profile = self.use_cases.get_task_profile_memory.execute(profile_info.id)
-
         if profile is None:
             print("\n[ERROR] Профиль не найден.")
             return
-
+        
         print("\n--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---")
         print(f"  ID: {profile.id}")
         print(f"  Название: {profile.name}")
@@ -646,12 +728,20 @@ class CLIChat:
         print(f"  Дата создания: {profile.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
         if profile.preferences:
             print(f"  Предпочтения: {profile.preferences}")
+        
         print("\n--- ПАМЯТЬ ПРОФИЛЯ ---")
         if not profile.facts:
             print("  (память пуста)")
         else:
             for i, fact in enumerate(profile.facts, 1):
                 print(f"  {i}. {fact}")
+        
+        print("\n--- ИНВАРИАНТЫ ---")
+        if not profile.invariants:
+            print("  (инварианты не заданы)")
+        else:
+            for i, inv in enumerate(profile.invariants, 1):
+                print(f"  {i}. {inv}")
         print("-" * 40)
 
     def _delete_profile(self, profiles: list):

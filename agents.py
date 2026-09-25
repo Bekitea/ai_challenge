@@ -18,6 +18,7 @@ class ContextWindowExceededError(Exception):
 
 class AgentPhase(Enum):
     """Фазы работы агента."""
+
     PLAN = "plan"
     EXECUTE = "execute"
     VALIDATE = "validate"
@@ -43,8 +44,7 @@ class AgentPhase(Enum):
                 "Исправь проблемы. Если всё сделано, то явно запроси переход у пользователя."
             ),
             AgentPhase.REPORT: (
-                "Фаза: Отчет\n"
-                "Действия: Нужно предоставить отчет по итогам работы."
+                "Фаза: Отчет\nДействия: Нужно предоставить отчет по итогам работы."
             ),
         }
         return descriptions.get(self, "")
@@ -154,12 +154,14 @@ class GlobalMemory:
 @dataclass
 class TaskProfile:
     """Профиль задачи с памятью о фактах задачи."""
+
     id: str
     name: str
     description: str
     created_at: datetime | None
     facts: list[str] = field(default_factory=list)
     preferences: str = ""
+    invariants: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -508,7 +510,8 @@ class Agent:
 
         # Находим все непромпты с is_remembered == False (только user и assistant)
         unremembered_prompts = [
-            msg for msg in self._messages
+            msg
+            for msg in self._messages
             if not msg.is_remembered and msg.role in ("user", "assistant")
         ]
 
@@ -523,7 +526,9 @@ class Agent:
         # === Сохранение глобальной памяти (факты о пользователе) ===
         old_facts_text = ""
         if self.global_memory.facts:
-            old_facts_text = "Текущие факты о пользователе:\\n" + "\\n".join(f"- {f}" for f in self.global_memory.facts)
+            old_facts_text = "Текущие факты о пользователе:\\n" + "\\n".join(
+                f"- {f}" for f in self.global_memory.facts
+            )
 
         global_system_prompt = (
             "Ты ассистент для извлечения фактов о пользователе из диалога. "
@@ -542,14 +547,17 @@ class Agent:
 
         messages_for_llm = [
             {"role": "system", "content": global_system_prompt},
-            {"role": "user", "content": "Извлеки факты о пользователе из диалога выше."}
+            {
+                "role": "user",
+                "content": "Извлеки факты о пользователе из диалога выше.",
+            },
         ]
 
         response = self._llm_provider.generate(
             messages=messages_for_llm,
             temperature=0.1,
             max_tokens=1000,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
         )
 
         # Обновляем счетчики технических токенов
@@ -577,7 +585,7 @@ class Agent:
             task_old_facts_text = ""
             if self.task_profile.facts:
                 task_old_facts_text = (
-                    f"Текущие факты о задаче \"{self.task_profile.name}\":\\n"
+                    f'Текущие факты о задаче "{self.task_profile.name}":\\n'
                     + "\\n".join(f"- {f}" for f in self.task_profile.facts)
                 )
 
@@ -600,21 +608,23 @@ class Agent:
 
             messages_for_task_llm = [
                 {"role": "system", "content": task_system_prompt},
-                {"role": "user", "content": "Извлеки факты о задаче из диалога выше."}
+                {"role": "user", "content": "Извлеки факты о задаче из диалога выше."},
             ]
 
             task_response = self._llm_provider.generate(
                 messages=messages_for_task_llm,
                 temperature=0.1,
                 max_tokens=1000,
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
             )
 
             # Обновляем счетчики технических токенов
             if task_response.prompt_tokens is not None:
                 self._token_counters.tech_prompt_tokens += task_response.prompt_tokens
             if task_response.completion_tokens is not None:
-                self._token_counters.tech_completion_tokens += task_response.completion_tokens
+                self._token_counters.tech_completion_tokens += (
+                    task_response.completion_tokens
+                )
 
             try:
                 task_result = json.loads(task_response.content)
@@ -628,7 +638,9 @@ class Agent:
                     all_task_facts.append(fact)
 
             self.task_profile.facts = all_task_facts
-            self._task_profile_repository.save_facts(self.task_profile.id, all_task_facts)
+            self._task_profile_repository.save_facts(
+                self.task_profile.id, all_task_facts
+            )
 
         # Помечаем все промпты как remembered
         for msg in self._messages:
@@ -639,7 +651,8 @@ class Agent:
 
     def get_system_prompt_with_memory(self, base_system_prompt: str | None) -> str:
         """
-        Формирует системный промпт с добавлением памяти о пользователе и памяти задачи.
+        Формирует системный промпт с добавлением памяти о пользователе,
+        памяти задачи, предпочтений и инвариантов.
 
         Args:
             base_system_prompt: Базовый системный промпт (если есть).
@@ -656,12 +669,31 @@ class Agent:
 
         # Память задачи
         if self.task_profile and self.task_profile.facts:
-            task_facts_list = "\\n".join(f"- {fact}" for fact in self.task_profile.facts)
-            memory_text += f"\\n\\nПамять задачи ({self.task_profile.name}):\\n{task_facts_list}"
+            task_facts_list = "\\n".join(
+                f"- {fact}" for fact in self.task_profile.facts
+            )
+            memory_text += (
+                f"\\n\\nПамять задачи ({self.task_profile.name}):\\n{task_facts_list}"
+            )
 
         # Предпочтения задачи
         if self.task_profile and self.task_profile.preferences:
             memory_text += f"\\n\\nПредпочтения задачи ({self.task_profile.name}):\\n{self.task_profile.preferences}"
+
+        # Инварианты задачи (строгие правила)
+        if self.task_profile and self.task_profile.invariants:
+            invariants_list = "\n".join(
+                f"- {inv}" for inv in self.task_profile.invariants
+            )
+            memory_text += (
+                f"\n\n--- ИНВАРИАНТЫ ЗАДАЧИ ({self.task_profile.name}) ---\n"
+                f"Строгие правила, которые ДОЛЖНЫ неукоснительно соблюдаться в этом диалоге:\n"
+                f"{invariants_list}\n\n"
+                f"КРИТИЧЕСКИ ВАЖНО: Если запрос пользователя противоречит ЛЮБОМУ из этих инвариантов, "
+                f"ты ОБЯЗАН вежливо отказать в выполнении и объяснить причину, сославшись на конкретный инвариант. "
+                f"Вместо этого предложи альтернативу, которая соответствует инвариантам. "
+                f"Никогда не нарушай инварианты, даже если пользователь настаивает."
+            )
 
         # Добавляем описание текущей фазы
         phase_description = self._current_phase.get_description()
@@ -670,7 +702,11 @@ class Agent:
         if base_system_prompt:
             return f"{base_system_prompt}{memory_text}"
         else:
-            return f"Ты полезный ассистент.{memory_text}" if memory_text else "Ты полезный ассистент."
+            return (
+                f"Ты полезный ассистент.{memory_text}"
+                if memory_text
+                else "Ты полезный ассистент."
+            )
 
     @property
     def current_phase(self) -> AgentPhase:
@@ -689,13 +725,20 @@ class Agent:
         # Проверка валидности перехода
         # Можно перейти на следующий этап или на любой предыдущий
         # Нельзя перескакивать этапы вперед
-        phase_order = [AgentPhase.PLAN, AgentPhase.EXECUTE, AgentPhase.VALIDATE, AgentPhase.REPORT]
+        phase_order = [
+            AgentPhase.PLAN,
+            AgentPhase.EXECUTE,
+            AgentPhase.VALIDATE,
+            AgentPhase.REPORT,
+        ]
         old_index = phase_order.index(old_phase)
         new_index = phase_order.index(phase)
 
         # Если переход вперед (new_index > old_index), то только на один шаг
         if new_index > old_index and new_index != old_index + 1:
-            raise ValueError(f"Нельзя перескочить этап: переход из {old_phase.name} сразу в {phase.name} запрещен")
+            raise ValueError(
+                f"Нельзя перескочить этап: переход из {old_phase.name} сразу в {phase.name} запрещен"
+            )
 
         self._current_phase = phase
         if self._repository is not None and self._auto_save:
@@ -727,13 +770,21 @@ class Agent:
         # Проверка валидности перехода
         # Можно перейти на следующий этап или на любой предыдущий
         # Нельзя перескакивать этапы вперед
-        phase_order = [AgentPhase.PLAN, AgentPhase.EXECUTE, AgentPhase.VALIDATE, AgentPhase.REPORT]
+        phase_order = [
+            AgentPhase.PLAN,
+            AgentPhase.EXECUTE,
+            AgentPhase.VALIDATE,
+            AgentPhase.REPORT,
+        ]
         old_index = phase_order.index(old_phase)
         new_index = phase_order.index(new_phase)
 
         # Если переход вперед (new_index > old_index), то только на один шаг
         if new_index > old_index and new_index != old_index + 1:
-            return False, f"Нельзя перескочить этап: переход из {old_phase.name} сразу в {new_phase.name} запрещен"
+            return (
+                False,
+                f"Нельзя перескочить этап: переход из {old_phase.name} сразу в {new_phase.name} запрещен",
+            )
 
         self._current_phase = new_phase
 

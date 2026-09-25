@@ -3,7 +3,7 @@ from typing import Any
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
-from config import API_KEY, BASE_URL, FOLDER_ID, YANDEX_CLOUD_MODEL
+from config import API_KEY, BASE_URL, FOLDER_ID, MODEL_ID
 
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL, project=FOLDER_ID)
 
@@ -27,7 +27,7 @@ def check_model():
         }
 
         response = client.chat.completions.create(
-            model=f"gpt://{FOLDER_ID}/{YANDEX_CLOUD_MODEL}",
+            model=MODEL_ID,
             messages=[
                 {
                     "role": "system",

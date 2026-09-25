@@ -7,8 +7,8 @@ load_dotenv()
 BASE_URL = "https://ai.api.cloud.yandex.net/v1"
 API_KEY = os.getenv("YANDEX_CLOUD_API_KEY")
 FOLDER_ID = os.getenv("YANDEX_CLOUD_FOLDER")
-# YANDEX_CLOUD_MODEL = "aliceai-llm-flash/latest"
-YANDEX_CLOUD_MODEL = "qwen3.6-35b-a3b/latest"
+YANDEX_CLOUD_MODEL = "aliceai-llm-flash/latest"
+MODEL_ID = f"gpt://{FOLDER_ID}/{YANDEX_CLOUD_MODEL}"
 
 if not API_KEY or not FOLDER_ID:
     raise ValueError(

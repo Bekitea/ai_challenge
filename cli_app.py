@@ -1,7 +1,7 @@
 import os
 
 from agents import Agent, AgentSettings, ContextWindowExceededError
-from config import AVAILABLE_MODELS, REASONING_EFFORTS
+from config import AVAILABLE_MODELS, REASONING_EFFORTS, YANDEX_DEFAULT_MODEL
 from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
@@ -94,9 +94,13 @@ class CLIChat:
         print("\nВыберите модель:")
         for key, (model_id, name) in AVAILABLE_MODELS.items():
             print(f"  {key}. {name} ({model_id})")
+        print("  Enter — модель по умолчанию")
 
         while True:
             model_choice = input("\nВаш выбор (1-3): ").strip()
+            if not model_choice:
+                model_id = YANDEX_DEFAULT_MODEL
+                break
             if model_choice in AVAILABLE_MODELS:
                 model_id = AVAILABLE_MODELS[model_choice][0]
                 break
@@ -338,7 +342,12 @@ class CLIChat:
         print("  0. Не привязывать профиль")
 
         while True:
-            choice = input(f"\nВыберите профиль задачи (0-{len(sorted_profiles)}, по умолчанию 0): ").strip() or "0"
+            choice = (
+                input(
+                    f"\nВыберите профиль задачи (0-{len(sorted_profiles)}, по умолчанию 0): "
+                ).strip()
+                or "0"
+            )
 
             try:
                 choice_num = int(choice)
@@ -475,8 +484,12 @@ class CLIChat:
         print(f"  Название: {info.name}")
         print(f"  ID: {info.agent_id}")
         print(f"  Стратегия: {info.strategy_type}")
-        print(f"  Профиль задачи: {info.task_profile_name if info.task_profile_name else '(не привязан)'}")
-        print(f"  Текущая фаза: {info.current_phase if info.current_phase else '(не установлена)'}")
+        print(
+            f"  Профиль задачи: {info.task_profile_name if info.task_profile_name else '(не привязан)'}"
+        )
+        print(
+            f"  Текущая фаза: {info.current_phase if info.current_phase else '(не установлена)'}"
+        )
         print(f"  Сообщений: {info.message_count}")
         print(f"  Prompt токены: {info.total_prompt_tokens}")
         print(f"  Completion токены: {info.total_completion_tokens}")
@@ -569,7 +582,9 @@ class CLIChat:
             print("[ERROR] Описание задачи не может быть пустым.")
 
         # Ввод предпочтений (опционально)
-        preferences = input("Введите предпочтения/инструкции (Enter для пропуска): ").strip()
+        preferences = input(
+            "Введите предпочтения/инструкции (Enter для пропуска): "
+        ).strip()
 
         # Ввод инвариантов
         print("\n--- ИНВАРИАНТЫ (строгие правила/ограничения) ---")
@@ -582,7 +597,7 @@ class CLIChat:
             if not inv:
                 break
             invariants.append(inv)
-        
+
         profile = self.use_cases.create_task_profile.execute(
             name, description, preferences, invariants
         )
@@ -600,7 +615,7 @@ class CLIChat:
             print("\nНет доступных профилей задач.")
             print("-" * 40)
             return
-        
+
         print("\n--- СПИСОК ПРОФИЛЕЙ ЗАДАЧ ---")
         for i, profile in enumerate(profiles, 1):
             created_at_str = ""
@@ -624,7 +639,7 @@ class CLIChat:
         print("2. Управление инвариантами")
         print("3. Удалить профиль")
         print("4. Назад к списку")
-        
+
         while True:
             action = input("\nВыберите действие (1-4): ").strip()
             if action == "1":
@@ -651,9 +666,9 @@ class CLIChat:
                 print(f"Введите число от 1 до {len(profiles)}")
             except ValueError:
                 print("Введите корректное число")
-        
+
         profile_info = profiles[choice - 1]
-        
+
         while True:
             invariants = self.use_cases.list_invariants.execute(profile_info.id)
             print(f"\n--- ИНВАРИАНТЫ ПРОФИЛЯ: {profile_info.name} ---")
@@ -667,7 +682,7 @@ class CLIChat:
             print("1. Добавить инвариант")
             print("2. Удалить инвариант")
             print("3. Назад")
-            
+
             action = input("\nВыберите действие (1-3): ").strip()
             if action == "1":
                 text = input("Введите текст инварианта: ").strip()
@@ -714,13 +729,13 @@ class CLIChat:
                 print(f"Введите число от 1 до {len(profiles)}")
             except ValueError:
                 print("Введите корректное число")
-        
+
         profile_info = profiles[choice - 1]
         profile = self.use_cases.get_task_profile_memory.execute(profile_info.id)
         if profile is None:
             print("\n[ERROR] Профиль не найден.")
             return
-        
+
         print("\n--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---")
         print(f"  ID: {profile.id}")
         print(f"  Название: {profile.name}")
@@ -728,14 +743,14 @@ class CLIChat:
         print(f"  Дата создания: {profile.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
         if profile.preferences:
             print(f"  Предпочтения: {profile.preferences}")
-        
+
         print("\n--- ПАМЯТЬ ПРОФИЛЯ ---")
         if not profile.facts:
             print("  (память пуста)")
         else:
             for i, fact in enumerate(profile.facts, 1):
                 print(f"  {i}. {fact}")
-        
+
         print("\n--- ИНВАРИАНТЫ ---")
         if not profile.invariants:
             print("  (инварианты не заданы)")
@@ -748,7 +763,11 @@ class CLIChat:
         """Удаление выбранного профиля."""
         while True:
             try:
-                choice = int(input(f"Выберите профиль для удаления (1-{len(profiles)}): ").strip())
+                choice = int(
+                    input(
+                        f"Выберите профиль для удаления (1-{len(profiles)}): "
+                    ).strip()
+                )
                 if 1 <= choice <= len(profiles):
                     break
                 print(f"Введите число от 1 до {len(profiles)}")
@@ -758,13 +777,25 @@ class CLIChat:
         profile_info = profiles[choice - 1]
 
         # Проверка привязки к агентам
-        if self.use_cases.delete_task_profile.task_profile_repository.is_profile_linked_to_agents(profile_info.id):
-            print(f"\n[WARN] Невозможно удалить профиль '{profile_info.name}': он привязан к одному или нескольким агентам.")
-            print("Сначала удалите или пересоздайте агентов, использующих этот профиль.")
+        if self.use_cases.delete_task_profile.task_profile_repository.is_profile_linked_to_agents(
+            profile_info.id
+        ):
+            print(
+                f"\n[WARN] Невозможно удалить профиль '{profile_info.name}': он привязан к одному или нескольким агентам."
+            )
+            print(
+                "Сначала удалите или пересоздайте агентов, использующих этот профиль."
+            )
             return
 
         # Подтверждение удаления
-        confirm = input(f"\nВы уверены, что хотите удалить профиль '{profile_info.name}'? (y/n): ").strip().lower()
+        confirm = (
+            input(
+                f"\nВы уверены, что хотите удалить профиль '{profile_info.name}'? (y/n): "
+            )
+            .strip()
+            .lower()
+        )
         if confirm != "y":
             print("\n[INFO] Удаление отменено.")
             return
@@ -828,11 +859,15 @@ class CLIChat:
 
                 # Обработка команд фаз
                 if user_input.lower() in ("/plan", "/execute", "/validate", "/report"):
-                    success, message = self.current_agent.handle_phase_command(user_input.lower())
+                    success, message = self.current_agent.handle_phase_command(
+                        user_input.lower()
+                    )
                     print(f"\n[INFO] {message}")
                     # Обновляем отображение фазы в заголовке
                     phase_name = self.current_agent.current_phase.name
-                    print(f"--- ЧАТ: {self.current_agent.name} [Фаза: {phase_name}] ---")
+                    print(
+                        f"--- ЧАТ: {self.current_agent.name} [Фаза: {phase_name}] ---"
+                    )
                     continue
 
                 if user_input.lower() == "/summary":

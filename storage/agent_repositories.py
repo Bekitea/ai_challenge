@@ -140,6 +140,33 @@ class PersistentAgentRepository(AgentRepository):
         """Возвращает новую сессию БД."""
         return self._session_factory()
 
+    @staticmethod
+    def _restore_mcp_connections(agent: Agent) -> None:
+        """Восстанавливает живые MCP-подключения агента из менеджера.
+
+        Если подключений в менеджере нет (например, приложение было
+        перезапущено), переподключается к каждому сохранённому серверу.
+        Серверы, отсутствующие в реестре или недоступные, молча пропускаются —
+        они останутся в списке и пользователь увидит статус через /mcp.
+        """
+        from mcp_client import MCP_MANAGER, McpConnection
+        from mcp_registry import find_server
+
+        if not agent.connected_mcp_servers or agent.agent_id is None:
+            return
+
+        existing = MCP_MANAGER.get_connections(agent.agent_id)
+        for server_name in agent.connected_mcp_servers:
+            if server_name in existing and existing[server_name].connected:
+                continue
+            server_info = find_server(server_name)
+            if server_info is None:
+                continue
+            connection = McpConnection(server_info)
+            connection.connect_and_list_tools()
+            if connection.connected:
+                MCP_MANAGER.add_connection(agent.agent_id, connection)
+
     def _agent_orm_to_agent(self, orm: AgentORM) -> Agent:
         """
         Преобразует ORM объект в Agent, загружая историю из файла.
@@ -166,8 +193,13 @@ class PersistentAgentRepository(AgentRepository):
 
         # Загружаем профиль задачи, если он привязан
         task_profile = None
-        if orm.task_profile_id is not None and self._task_profile_repository is not None:
-            task_profile = self._task_profile_repository.get_profile_by_id(orm.task_profile_id)
+        if (
+            orm.task_profile_id is not None
+            and self._task_profile_repository is not None
+        ):
+            task_profile = self._task_profile_repository.get_profile_by_id(
+                orm.task_profile_id
+            )
 
         agent = Agent(
             agent_id=orm.id,
@@ -181,9 +213,13 @@ class PersistentAgentRepository(AgentRepository):
             strategy=strategy,
             auto_save=True,
             global_memory_repository=self._global_memory_repository,
-            task_profile=task_profile,                              # ✅ ДОБАВЛЕНО
+            task_profile=task_profile,  # ✅ ДОБАВЛЕНО
             task_profile_repository=self._task_profile_repository,  # ✅ ДОБАВЛЕНО
+            connected_mcp_servers=orm.get_mcp_servers(),
         )
+
+        # Восстанавливаем живые MCP-подключения (если серверы есть в реестре)
+        self._restore_mcp_connections(agent)
 
         # Устанавливаем ссылку на репозиторий для автосохранения
         agent._repository = self
@@ -260,6 +296,9 @@ class PersistentAgentRepository(AgentRepository):
             # Сохраняем current_phase
             orm.set_current_phase(agent.current_phase)
 
+            # Сохраняем список подключённых MCP-серверов
+            orm.set_mcp_servers(agent.connected_mcp_servers)
+
             session.commit()
 
             # После commit получаем сгенерированный ID и conversation_id, если это новый агент
@@ -307,7 +346,9 @@ class PersistentAgentRepository(AgentRepository):
         # Загружаем профиль задачи, если указан
         task_profile = None
         if task_profile_id is not None and self._task_profile_repository is not None:
-            task_profile = self._task_profile_repository.get_profile_by_id(task_profile_id)
+            task_profile = self._task_profile_repository.get_profile_by_id(
+                task_profile_id
+            )
 
         agent = Agent(
             agent_id=None,  # Будет установлен после сохранения в БД
@@ -458,6 +499,11 @@ class PersistentAgentRepository(AgentRepository):
 
         # Удаляем файл истории по conversation_id
         self._chat_storage.delete_history(conversation_id)
+
+        # Закрываем живые MCP-подключения, привязанные к удалённому чату
+        from mcp_client import MCP_MANAGER
+
+        MCP_MANAGER.clear_agent(agent_id)
         return True
 
     def get_agents_with_unsaved_memory(self) -> list[Agent]:
@@ -485,7 +531,8 @@ class PersistentAgentRepository(AgentRepository):
                 agent = self._agent_orm_to_agent(orm)
                 # Проверяем, есть ли непромптированные сообщения
                 unremembered_prompts = [
-                    msg for msg in agent.get_history()
+                    msg
+                    for msg in agent.get_history()
                     if not msg.is_remembered and msg.role in ("user", "assistant")
                 ]
                 if unremembered_prompts:

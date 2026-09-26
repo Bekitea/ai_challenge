@@ -58,39 +58,48 @@ class TaskProfileORM(Base):
     Примечание: Факты задачи хранятся в файловом хранилище через TaskProfileRepository,
     а не в БД. Эта модель содержит только метаданные для отображения в списке профилей.
     """
+
     __tablename__ = "task_profiles"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now().astimezone())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now().astimezone()
+    )
     preferences: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
 
     # Связь с агентами
-    agents: Mapped[list[AgentORM]] = relationship(back_populates="task_profile", foreign_keys="AgentORM.task_profile_id")
+    agents: Mapped[list[AgentORM]] = relationship(
+        back_populates="task_profile", foreign_keys="AgentORM.task_profile_id"
+    )
 
     invariants: Mapped[list[TaskProfileInvariantORM]] = relationship(
-            back_populates="profile",
-            cascade="all, delete-orphan",
-        )
+        back_populates="profile",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<TaskProfileORM(id={self.id}, name={self.name})>"
+
 
 class TaskProfileInvariantORM(Base):
     """
     ORM модель для хранения инвариантов профиля задачи.
     Инварианты — это строгие правила/ограничения, которые должны соблюдаться
     в диалоге (например, стек технологий, архитектурные решения, бизнес-правила).
-    
+
     Атрибуты:
     id: Числовой ID инварианта (primary key).
     profile_id: UUID профиля задачи (foreign key).
     text: Текст инварианта.
     created_at: Дата создания инварианта.
     """
+
     __tablename__ = "task_profile_invariants"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     profile_id: Mapped[str] = mapped_column(
         ForeignKey("task_profiles.id", ondelete="CASCADE"),
@@ -103,12 +112,13 @@ class TaskProfileInvariantORM(Base):
         nullable=False,
         default=lambda: datetime.now().astimezone(),
     )
-    
+
     # Relationship back to TaskProfile
     profile: Mapped[TaskProfileORM] = relationship(back_populates="invariants")
-    
+
     def __repr__(self) -> str:
         return f"<TaskProfileInvariantORM(id={self.id}, profile_id={self.profile_id})>"
+
 
 class AgentORM(Base):
     """
@@ -132,27 +142,46 @@ class AgentORM(Base):
         tech_completion_tokens: Сумма completion_tokens технических запросов.
         current_phase: Текущая фаза работы агента (plan, execute, validate, report).
     """
+
     __tablename__ = "agents"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    conversation_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True, default=lambda: str(uuid4()))
+    conversation_id: Mapped[str] = mapped_column(
+        String(36), nullable=False, unique=True, default=lambda: str(uuid4())
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    last_message_timestamp: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_message_timestamp: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_message_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
     system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_dialog_remembered: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_dialog_remembered: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    strategy_type: Mapped[str | None] = mapped_column(String(100), nullable=True, default="DefaultStrategy")
+    strategy_type: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, default="DefaultStrategy"
+    )
     strategy_params_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     chat_prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    chat_completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    chat_completion_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
     tech_prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    tech_completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    current_phase: Mapped[str | None] = mapped_column(String(50), nullable=True, default="plan")
+    tech_completion_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    current_phase: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, default="plan"
+    )
+    # JSON-список машинных имён подключённых к чату MCP-серверов (по умолчанию пусто)
+    mcp_servers_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Foreign key to TaskProfile (optional, set only at creation)
-    task_profile_id: Mapped[str | None] = mapped_column(ForeignKey("task_profiles.id"), nullable=True)
+    task_profile_id: Mapped[str | None] = mapped_column(
+        ForeignKey("task_profiles.id"), nullable=True
+    )
 
     # Relationship back to TaskProfile
     task_profile: Mapped[TaskProfileORM | None] = relationship(back_populates="agents")
@@ -185,6 +214,23 @@ class AgentORM(Base):
     def set_current_phase(self, phase: AgentPhase | None) -> None:
         """Устанавливает текущую фазу агента."""
         self.current_phase = _serialize_phase(phase)
+
+    def get_mcp_servers(self) -> list[str]:
+        """Возвращает список машинных имён подключённых MCP-серверов."""
+        if not self.mcp_servers_json:
+            return []
+        try:
+            data = json.loads(self.mcp_servers_json)
+        except json.JSONDecodeError, TypeError:
+            return []
+        return [str(name) for name in data] if isinstance(data, list) else []
+
+    def set_mcp_servers(self, servers: list[str] | None) -> None:
+        """Сохраняет список подключённых MCP-серверов."""
+        if not servers:
+            self.mcp_servers_json = None
+        else:
+            self.mcp_servers_json = json.dumps(list(servers))
 
     @property
     def total_prompt_tokens(self) -> int:

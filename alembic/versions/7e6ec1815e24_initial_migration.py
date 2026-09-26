@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: e8ec99593cf5
+Revision ID: 7e6ec1815e24
 Revises: 
-Create Date: 2026-09-25 22:46:32.249896
+Create Date: 2026-09-26 22:43:45.097002
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'e8ec99593cf5'
+revision: str = '7e6ec1815e24'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -46,6 +46,7 @@ def upgrade() -> None:
     sa.Column('tech_prompt_tokens', sa.Integer(), nullable=False),
     sa.Column('tech_completion_tokens', sa.Integer(), nullable=False),
     sa.Column('current_phase', sa.String(length=50), nullable=True),
+    sa.Column('mcp_servers_json', sa.Text(), nullable=True),
     sa.Column('task_profile_id', sa.String(length=36), nullable=True),
     sa.ForeignKeyConstraint(['task_profile_id'], ['task_profiles.id'], ),
     sa.PrimaryKeyConstraint('id'),

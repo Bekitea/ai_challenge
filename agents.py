@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -127,10 +128,23 @@ class TokenCounters:
 
 
 @dataclass
+class ToolCallRecord:
+    """Запись о вызове инструмента (MCP), запрошенном моделью.
+
+    Хранится в истории сообщений, чтобы при повторных запросах к LLM
+    восстанавливать полный протокол tool calling.
+    """
+
+    id: str
+    name: str  # префиксованное имя инструмента: "<server>__<tool>"
+    arguments: str  # JSON-строка с аргументами
+
+
+@dataclass
 class Prompt:
     """Сообщение в диалоге с агентом."""
 
-    role: str  # "system", "user", "assistant"
+    role: str  # "system", "user", "assistant", "tool"
     content: str
     timestamp: datetime | None = (
         None  # None для system, обязательно для user и assistant
@@ -142,6 +156,9 @@ class Prompt:
     prompt_tokens: int | None = None  # Только для assistant
     completion_tokens: int | None = None  # Только для assistant
     is_remembered: bool = False  # Пометка о прохождении через сохранение памяти
+    tool_calls: list[ToolCallRecord] | None = None  # Только для assistant
+    tool_call_id: str | None = None  # Только для role="tool"
+    name: str | None = None  # Только для role="tool" (имя инструмента)
 
 
 @dataclass
@@ -193,6 +210,7 @@ class Agent:
         global_memory_repository: Any | None = None,
         task_profile: TaskProfile | None = None,
         task_profile_repository: Any | None = None,
+        connected_mcp_servers: list[str] | None = None,
     ):
         if llm_provider is None:
             raise ValueError("llm_provider is required")
@@ -228,6 +246,10 @@ class Agent:
 
         # Phase state (default to PLAN)
         self._current_phase = AgentPhase.PLAN
+
+        # Подключённые к чату MCP-серверы (машинные имена).
+        # По умолчанию пусто: у всех новых агентов/чатов MCP отсутствуют.
+        self.connected_mcp_servers: list[str] = list(connected_mcp_servers or [])
 
         # Добавляем системный промпт только если сообщений ещё нет
         if system_prompt and not self._messages:
@@ -267,6 +289,101 @@ class Agent:
         """Возвращает всю историю диалога (включая системный промпт)."""
         return self._messages.copy()
 
+    MAX_MCP_TOOL_ITERATIONS = 5  # защита от бесконечного цикла tool calling
+
+    def connect_mcp(self, server_name: str) -> tuple[bool, str]:
+        """Подключает MCP-сервер к чату.
+
+        Проверяет, что сервер существует в реестре и к нему можно подключиться,
+        затем сохраняет имя сервера в списке подключённых и автосохраняет агента.
+
+        Args:
+            server_name: Машинное имя MCP-сервера из реестра.
+
+        Returns:
+            Кортеж (успех, сообщение для пользователя).
+        """
+        from mcp_client import MCP_MANAGER, McpConnection
+        from mcp_registry import find_server
+
+        if self.agent_id is None:
+            return False, "Агент ещё не сохранён — подключите MCP позже."
+
+        server_info = find_server(server_name)
+        if server_info is None:
+            return False, f"MCP-сервер '{server_name}' не найден в реестре."
+
+        if server_name in self.connected_mcp_servers:
+            return False, f"MCP '{server_info.title}' уже подключен к этому чату."
+
+        connection = McpConnection(server_info)
+        tools = connection.connect_and_list_tools()
+        if not connection.connected:
+            return (
+                False,
+                f"Не удалось подключиться к MCP '{server_info.title}': {connection.connect_error or 'сервер не вернул инструменты'}",
+            )
+
+        MCP_MANAGER.add_connection(self.agent_id, connection)
+        self.connected_mcp_servers.append(server_name)
+        self.save()
+        tool_names = ", ".join(t.name for t in tools) if tools else "нет"
+        return (
+            True,
+            f"MCP '{server_info.title}' подключен. Доступные инструменты: {tool_names}",
+        )
+
+    def disconnect_mcp(self, server_name: str) -> tuple[bool, str]:
+        """Отключает MCP-сервер от чата."""
+        from mcp_client import MCP_MANAGER
+        from mcp_registry import find_server
+
+        if server_name not in self.connected_mcp_servers:
+            return False, f"MCP '{server_name}' не подключен к этому чату."
+
+        server_info = find_server(server_name)
+        title = server_info.title if server_info else server_name
+
+        if self.agent_id is not None:
+            MCP_MANAGER.remove_connection(self.agent_id, server_name)
+        self.connected_mcp_servers.remove(server_name)
+        self.save()
+        return True, f"MCP '{title}' отключен."
+
+    def _collect_mcp_tools(self) -> list[dict]:
+        """Собирает OpenAI-compatible описания инструментов всех живых MCP-подключений."""
+        from mcp_client import MCP_MANAGER
+
+        if not self.connected_mcp_servers or self.agent_id is None:
+            return []
+        tools: list[dict] = []
+        connections = MCP_MANAGER.get_connections(self.agent_id)
+        for server_name in self.connected_mcp_servers:
+            conn = connections.get(server_name)
+            if conn is None or not conn.connected:
+                continue
+            tools.extend(tool.to_openai_tool() for tool in conn.tools)
+        return tools
+
+    def _execute_mcp_tool_call(self, call) -> str:
+        """Выполняет один tool_call через живое подключение к нужному MCP-серверу."""
+        from mcp_client import MCP_MANAGER, parse_tool_arguments, strip_prefix
+
+        server_name, tool_name = strip_prefix(call.name)
+        connections = (
+            MCP_MANAGER.get_connections(self.agent_id)
+            if self.agent_id is not None
+            else {}
+        )
+        conn = connections.get(server_name)
+        if conn is None or not conn.connected:
+            return (
+                f"[MCP] Ошибка: сервер '{server_name}' не подключен к чату, "
+                f"инструмент '{tool_name}' недоступен."
+            )
+        arguments = parse_tool_arguments(call.arguments)
+        return conn.call_tool(tool_name, arguments)
+
     def save(self) -> None:
         """
         Сохраняет текущее состояние агента.
@@ -276,6 +393,38 @@ class Agent:
         """
         if self._repository is not None and self._auto_save:
             self._repository.update_agent(self)
+
+    def _build_llm_messages_with_tools(self, memory_text: str) -> list[dict]:
+        """Готовит сообщения для повторного запроса к LLM в цикле tool calling.
+
+        Берёт всю историю как есть (стратегии контекстного окна не понимают
+        расширенные протокольные поля), дополняя их полями tool_calls /
+        tool_call_id / name в OpenAI-совместимом формате.
+        """
+        messages: list[dict[str, Any]] = []
+        for msg in self._messages:
+            entry: dict[str, Any] = {"role": msg.role, "content": msg.content}
+            if msg.role == "system" and memory_text:
+                entry["content"] = f"{msg.content}\n\n{memory_text}"
+            if msg.tool_calls:
+                entry["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": tc.arguments,
+                        },
+                    }
+                    for tc in msg.tool_calls
+                ]
+            if msg.role == "tool":
+                if msg.tool_call_id is not None:
+                    entry["tool_call_id"] = msg.tool_call_id
+                if msg.name is not None:
+                    entry["name"] = msg.name
+            messages.append(entry)
+        return messages
 
     def continue_dialog(self, user_prompt: str) -> LlmResponse:
         """
@@ -312,8 +461,62 @@ class Agent:
         settings = self._settings
         kwargs = settings.to_llm_request_properties()
 
+        # Инструменты подключённых MCP-серверов (пусто, если MCP не подключены)
+        mcp_tools = self._collect_mcp_tools()
+        if mcp_tools:
+            kwargs["tools"] = mcp_tools
+
         # Делаем запрос к LLM
         response = self._llm_provider.generate(messages=messages_for_llm, **kwargs)
+
+        # === Цикл tool calling: модель может просить вызвать инструменты MCP ===
+        for _ in range(self.MAX_MCP_TOOL_ITERATIONS):
+            if not response.tool_calls:
+                break
+
+            # Записываем assistant-сообщение с tool_calls в историю
+            call_records = [
+                ToolCallRecord(
+                    id=call.id,
+                    name=call.name,
+                    arguments=(
+                        call.arguments
+                        if isinstance(call.arguments, str)
+                        else json.dumps(call.arguments or {})
+                    ),
+                )
+                for call in response.tool_calls
+            ]
+            self._messages.append(
+                Prompt(
+                    role="assistant",
+                    content=response.content or "",
+                    timestamp=datetime.now().astimezone(),
+                    reasoning=response.reasoning,
+                    prompt_tokens=response.prompt_tokens,
+                    completion_tokens=response.completion_tokens,
+                    tool_calls=call_records,
+                )
+            )
+
+            # Вызываем каждый инструмент и добавляем результаты как role="tool"
+            for call, record in zip(response.tool_calls, call_records):
+                tool_result = self._execute_mcp_tool_call(call)
+                self._messages.append(
+                    Prompt(
+                        role="tool",
+                        content=tool_result,
+                        timestamp=datetime.now().astimezone(),
+                        tool_call_id=record.id,
+                        name=record.name,
+                    )
+                )
+
+            # Повторный запрос к LLM уже с результатами инструментов.
+            # Готовим сообщения напрямую из истории (стратегии видят только
+            # role/content; расширенные поля дописываем вручную).
+            followup_messages = self._build_llm_messages_with_tools(memory_text)
+            response = self._llm_provider.generate(messages=followup_messages, **kwargs)
 
         # Проверяем лимит контекстного окна (только для assistant prompt)
         context_window_size = (
@@ -451,9 +654,20 @@ class Agent:
             global_memory_repository=self._global_memory_repository,
             task_profile=self.task_profile,
             task_profile_repository=self._task_profile_repository,
+            connected_mcp_servers=list(self.connected_mcp_servers),
         )
 
         branched_agent._repository = self._repository
+
+        # Переносим живые MCP-подключения на ветку (регистрация под новым ID)
+        if self.agent_id is not None and branched_agent.agent_id is not None:
+            from mcp_client import MCP_MANAGER
+
+            connections = MCP_MANAGER.get_connections(self.agent_id)
+            for server_name in branched_agent.connected_mcp_servers:
+                conn = connections.get(server_name)
+                if conn is not None:
+                    MCP_MANAGER.add_connection(branched_agent.agent_id, conn)
 
         current_counters = self.token_counters
         branched_agent._token_counters.chat_prompt_tokens = (

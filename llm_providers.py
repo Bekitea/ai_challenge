@@ -8,6 +8,15 @@ from config import YANDEX_BASE_URL
 
 
 @dataclass
+class ToolCall:
+    """Вызов инструмента (tool call), запрошенный моделью."""
+
+    id: str
+    name: str
+    arguments: Any  # dict или JSON-строка с аргументами
+
+
+@dataclass
 class LlmResponse:
     """Результат ответа от LLM."""
 
@@ -15,6 +24,7 @@ class LlmResponse:
     reasoning: str | None = None
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    tool_calls: list[ToolCall] | None = None  # Вызовы инструментов (MCP)
 
 
 class LlmProvider(ABC):
@@ -36,6 +46,7 @@ class LlmProvider(ABC):
         response_format: dict | None = None,
         reasoning_effort: str | None = None,
         model_id: str | None = None,
+        tools: list[dict] | None = None,
     ) -> LlmResponse:
         """Генерирует ответ от LLM.
 
@@ -49,6 +60,7 @@ class LlmProvider(ABC):
             response_format: Формат ответа (например, JSON schema).
             reasoning_effort: Уровень усилий рассуждений ("low", "medium", "high", "none").
             model_id: Идентификатор модели (если не указан, используется модель по умолчанию).
+            tools: Список инструментов (OpenAI-compatible) для function calling (MCP).
 
         Returns:
             LlmResponse: Объект с содержимым ответа и текстом рассуждений.
@@ -83,6 +95,7 @@ class YandexCloudLlmProvider(LlmProvider):
         response_format: dict | None = None,
         reasoning_effort: str | None = None,
         model_id: str | None = None,
+        tools: list[dict] | None = None,
     ) -> LlmResponse:
         """Генерирует ответ от Yandex Cloud LLM.
 
@@ -96,6 +109,7 @@ class YandexCloudLlmProvider(LlmProvider):
             response_format: Формат ответа (например, JSON schema).
             reasoning_effort: Уровень усилий рассуждений ("low", "medium", "high", "none").
             model_id: Идентификатор модели (если не указан, используется модель по умолчанию).
+            tools: Список инструментов (OpenAI-compatible) для function calling (MCP).
 
         Returns:
             LlmResponse: Объект с содержимым ответа и текстом рассуждений.
@@ -127,6 +141,8 @@ class YandexCloudLlmProvider(LlmProvider):
             kwargs["response_format"] = response_format
         if reasoning_effort is not None:
             kwargs["reasoning_effort"] = reasoning_effort
+        if tools:
+            kwargs["tools"] = tools
 
         response = self.client.chat.completions.create(**kwargs)
         message = response.choices[0].message
@@ -134,6 +150,21 @@ class YandexCloudLlmProvider(LlmProvider):
         reasoning_text = getattr(message, "reasoning_content", None) or getattr(
             message, "reasoning", None
         )
+
+        # Разбираем вызовы инструментов (MCP tool calls)
+        tool_calls: list[ToolCall] | None = None
+        raw_tool_calls = getattr(message, "tool_calls", None)
+        if raw_tool_calls:
+            tool_calls = []
+            for tc in raw_tool_calls:
+                fn = tc.function
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.id or "",
+                        name=fn.name,
+                        arguments=fn.arguments,
+                    )
+                )
 
         usage = getattr(response, "usage", None)
         prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
@@ -144,6 +175,7 @@ class YandexCloudLlmProvider(LlmProvider):
             reasoning=reasoning_text,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            tool_calls=tool_calls,
         )
 
 
@@ -167,6 +199,7 @@ class MockLlmProvider(LlmProvider):
         response_format: dict | None = None,
         reasoning_effort: str | None = None,
         model_id: str | None = None,
+        tools: list[dict] | None = None,
     ) -> LlmResponse:
         """Генерирует mock-ответ для тестирования.
 
@@ -180,6 +213,7 @@ class MockLlmProvider(LlmProvider):
             response_format: Формат ответа (игнорируется).
             reasoning_effort: Уровень усилий рассуждений (игнорируется).
             model_id: Идентификатор модели (игнорируется).
+            tools: Список инструментов MCP (игнорируется).
 
         Returns:
             LlmResponse: Mock-объект с содержимым ответа.

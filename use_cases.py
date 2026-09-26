@@ -46,6 +46,10 @@ class UseCasesBundle:
     add_invariant: AddInvariantUseCase
     remove_invariant: RemoveInvariantUseCase
     list_invariants: ListInvariantsUseCase
+    connect_mcp: ConnectMcpUseCase
+    disconnect_mcp: DisconnectMcpUseCase
+    list_connected_mcp: ListConnectedMcpUseCase
+    list_available_mcp: ListAvailableMcpUseCase
 
 
 @dataclass
@@ -74,9 +78,11 @@ class StrategySelection:
     buffer_size: int | None = None
     window_size: int | None = None
 
+
 @dataclass
 class TaskProfileInfo:
     """Информация о профиле задачи для отображения."""
+
     id: str
     name: str
     description: str
@@ -89,14 +95,21 @@ class TaskProfileInfo:
 @dataclass
 class InvariantInfo:
     """Информация об инварианте для отображения."""
+
     id: int
     text: str
     created_at: datetime
 
+
 class CreateChatUseCase:
     """Use case для создания нового чата."""
 
-    def __init__(self, repository: AgentRepository, llm_provider: LlmProvider, task_profile_repository=None):
+    def __init__(
+        self,
+        repository: AgentRepository,
+        llm_provider: LlmProvider,
+        task_profile_repository=None,
+    ):
         self.repository = repository
         self.llm_provider = llm_provider
         self.task_profile_repository = task_profile_repository
@@ -273,7 +286,11 @@ class ShowChatInfoUseCase:
             task_profile_name = agent.task_profile.name
 
         # Получаем текущую фазу агента
-        current_phase = agent.current_phase.value if hasattr(agent, 'current_phase') and agent.current_phase else None
+        current_phase = (
+            agent.current_phase.value
+            if hasattr(agent, "current_phase") and agent.current_phase
+            else None
+        )
 
         return ChatInfo(
             name=agent.name,
@@ -416,6 +433,7 @@ class SaveUnsavedMemoriesUseCase:
 @dataclass
 class TaskProfileInfo:
     """Информация о профиле задачи для отображения."""
+
     id: str
     name: str
     description: str
@@ -455,10 +473,10 @@ class ListTaskProfilesUseCase:
 
 class CreateTaskProfileUseCase:
     """Use case для создания нового профиля задачи."""
-    
+
     def __init__(self, task_profile_repository):
         self.task_profile_repository = task_profile_repository
-    
+
     def execute(
         self,
         name: str,
@@ -468,13 +486,13 @@ class CreateTaskProfileUseCase:
     ) -> TaskProfile:
         """
         Создаёт новый профиль задачи.
-        
+
         Args:
             name: Название профиля.
             description: Описание задачи.
             preferences: Инструкции и предпочтения пользователя (опционально).
             invariants: Список строгих правил/ограничений (опционально).
-        
+
         Returns:
             TaskProfile: Созданный профиль.
         """
@@ -524,23 +542,24 @@ class DeleteTaskProfileUseCase:
 
         return self.task_profile_repository.delete_profile(profile_id)
 
+
 class AddInvariantUseCase:
     """Use case для добавления инварианта в профиль задачи."""
-    
+
     def __init__(self, task_profile_repository):
         self.task_profile_repository = task_profile_repository
-    
+
     def execute(self, profile_id: str, text: str) -> InvariantInfo:
         """
         Добавляет инвариант в профиль задачи.
-        
+
         Args:
             profile_id: UUID профиля задачи.
             text: Текст инварианта (строгое правило/ограничение).
-        
+
         Returns:
             InvariantInfo: Информация о созданном инварианте.
-        
+
         Raises:
             ValueError: Если текст пустой или профиль не найден.
         """
@@ -562,17 +581,17 @@ class AddInvariantUseCase:
 
 class RemoveInvariantUseCase:
     """Use case для удаления инварианта из профиля задачи."""
-    
+
     def __init__(self, task_profile_repository):
         self.task_profile_repository = task_profile_repository
-    
+
     def execute(self, invariant_id: int) -> bool:
         """
         Удаляет инвариант по ID.
-        
+
         Args:
             invariant_id: ID инварианта для удаления.
-        
+
         Returns:
             True, если инвариант был удалён, False если не найден.
         """
@@ -581,17 +600,17 @@ class RemoveInvariantUseCase:
 
 class ListInvariantsUseCase:
     """Use case для получения списка инвариантов профиля задачи."""
-    
+
     def __init__(self, task_profile_repository):
         self.task_profile_repository = task_profile_repository
-    
+
     def execute(self, profile_id: str) -> list[InvariantInfo]:
         """
         Возвращает список инвариантов профиля.
-        
+
         Args:
             profile_id: UUID профиля задачи.
-        
+
         Returns:
             Список InvariantInfo, отсортированный по дате создания.
         """
@@ -604,3 +623,86 @@ class ListInvariantsUseCase:
             )
             for inv in invariants
         ]
+
+
+# ---------------------------------------------------------------------------
+# Use cases для работы с MCP-серверами
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class McpServerStatus:
+    """Статус MCP-сервера в контексте чата."""
+
+    name: str  # машинное имя сервера
+    title: str  # отображаемое название
+    description: str  # описание для пользователя
+    connected: bool  # есть ли живое подключение к этому чату
+    tools: list[str]  # имена инструментов, доступных через это подключение
+
+
+class ListConnectedMcpUseCase:
+    """Use case для получения списка MCP-серверов, подключённых к чату."""
+
+    def execute(self, agent: Agent) -> list[McpServerStatus]:
+        """Возвращает статусы всех подключённых к чату MCP-серверов.
+
+        В список попадают и серверы, сохранённые в чате, но недоступные в
+        данный момент (живое подключение не установлено или разорвано) —
+        они отображаются с connected=False.
+        """
+        from mcp_client import MCP_MANAGER
+        from mcp_registry import find_server
+
+        connections = (
+            MCP_MANAGER.get_connections(agent.agent_id)
+            if agent.agent_id is not None
+            else {}
+        )
+        result: list[McpServerStatus] = []
+        for server_name in agent.connected_mcp_servers:
+            info = find_server(server_name)
+            conn = connections.get(server_name)
+            live = conn is not None and conn.connected
+            result.append(
+                McpServerStatus(
+                    name=server_name,
+                    title=info.title if info else server_name,
+                    description=info.description
+                    if info
+                    else "сервер отсутствует в реестре",
+                    connected=live,
+                    tools=[tool.name for tool in conn.tools] if live else [],
+                )
+            )
+        return result
+
+
+class ListAvailableMcpUseCase:
+    """Use case для получения списка MCP-серверов, ещё не подключённых к чату."""
+
+    def execute(self, agent: Agent) -> list:
+        """Возвращает записи реестра McpServerInfo, не подключённые к чату."""
+        from mcp_registry import get_available_servers
+
+        return [
+            server
+            for server in get_available_servers()
+            if server.name not in agent.connected_mcp_servers
+        ]
+
+
+class ConnectMcpUseCase:
+    """Use case для подключения MCP-сервера к чату."""
+
+    def execute(self, agent: Agent, server_name: str) -> tuple[bool, str]:
+        """Подключает MCP-сервер к чату (см. Agent.connect_mcp)."""
+        return agent.connect_mcp(server_name)
+
+
+class DisconnectMcpUseCase:
+    """Use case для отключения MCP-сервера от чата."""
+
+    def execute(self, agent: Agent, server_name: str) -> tuple[bool, str]:
+        """Отключает MCP-сервер от чата (см. Agent.disconnect_mcp)."""
+        return agent.disconnect_mcp(server_name)

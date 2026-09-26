@@ -11,14 +11,21 @@ from storage.task_profile_repository import (
     DatabaseTaskProfileRepository,
 )
 from use_cases import (
+    AddInvariantUseCase,
     ChangeSettingsUseCase,
+    ConnectMcpUseCase,
     CreateBranchUseCase,
     CreateChatUseCase,
     CreateTaskProfileUseCase,
     DeleteTaskProfileUseCase,
+    DisconnectMcpUseCase,
     GetTaskProfileMemoryUseCase,
+    ListAvailableMcpUseCase,
+    ListConnectedMcpUseCase,
+    ListInvariantsUseCase,
     ListTaskProfilesUseCase,
     RefreshAgentMemoryUseCase,
+    RemoveInvariantUseCase,
     SaveAgentMemoryUseCase,
     SaveUnsavedMemoriesUseCase,
     SelectChatUseCase,
@@ -29,9 +36,6 @@ from use_cases import (
     ShowSummaryUseCase,
     ViewGlobalMemoryUseCase,
     ViewSettingsUseCase,
-    AddInvariantUseCase,
-    RemoveInvariantUseCase,
-    ListInvariantsUseCase,
 )
 
 
@@ -60,6 +64,10 @@ class UseCasesBundle:
     add_invariant: AddInvariantUseCase
     remove_invariant: RemoveInvariantUseCase
     list_invariants: ListInvariantsUseCase
+    connect_mcp: ConnectMcpUseCase
+    disconnect_mcp: DisconnectMcpUseCase
+    list_connected_mcp: ListConnectedMcpUseCase
+    list_available_mcp: ListAvailableMcpUseCase
 
 
 def initialize_application() -> UseCasesBundle:
@@ -105,11 +113,15 @@ def initialize_application() -> UseCasesBundle:
 
     # Initialize global memory repository
     from config import GLOBAL_MEMORY_PATH
+
     memory_repository = FileGlobalMemoryRepository(GLOBAL_MEMORY_PATH)
 
     # Initialize task profile repository
     from config import FILE_STORAGE_DIR
-    task_profile_repository = DatabaseTaskProfileRepository(FILE_STORAGE_DIR, db_connection.get_session)
+
+    task_profile_repository = DatabaseTaskProfileRepository(
+        FILE_STORAGE_DIR, db_connection.get_session
+    )
 
     # Initialize repository with session factory
     repository = PersistentAgentRepository(
@@ -142,4 +154,8 @@ def initialize_application() -> UseCasesBundle:
         add_invariant=AddInvariantUseCase(task_profile_repository),
         remove_invariant=RemoveInvariantUseCase(task_profile_repository),
         list_invariants=ListInvariantsUseCase(task_profile_repository),
+        connect_mcp=ConnectMcpUseCase(),
+        disconnect_mcp=DisconnectMcpUseCase(),
+        list_connected_mcp=ListConnectedMcpUseCase(),
+        list_available_mcp=ListAvailableMcpUseCase(),
     )

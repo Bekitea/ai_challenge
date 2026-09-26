@@ -24,6 +24,7 @@ HELP_COMMANDS = [
     "/execute - перейти в фазу исполнения",
     "/validate - перейти в фазу тестирования",
     "/report - перейти в фазу отчета",
+    "/mcp - показать подключённые к чату MCP и подключить новые",
     "/help - показать этот список команд",
 ]
 
@@ -831,6 +832,82 @@ class CLIChat:
         print("Введите сообщение /help и нажмите Enter для просмотра списка команд")
         print("-" * 40)
 
+    def mcp_menu(self):
+        """Обрабатывает команду /mcp.
+
+        Показывает все MCP, подключённые к текущему чату, затем предлагает
+        подключить новые. При согласии выводит список ещё не подключённых
+        MCP-серверов из реестра и подключает выбранный пользователем.
+        """
+        agent = self.current_agent
+        if not agent:
+            print("\n[WARN] Сначала выберите или создайте чат!")
+            return
+
+        print(f"\n--- MCP-СЕРВЕРЫ ЧАТА: {agent.name} ---")
+
+        connected = self.use_cases.list_connected_mcp.execute(agent)
+        if connected:
+            for status in connected:
+                if status.connected:
+                    tools = (
+                        ", ".join(status.tools) if status.tools else "нет инструментов"
+                    )
+                    print(
+                        f"  [OK] {status.title} ({status.name}) — инструменты: {tools}"
+                    )
+                else:
+                    print(
+                        f"  [OFFLINE] {status.title} ({status.name}) — "
+                        f"подключение не установлено"
+                    )
+        else:
+            print("  К этому чату ещё не подключено ни одного MCP-сервера.")
+
+        try:
+            connect_new = input("\nПодключить новые MCP? (y/n): ").strip().lower()
+        except EOFError, KeyboardInterrupt:
+            print()
+            return
+        if connect_new != "y":
+            return
+
+        available = self.use_cases.list_available_mcp.execute(agent)
+        if not available:
+            print("\n[INFO] Все доступные MCP-серверы уже подключены к этому чату.")
+            return
+
+        print("\n--- ДОСТУПНЫЕ ДЛЯ ПОДКЛЮЧЕНИЯ MCP ---")
+        for idx, server in enumerate(available, start=1):
+            print(f"  {idx}. {server.title} ({server.name}) — {server.description}")
+
+        try:
+            choice = input(
+                "\nВведите номер сервера для подключения (или название, 0 — отмена): "
+            ).strip()
+        except EOFError, KeyboardInterrupt:
+            print()
+            return
+        if not choice or choice == "0":
+            print("[INFO] Подключение отменено.")
+            return
+
+        server_name = None
+        if choice.isdigit():
+            num = int(choice)
+            if 1 <= num <= len(available):
+                server_name = available[num - 1].name
+            else:
+                print("\n[ERROR] Неверный номер сервера.")
+                return
+        else:
+            server_name = choice
+
+        print(f"\n[INFO] Подключаю MCP '{server_name}'...", flush=True)
+        success, message = self.use_cases.connect_mcp.execute(agent, server_name)
+        prefix = "[OK]" if success else "[ERROR]"
+        print(f"\n{prefix} {message}")
+
     def chat_loop(self):
         """Основной цикл общения с агентом."""
         if not self.current_agent:
@@ -897,6 +974,10 @@ class CLIChat:
 
                 if user_input.lower() == "/branch":
                     self.create_branch()
+                    continue
+
+                if user_input.lower() == "/mcp":
+                    self.mcp_menu()
                     continue
 
                 print("\n[AGENT] печатает...", end="", flush=True)

@@ -286,8 +286,7 @@ class CLIChat:
         print(f"  Стратегия: {strategy.strategy_type}")
         print(f"  Профиль задачи: {profile_name}")
 
-        # Показываем всю историю (пустую для нового чата) и переходим к общению
-        self.show_history()
+        # Переходим к общению (история показывается в заголовке чата)
         self.chat_loop()
 
     def _select_context_strategy(self) -> ContextWindowStrategy:
@@ -421,8 +420,7 @@ class CLIChat:
                     self.use_cases.refresh_agent_memory.execute(self.current_agent)
                     print(f"\n[OK] Выбран чат: {self.current_agent.name}")
 
-                    # Показываем всю историю и переходим к общению
-                    self.show_history()
+                    # Переходим к общению (история показывается в заголовке чата)
                     self.chat_loop()
                     break
                 print(f"Введите число от 1 до {len(previews)}")
@@ -477,22 +475,6 @@ class CLIChat:
         self.use_cases.change_settings.execute(self.current_agent, new_settings)
         print("\n[OK] Настройки обновлены!")
         self._print_current_settings()
-
-    def show_history(self):
-        """Показывает историю текущего чата."""
-        if not self.current_agent:
-            print("\n[WARN] Сначала выберите или создайте чат!")
-            return
-
-        all_messages = self.use_cases.show_history.execute(self.current_agent)
-        if not all_messages:
-            return
-
-        print("\n--- ИСТОРИЯ СООБЩЕНИЙ ---")
-        for msg in all_messages:
-            role_prefix = "[USER]" if msg.role == "user" else "[AGENT]"
-            print(f"{role_prefix}: {msg.content}")
-        print("-" * 40)
 
     def print_summary(self):
         """Показывает саммари диалога."""
@@ -561,7 +543,6 @@ class CLIChat:
                 input("\nПродолжить в новой ветке? (y/n): ").strip().lower()
             )
             if continue_in_branch == "y":
-                self.show_history()
                 self.chat_loop()
             else:
                 print("\nВетка создана. Вы можете вернуться к ней через меню.")
@@ -845,29 +826,32 @@ class CLIChat:
             print(f"\n[ERROR] Не удалось удалить профиль '{profile_info.name}'.")
         print("-" * 40)
 
+    def _print_chat_header(self):
+        """Отображает заголовок чата с текущей фазой и историей сообщений."""
+        phase_name = self.current_agent.current_phase.name
+        print(f"\n--- ЧАТ: {self.current_agent.name} [Фаза: {phase_name}] ---")
+
+        all_messages = self.use_cases.show_history.execute(self.current_agent)
+        for msg in all_messages:
+            role_prefix = "[USER]" if msg.role == "user" else "[AGENT]"
+            print(f"{role_prefix}: {msg.content}")
+        print("-" * 40)
+
+    def _print_hint(self):
+        """Отображает подсказку о команде /help."""
+        print("\n--- Подсказка ---")
+        print("Введите сообщение /help и нажмите Enter для просмотра списка команд")
+        print("-" * 40)
+
     def chat_loop(self):
         """Основной цикл общения с агентом."""
         if not self.current_agent:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
-        # Отображаем текущую фазу
-        phase_name = self.current_agent.current_phase.name
-        print(f"\n--- ЧАТ: {self.current_agent.name} [Фаза: {phase_name}] ---")
-        print("Введите сообщение и нажмите Enter для отправки.")
-        print("Команды:")
-        print("  /menu - вернуться в меню")
-        print("  /stop - остановить генерацию")
-        print("  /settings - показать настройки и изменить их")
-        print("  /summary - показать саммари диалога")
-        print("  /info - показать информацию о чате (счетчики токенов, профиль задачи)")
-        print("  /branch - создать ветку текущего чата")
-        print("  /plan - перейти в фазу планирования")
-        print("  /execute - перейти в фазу исполнения")
-        print("  /validate - перейти в фазу тестирования")
-        print("  /report - перейти в фазу отчета")
-        print("  /help - показать список команд")
-        print("-" * 40)
+        # Отображаем заголовок чата с историей сообщений и подсказку
+        self._print_chat_header()
+        self._print_hint()
 
         while True:
             try:
@@ -1013,7 +997,6 @@ class CLIChat:
                 elif choice == "5":
                     if self.current_agent:
                         print(f"\n[OK] Возврат в чат: {self.current_agent.name}")
-                        self.show_history()
                         self.chat_loop()
                     else:
                         print("\n[WARN] Нет активного чата. Выберите или создайте чат.")

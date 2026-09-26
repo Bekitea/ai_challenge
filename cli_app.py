@@ -203,21 +203,59 @@ class CLIChat:
             context_window_size=context_window_size,
         )
 
+    def get_default_agent_settings(self) -> AgentSettings:
+        """Возвращает настройки агента по умолчанию без ручного опроса."""
+        return AgentSettings(
+            model_id=YANDEX_DEFAULT_MODEL,
+            temperature=None,
+            top_p=None,
+            top_k=None,
+            reasoning_effort=REASONING_EFFORTS[0],
+            context_window_size=200_000,
+        )
+
+    def _ask_configure_chat(self) -> bool:
+        """Спрашивает, хочет ли пользователь настраивать чат вручную."""
+        while True:
+            answer = (
+                input("Хотите настроить чат? (y/n, по умолчанию n): ").strip().lower()
+                or "n"
+            )
+            if answer in ("y", "да", "д"):
+                return True
+            if answer in ("n", "нет", "н"):
+                return False
+            print("Введите 'y' (да) или 'n' (нет)")
+
     def create_new_chat(self):
         """Создаёт новый чат."""
         print("\n--- СОЗДАНИЕ НОВОГО ЧАТА ---")
-        name = input("Введите название чата (по умолчанию 'Чат N'): ").strip()
 
-        # Системный промпт
-        system_prompt = input("Введите системный промпт (Enter для пропуска): ").strip()
+        configure = self._ask_configure_chat()
 
-        settings = self.get_agent_settings()
+        if configure:
+            name = input("Введите название чата (по умолчанию 'Чат N'): ").strip()
 
-        # Выбор стратегии управления контекстным окном
-        strategy = self._select_context_strategy()
+            # Системный промпт
+            system_prompt = input(
+                "Введите системный промпт (Enter для пропуска): "
+            ).strip()
 
-        # Выбор профиля задачи
-        task_profile_id = self._select_task_profile()
+            settings = self.get_agent_settings()
+
+            # Выбор стратегии управления контекстным окном
+            strategy = self._select_context_strategy()
+
+            # Выбор профиля задачи
+            task_profile_id = self._select_task_profile()
+        else:
+            # Быстрое создание чата с настройками по умолчанию
+            print("Используются настройки по умолчанию.")
+            name = ""
+            system_prompt = ""
+            settings = self.get_default_agent_settings()
+            strategy = DefaultStrategy()
+            task_profile_id = None
 
         # Генерируем имя если пустое
         if not name:

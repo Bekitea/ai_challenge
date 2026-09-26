@@ -272,19 +272,7 @@ class CLIChat:
         )
         self.current_agent = agent
 
-        # Формируем информацию о профиле для вывода
-        profile_name = "(не привязан)"
-        if task_profile_id is not None:
-            profiles = self.use_cases.list_task_profiles.execute()
-            for p in profiles:
-                if p.id == task_profile_id:
-                    profile_name = p.name
-                    break
-
         print(f"\n[OK] Чат '{name}' создан!")
-        print(f"  ID: {agent.agent_id}")
-        print(f"  Стратегия: {strategy.strategy_type}")
-        print(f"  Профиль задачи: {profile_name}")
 
         # Переходим к общению (история показывается в заголовке чата)
         self.chat_loop()

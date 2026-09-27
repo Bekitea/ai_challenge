@@ -866,7 +866,7 @@ class CLIChat:
 
         try:
             connect_new = input("\nПодключить новые MCP? (y/n): ").strip().lower()
-        except EOFError, KeyboardInterrupt:
+        except (EOFError, KeyboardInterrupt):
             print()
             return
         if connect_new != "y":
@@ -885,7 +885,7 @@ class CLIChat:
             choice = input(
                 "\nВведите номер сервера для подключения (или название, 0 — отмена): "
             ).strip()
-        except EOFError, KeyboardInterrupt:
+        except (EOFError, KeyboardInterrupt):
             print()
             return
         if not choice or choice == "0":

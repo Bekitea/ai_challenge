@@ -221,7 +221,7 @@ class AgentORM(Base):
             return []
         try:
             data = json.loads(self.mcp_servers_json)
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):
             return []
         return [str(name) for name in data] if isinstance(data, list) else []
 

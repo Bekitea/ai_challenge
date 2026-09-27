@@ -430,19 +430,6 @@ class SaveUnsavedMemoriesUseCase:
             agent.save_memory()
 
 
-@dataclass
-class TaskProfileInfo:
-    """Информация о профиле задачи для отображения."""
-
-    id: str
-    name: str
-    description: str
-    created_at: datetime | None
-    facts_count: int
-    preferences: str = ""
-    invariants_count: int = 0
-
-
 class ListTaskProfilesUseCase:
     """Use case для просмотра списка профилей задач."""
 
@@ -706,3 +693,108 @@ class DisconnectMcpUseCase:
     def execute(self, agent: Agent, server_name: str) -> tuple[bool, str]:
         """Отключает MCP-сервер от чата (см. Agent.disconnect_mcp)."""
         return agent.disconnect_mcp(server_name)
+
+
+@dataclass
+class ScheduledReport:
+    """Результат одного запуска периодической агентной задачи.
+
+    Слой представления (Celery) получает только этот DTO — ни репозиториев,
+    ни LLM-провайдера, ни внутренностей агента он не видит.
+    """
+
+    chat_name: str
+    agent_id: int | None
+    task: str  # запрос, отправленный агенту
+    answer: str  # итоговый ответ агента (сводка)
+    prompt_tokens: int
+    completion_tokens: int
+
+
+class RunScheduledAgentTaskUseCase:
+    """Use case для выполнения периодической задачи агентом в изолированном чате.
+
+    Инкапсулирует всю бизнес-логику сценария «отчёт по расписанию»:
+    находит (или создаёт) чат-резидент, при необходимости подключает
+    необходимые MCP-серверы и отправляет агенту задание.
+
+    Все зависимости передаются через конструктор фабрикой приложения
+    (app_factory), поэтому Celery-слой общается с системой исключительно
+    на языке use cases.
+    """
+
+    def __init__(
+        self,
+        repository: AgentRepository,
+        create_chat: CreateChatUseCase,
+        send_message: SendMessageUseCase,
+        connect_mcp: ConnectMcpUseCase,
+    ):
+        self.repository = repository
+        self.create_chat = create_chat
+        self.send_message = send_message
+        self.connect_mcp = connect_mcp
+
+    def _find_agent_by_name(self, name: str) -> Agent | None:
+        """Ищет существующий чат по точному имени."""
+        for preview in self.repository.get_all_previews():
+            if preview.name == name:
+                return self.repository.get_agent(preview.agent_id)
+        return None
+
+    def _ensure_agent(self, name: str, system_prompt: str) -> Agent:
+        """Возвращает чат-резидент, создавая его при первом запуске.
+
+        При создании сразу подключает указанные MCP-серверы — это часть
+        бизнес-правил сценария, а не слоя представления.
+        """
+        agent = self._find_agent_by_name(name)
+        if agent is not None:
+            return agent
+
+        agent = self.create_chat.execute(
+            name=name,
+            system_prompt=system_prompt,
+            settings=AgentSettings(),
+            strategy=DefaultStrategy(),
+        )
+        return agent
+
+    def execute(
+        self,
+        chat_name: str,
+        system_prompt: str,
+        task: str,
+        mcp_servers: list[str] | None = None,
+    ) -> ScheduledReport:
+        """Выполняет задание task агентом из чата chat_name.
+
+        Args:
+            chat_name: Имя чата-резидента (создаётся при первом запуске).
+            system_prompt: Системный промпт для создаваемого чата.
+            task: Запрос/задание, отправляемое агенту.
+            mcp_servers: MCP-серверы, которые должны быть подключены
+                к чату (подключаются при первом запуске).
+
+        Returns:
+            ScheduledReport: DTO с ответом агента и счётчиками токенов.
+        """
+        agent = self._ensure_agent(chat_name, system_prompt)
+
+        # Подключаем недостающие MCP-серверы (идемпотентно: уже
+        # подключённые серверы Agent.connect_mcp отвергает как дубликаты).
+        for server_name in mcp_servers or []:
+            if server_name not in agent.connected_mcp_servers:
+                self.connect_mcp.execute(agent, server_name)
+
+        response, agent = self.send_message.execute(agent, task)
+
+        counters = agent.token_counters
+        return ScheduledReport(
+            chat_name=agent.name,
+            agent_id=agent.agent_id,
+            task=task,
+            answer=response.content,
+            prompt_tokens=counters.total_prompt_tokens,
+            completion_tokens=counters.total_completion_tokens,
+        )

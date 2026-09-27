@@ -26,6 +26,7 @@ from use_cases import (
     ListTaskProfilesUseCase,
     RefreshAgentMemoryUseCase,
     RemoveInvariantUseCase,
+    RunScheduledAgentTaskUseCase,
     SaveAgentMemoryUseCase,
     SaveUnsavedMemoriesUseCase,
     SelectChatUseCase,
@@ -68,6 +69,7 @@ class UseCasesBundle:
     disconnect_mcp: DisconnectMcpUseCase
     list_connected_mcp: ListConnectedMcpUseCase
     list_available_mcp: ListAvailableMcpUseCase
+    run_scheduled_agent_task: RunScheduledAgentTaskUseCase
 
 
 def initialize_application() -> UseCasesBundle:
@@ -132,10 +134,14 @@ def initialize_application() -> UseCasesBundle:
     )
 
     # Create and return all use cases
+    create_chat = CreateChatUseCase(repository, llm_provider, task_profile_repository)
+    send_message = SendMessageUseCase(repository)
+    connect_mcp = ConnectMcpUseCase()
+
     return UseCasesBundle(
-        create_chat=CreateChatUseCase(repository, llm_provider),
+        create_chat=create_chat,
         select_chat=SelectChatUseCase(repository),
-        send_message=SendMessageUseCase(repository),
+        send_message=send_message,
         view_settings=ViewSettingsUseCase(),
         change_settings=ChangeSettingsUseCase(repository),
         show_history=ShowHistoryUseCase(),
@@ -154,8 +160,14 @@ def initialize_application() -> UseCasesBundle:
         add_invariant=AddInvariantUseCase(task_profile_repository),
         remove_invariant=RemoveInvariantUseCase(task_profile_repository),
         list_invariants=ListInvariantsUseCase(task_profile_repository),
-        connect_mcp=ConnectMcpUseCase(),
+        connect_mcp=connect_mcp,
         disconnect_mcp=DisconnectMcpUseCase(),
         list_connected_mcp=ListConnectedMcpUseCase(),
         list_available_mcp=ListAvailableMcpUseCase(),
+        run_scheduled_agent_task=RunScheduledAgentTaskUseCase(
+            repository=repository,
+            create_chat=create_chat,
+            send_message=send_message,
+            connect_mcp=connect_mcp,
+        ),
     )

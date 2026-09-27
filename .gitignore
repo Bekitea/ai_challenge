@@ -5,3 +5,4 @@ app.log
 data/*
 test-data/*
 .venv/
+celerybeat-schedule

@@ -46,6 +46,36 @@ alembic upgrade head
 python main_cli.py
 ```
 
+## Периодические задачи (Celery)
+
+Для работы периодических отчётов агентов требуются Redis, Celery worker и Celery beat.
+
+### 1. Запуск Redis (через Docker)
+
+```bash
+docker run -d --name redis-celery -p 6379:6379 redis:alpine
+```
+
+### 2. Запуск Celery worker
+
+В отдельном терминале из корня проекта:
+
+```bash
+celery -A celery_app worker --loglevel=info --pool=solo
+```
+
+> Флаг `--pool=solo` обязателен на Windows, так как Celery не поддерживает там пулы `prefork`/`gevent`.
+
+### 3. Запуск Celery beat (планировщик)
+
+В ещё одном отдельном терминале:
+
+```bash
+celery -A celery_app beat --loglevel=info
+```
+
+После запуска всех трёх процессов периодические задачи (например, отчёт «Локальное время») будут выполняться по расписанию, заданному в `celery_app.py`.
+
 ## Работа с миграциями
 
 ### Создание новой миграции

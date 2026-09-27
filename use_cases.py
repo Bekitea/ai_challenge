@@ -5,6 +5,7 @@ from datetime import datetime
 
 from agents import (
     Agent,
+    AgentPhase,
     AgentPreview,
     AgentSettings,
     Prompt,
@@ -121,6 +122,7 @@ class CreateChatUseCase:
         settings: AgentSettings,
         strategy: ContextWindowStrategy,
         task_profile_id: str | None = None,
+        initial_phase: AgentPhase | None = None,
     ) -> Agent:
         """
         Создаёт новый чат с указанными настройками.
@@ -131,6 +133,7 @@ class CreateChatUseCase:
             settings: Настройки агента.
             strategy: Стратегия управления контекстным окном.
             task_profile_id: UUID профиля задачи (опционально).
+            initial_phase: Стартовая фаза агента (опционально, по умолчанию PLAN).
 
         Returns:
             Agent: Созданный агент.
@@ -150,6 +153,7 @@ class CreateChatUseCase:
             system_prompt=system_prompt,
             strategy=strategy,
             task_profile_id=task_profile_id,
+            initial_phase=initial_phase,
         )
         return agent
 
@@ -765,11 +769,19 @@ class RunScheduledAgentTaskUseCase:
         # MCP-подключения жили только в памяти процесса воркера и после
         # перезапуска «протухали» (имя осталось в БД, соединения нет), из-за
         # чего периодические запросы отрабатывали некорректно.
+        #
+        # Стартовая фаза — EXECUTE, а не PLAN: периодический отчёт полностью
+        # неинтерактивен (никто не подтвердит переход фаз), а описание фазы
+        # PLAN («обсуждай задачу, меняй фазу только по согласию пользователя»)
+        # подставляется в системный промпт и заставляло модель вместо реального
+        # вызова инструмента отвечать «подтвердите переход к выполнению» либо
+        # печатать вызов функции текстом.
         agent = self.create_chat.execute(
             name=self._run_chat_name(chat_name),
             system_prompt=system_prompt,
             settings=AgentSettings(),
             strategy=DefaultStrategy(),
+            initial_phase=AgentPhase.EXECUTE,
         )
 
         # Подключаем MCP-серверы к freshly created чату: живые соединения

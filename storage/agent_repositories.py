@@ -32,6 +32,7 @@ class AgentRepository(ABC):
         system_prompt: str | None = None,
         strategy: ContextWindowStrategy | None = None,
         task_profile_id: str | None = None,
+        initial_phase: AgentPhase | None = None,
     ) -> Agent:
         """
         Создаёт нового агента с уникальным идентификатором.
@@ -43,6 +44,7 @@ class AgentRepository(ABC):
             system_prompt: Системный промпт (опционально).
             strategy: Стратегия управления контекстным окном (опционально).
             task_profile_id: UUID профиля задачи (опционально).
+            initial_phase: Стартовая фаза агента (по умолчанию PLAN).
 
         Returns:
             Agent: Newly created agent instance.
@@ -323,6 +325,7 @@ class PersistentAgentRepository(AgentRepository):
         system_prompt: str | None = None,
         strategy: ContextWindowStrategy | None = None,
         task_profile_id: str | None = None,
+        initial_phase: AgentPhase | None = None,
     ) -> Agent:
         """
         Создаёт нового агента и сохраняет в БД и файл.
@@ -334,6 +337,7 @@ class PersistentAgentRepository(AgentRepository):
             system_prompt: Системный промпт.
             strategy: Стратегия управления контекстным окном (по умолчанию DefaultStrategy).
             task_profile_id: UUID профиля задачи (опционально).
+            initial_phase: Стартовая фаза агента (по умолчанию PLAN).
 
         Returns:
             Agent: Новый экземпляр агента.
@@ -363,6 +367,7 @@ class PersistentAgentRepository(AgentRepository):
             global_memory_repository=self._global_memory_repository,
             task_profile=task_profile,
             task_profile_repository=self._task_profile_repository,
+            initial_phase=initial_phase,
         )
 
         # Устанавливаем ссылку на репозиторий для автосохранения
@@ -396,8 +401,8 @@ class PersistentAgentRepository(AgentRepository):
             orm.tech_prompt_tokens = 0
             orm.tech_completion_tokens = 0
 
-            # Инициализируем фазу по умолчанию (plan)
-            orm.set_current_phase(AgentPhase.PLAN)
+            # Инициализируем фазу (по умолчанию plan)
+            orm.set_current_phase(initial_phase or AgentPhase.PLAN)
 
             # Привязываем профиль задачи, если указан
             if task_profile_id is not None:

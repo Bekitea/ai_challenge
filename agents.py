@@ -213,6 +213,7 @@ class Agent:
         task_profile: TaskProfile | None = None,
         task_profile_repository: Any | None = None,
         connected_mcp_servers: list[str] | None = None,
+        initial_phase: AgentPhase | None = None,
     ):
         if llm_provider is None:
             raise ValueError("llm_provider is required")
@@ -246,8 +247,9 @@ class Agent:
         # Task profile fields
         self.task_profile = task_profile
 
-        # Phase state (default to PLAN)
-        self._current_phase = AgentPhase.PLAN
+        # Phase state (default to PLAN; non-interactive chats such as
+        # scheduled reports may start directly in EXECUTE).
+        self._current_phase = initial_phase or AgentPhase.PLAN
 
         # Подключённые к чату MCP-серверы (машинные имена).
         # По умолчанию пусто: у всех новых агентов/чатов MCP отсутствуют.

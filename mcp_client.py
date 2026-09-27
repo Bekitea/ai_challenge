@@ -78,6 +78,22 @@ def _real_std_streams() -> tuple[Any, Any]:
     return _CACHED_REAL_STREAMS
 
 
+def _stderr_for_child() -> Any:
+    """Поток для stderr дочернего MCP-процесса (гарантированно с fileno).
+
+    stdio_client передаёт errlog напрямую в Popen(stderr=...). Если там
+    окажется Celery-прокси LoggingProxy (у него нет fileno), запуск процесса
+    упадёт с AttributeError. Поэтому всегда отдаём реальный поток из
+    _real_std_streams(), а если достать его не удалось — заглушку, которую
+    subprocess превращает в DEVNULL (вывод сервера в логах потерян, но
+    подключение работает).
+    """
+    _, real_err = _real_std_streams()
+    if hasattr(real_err, "fileno"):
+        return real_err
+    return _NullDevice()
+
+
 def run_async_in_new_loop(coro_factory: Any, timeout: float | None = None) -> Any:
     """Запускает корутину в НОВОМ event loop в текущем потоке.
 
@@ -86,11 +102,11 @@ def run_async_in_new_loop(coro_factory: Any, timeout: float | None = None) -> An
     в одном и том же типе запуска — новом loop в рабочем потоке.
 
     Перед запуском временно восстанавливает настоящие stdout/stderr: под
-    Celery на Windows они заменены LoggingProxy без fileno(), из-за чего
-    запуск любого stdio-подпроцесса падал с AttributeError.
+    Celery на Windows они заменены LoggingProxy без fileno().
 
     Args:
-        coro_factory: Функция без аргументов, возвращающая корутину.
+        coro_factory: Асинхронная функция (не вызванная!) либо фабрика,
+            возвращающая корутину.
         timeout: Таймаут выполнения в секундах (None — без таймаута).
 
     Returns:
@@ -100,18 +116,37 @@ def run_async_in_new_loop(coro_factory: Any, timeout: float | None = None) -> An
         Любое исключение, брошенное внутри корутины.
         TimeoutError: если превышен таймаут.
     """
-    saved_streams = (sys.stdout, sys.stderr)
-    real_out, real_err = _real_std_streams()
-    sys.stdout, sys.stderr = real_out, real_err
+    # Нормализуем аргумент: раньше сюда передавали уже созданную корутину
+    # (например, connection.connect_and_list_tools()), что приводило к
+    # «coroutine was never awaited» и утечке coroutine-origin контекста
+    # (sys.exc_info) в чужие потоки.
+    if callable(coro_factory):
+        make_coro = coro_factory
+    else:
+        created = coro_factory  # уже готовая корутина (обратная совместимость)
+
+        def make_coro():
+            return created
+
     loop = asyncio.new_event_loop()
     try:
+        # Коруину создаём ВНУТРИ восстановленного окружения потоков:
+        # stdio_client(server_params, errlog=sys.stderr) вычисляет значение
+        # errlog в МОМЕНТ создания корутины. Если создать её до замены
+        # sys.stderr, в дочерний процесс Popen(stderr=...) улетит LoggingProxy
+        # Celery и anyio/asyncio упадут с «'LoggingProxy' object has no
+        # attribute 'fileno'».
+        saved_streams = (sys.stdout, sys.stderr)
+        real_out, real_err = _real_std_streams()
+        sys.stdout, sys.stderr = real_out, real_err
+        try:
+            coro = make_coro()
+        finally:
+            sys.stdout, sys.stderr = saved_streams
         if timeout is not None:
-            return loop.run_until_complete(
-                asyncio.wait_for(coro_factory(), timeout=timeout)
-            )
-        return loop.run_until_complete(coro_factory())
+            return loop.run_until_complete(asyncio.wait_for(coro, timeout=timeout))
+        return loop.run_until_complete(coro)
     finally:
-        sys.stdout, sys.stderr = saved_streams
         try:
             loop.run_until_complete(loop.shutdown_asyncgens())
         except Exception:
@@ -353,8 +388,15 @@ class McpConnection:
         return self.tools
 
     async def _connect_and_list_async(self) -> list[McpToolInfo]:
+        # errlog передаём ЯВНО: у stdio_client значение аргумента по умолчанию
+        # (sys.stderr) вычисляется в момент определения функции в модуле mcp,
+        # где уже мог быть захвачен Celery-прокси LoggingProxy без fileno().
+        # Дочерний MCP-процесс не должен получать stderr-поток без fd.
         async with (
-            stdio_client(self._server_params()) as (read, write),
+            stdio_client(self._server_params(), errlog=_stderr_for_child()) as (
+                read,
+                write,
+            ),
             ClientSession(read, write) as session,
         ):
             await session.initialize()
@@ -394,8 +436,12 @@ class McpConnection:
         return result if result is not None else ""
 
     async def _call_async(self, tool_name: str, arguments: dict[str, Any]) -> str:
+        # errlog — явно, см. комментарий в _connect_and_list_async.
         async with (
-            stdio_client(self._server_params()) as (read, write),
+            stdio_client(self._server_params(), errlog=_stderr_for_child()) as (
+                read,
+                write,
+            ),
             ClientSession(read, write) as session,
         ):
             await session.initialize()

@@ -29,6 +29,15 @@ AVAILABLE_MCP_SERVERS: list[McpServerInfo] = [
         ),
         script_path="mcp/open_alex_mcp.py",
     ),
+    McpServerInfo(
+        name="time",
+        title="Time",
+        description=(
+            "Текущие дата и время для любого часового пояса (IANA) "
+            "(инструменты get_current_time, list_available_timezones)"
+        ),
+        script_path="mcp/time_mcp.py",
+    ),
 ]
 
 

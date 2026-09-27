@@ -11,22 +11,34 @@ KEY_VALUE_MEMORY_SCHEMA = {
     "type": "object",
     "properties": {
         "цель": {"type": "string", "description": "Основная цель диалога или задачи"},
-        "ограничения": {"type": "string", "description": "Ограничения и требования к решению"},
+        "ограничения": {
+            "type": "string",
+            "description": "Ограничения и требования к решению",
+        },
         "предпочтения": {"type": "string", "description": "Предпочтения пользователя"},
-        "решения": {"type": "string", "description": "Принятые решения и их обоснование"},
-        "договоренности": {"type": "string", "description": "Достигнутые договоренности"}
+        "решения": {
+            "type": "string",
+            "description": "Принятые решения и их обоснование",
+        },
+        "договоренности": {
+            "type": "string",
+            "description": "Достигнутые договоренности",
+        },
     },
-    "required": ["цель", "ограничения", "предпочтения", "решения", "договоренности"]
+    "required": ["цель", "ограничения", "предпочтения", "решения", "договоренности"],
 }
 
 
 @dataclass
 class PreparedMessages:
     """Результат подготовки сообщений для отправки в LLM."""
+
     messages: list[dict[str, Any]]
     summary: str | None = None  # Текущий саммари (если используется)
     is_summarization_request: bool = False  # Флаг: это запрос для суммаризации?
-    summarization_tokens: tuple[int, int] | None = None  # (prompt_tokens, completion_tokens) от суммаризации
+    summarization_tokens: tuple[int, int] | None = (
+        None  # (prompt_tokens, completion_tokens) от суммаризации
+    )
 
 
 class ContextWindowStrategy(ABC):
@@ -171,7 +183,9 @@ class SummarizationStrategy(ContextWindowStrategy):
             # Вычисляем, сколько сообщений нужно просуммировать
             # Это все сообщения кроме последних non_compressible_count, округленные вниз до кратных buffer_size
             messages_to_summarize_count = total_other - self.non_compressible_count
-            messages_to_summarize_count = (messages_to_summarize_count // self.buffer_size) * self.buffer_size
+            messages_to_summarize_count = (
+                messages_to_summarize_count // self.buffer_size
+            ) * self.buffer_size
 
             if messages_to_summarize_count > 0:
                 messages_to_summarize = other_messages[:messages_to_summarize_count]
@@ -187,11 +201,15 @@ class SummarizationStrategy(ContextWindowStrategy):
                 # Формируем итоговые сообщения
                 result_messages = []
                 if system_msg:
-                    result_messages.append({"role": "system", "content": system_msg.content})
+                    result_messages.append(
+                        {"role": "system", "content": system_msg.content}
+                    )
 
                 # Добавляем саммари как системное сообщение (или как часть промпта)
                 if new_summary:
-                    result_messages.append({"role": "system", "content": f"История диалога: {new_summary}"})
+                    result_messages.append(
+                        {"role": "system", "content": f"История диалога: {new_summary}"}
+                    )
 
                 # Добавляем оставшиеся сообщения
                 for msg in remaining_messages:
@@ -211,7 +229,9 @@ class SummarizationStrategy(ContextWindowStrategy):
 
         # Добавляем существующий саммари если есть
         if self._summary:
-            messages.append({"role": "system", "content": f"История диалога: {self._summary}"})
+            messages.append(
+                {"role": "system", "content": f"История диалога: {self._summary}"}
+            )
 
         for msg in other_messages:
             messages.append({"role": msg.role, "content": msg.content})
@@ -255,9 +275,7 @@ class SummarizationStrategy(ContextWindowStrategy):
         )
 
         # Формируем сообщения для суммаризации
-        summarization_messages = [
-            {"role": "system", "content": system_prompt}
-        ]
+        summarization_messages = [{"role": "system", "content": system_prompt}]
 
         # Добавляем предыдущий саммари если есть
         if self._summary:
@@ -325,7 +343,9 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
 
     non_compressible_count: int
     buffer_size: int
-    _summary: str | None = field(default=None, repr=False)  # Хранит текущий саммари в формате JSON
+    _summary: str | None = field(
+        default=None, repr=False
+    )  # Хранит текущий саммари в формате JSON
 
     def __post_init__(self):
         if self.non_compressible_count < 0:
@@ -373,7 +393,9 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
             # Вычисляем, сколько сообщений нужно просуммировать
             # Это все сообщения кроме последних non_compressible_count, округленные вниз до кратных buffer_size
             messages_to_summarize_count = total_other - self.non_compressible_count
-            messages_to_summarize_count = (messages_to_summarize_count // self.buffer_size) * self.buffer_size
+            messages_to_summarize_count = (
+                messages_to_summarize_count // self.buffer_size
+            ) * self.buffer_size
 
             if messages_to_summarize_count > 0:
                 messages_to_summarize = other_messages[:messages_to_summarize_count]
@@ -389,15 +411,21 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
                 # Формируем итоговые сообщения
                 result_messages = []
                 if system_msg:
-                    result_messages.append({"role": "system", "content": system_msg.content})
+                    result_messages.append(
+                        {"role": "system", "content": system_msg.content}
+                    )
 
                 # Добавляем саммари как системное сообщение (или как часть промпта)
                 if new_summary:
-                    result_messages.append({"role": "system", "content": f"История диалога: {new_summary}"})
+                    result_messages.append(
+                        {"role": "system", "content": f"История диалога: {new_summary}"}
+                    )
 
                 # Добавляем память о пользователе если есть
                 if agent_memory_text:
-                    result_messages.append({"role": "system", "content": agent_memory_text})
+                    result_messages.append(
+                        {"role": "system", "content": agent_memory_text}
+                    )
 
                 # Добавляем оставшиеся сообщения
                 for msg in remaining_messages:
@@ -417,7 +445,9 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
 
         # Добавляем существующий саммари если есть
         if self._summary:
-            messages.append({"role": "system", "content": f"История диалога: {self._summary}"})
+            messages.append(
+                {"role": "system", "content": f"История диалога: {self._summary}"}
+            )
 
         # Добавляем память о пользователе если есть
         if agent_memory_text:
@@ -470,9 +500,7 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
         )
 
         # Формируем сообщения для суммаризации
-        summarization_messages = [
-            {"role": "system", "content": system_prompt}
-        ]
+        summarization_messages = [{"role": "system", "content": system_prompt}]
 
         # Добавляем предыдущий саммари если есть
         if self._summary:
@@ -562,7 +590,11 @@ class SlidingWindowStrategy(ContextWindowStrategy):
                 other_messages.append(msg)
 
         # Берём только последние window_size сообщений
-        recent_messages = other_messages[-self.window_size:] if self.window_size < len(other_messages) else other_messages
+        recent_messages = (
+            other_messages[-self.window_size :]
+            if self.window_size < len(other_messages)
+            else other_messages
+        )
 
         # Формируем итоговые сообщения
         messages = []

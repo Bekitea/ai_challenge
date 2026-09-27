@@ -36,7 +36,8 @@ async def main():
             result = await session.call_tool(
                 name="search_articles",
                 arguments={
-                    "keywords": ["screening", "deep learning", "tomography", "fundus"]
+                    "keywords": ["screening", "deep learning", "tomography", "fundus"],
+                    "year": 2023,
                 },
             )
 

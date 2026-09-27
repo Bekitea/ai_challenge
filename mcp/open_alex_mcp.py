@@ -104,6 +104,7 @@ class AuthorshipInfo(BaseModel):
 class WorkResult(BaseModel):
     title: str | None = None
     doi: str | None = None
+    publication_year: int | None = None
     authorships: list[AuthorshipInfo] | None = None
 
 
@@ -121,15 +122,22 @@ class Article:
     title: str
     doi: str
     authors: list[str]
+    year: int | None = None
 
     def __str__(self) -> str:
         authors_str = ", ".join(self.authors) if self.authors else "Авторы не указаны"
-        return f"Название: {self.title}\nDOI: {self.doi}\nАвторы: {authors_str}\n"
+        year_str = str(self.year) if self.year else "Неизвестен"
+        return (
+            f"Название: {self.title}\n"
+            f"DOI: {self.doi}\n"
+            f"Год: {year_str}\n"
+            f"Авторы: {authors_str}\n"
+        )
 
 
-def _search_articles_impl(keywords: list[str]) -> list[Article]:
+def _search_articles_impl(keywords: list[str], year: int) -> list[Article]:
     """
-    Формирует OQL-запрос по массиву слов, отправляет его в OpenAlex,
+    Формирует OQL-запрос по массиву слов и году, отправляет его в OpenAlex,
     валидирует ответ через Pydantic и возвращает массив объектов Article.
     """
     keywords_query = " and ".join(keywords)
@@ -137,7 +145,7 @@ def _search_articles_impl(keywords: list[str]) -> list[Article]:
         "works where has DOI is (true) "
         "and open access is (true) "
         "and has ISSN is (true) "
-        "and year >= (2026) "
+        f"and year >= ({year}) "
         f"and title/abstract has ({keywords_query}) "
         "and type is (article)"
     )
@@ -147,7 +155,7 @@ def _search_articles_impl(keywords: list[str]) -> list[Article]:
         "per-page": 10,
         "sort": "cited_by_count:desc",
         "mailto": MAILTO,
-        "select": "title,authorships,doi",
+        "select": "title,authorships,doi,publication_year",
     }
 
     headers = {
@@ -176,6 +184,7 @@ def _search_articles_impl(keywords: list[str]) -> list[Article]:
                 title=work.title or "Без названия",
                 doi=work.doi or "Без DOI",
                 authors=authors,
+                year=work.publication_year,
             )
         )
 
@@ -183,13 +192,18 @@ def _search_articles_impl(keywords: list[str]) -> list[Article]:
 
 
 @mcp.tool()
-def search_articles(keywords: list[str]) -> str:
+def search_articles(keywords: list[str], year: int = 2020) -> str:
     """
     Поиск научных статей по ключевым словам через OpenAlex API.
-    Возвращает список найденных статей.
+
+    Параметры:
+        keywords: Список ключевых слов для поиска.
+        year: Минимальный год публикации (по умолчанию 2020).
+
+    Возвращает список найденных статей с их годами публикации.
     """
     try:
-        articles = _search_articles_impl(keywords)
+        articles = _search_articles_impl(keywords, year)
         if not articles:
             return "Статьи не найдены."
 
@@ -198,8 +212,6 @@ def search_articles(keywords: list[str]) -> str:
             result += str(article) + "\n"
         return result
     except Exception as exc:  # noqa: BLE001
-        # Важно: мы перехватываем ошибку, чтобы сервер не падал,
-        # а возвращал текст ошибки как результат работы инструмента.
         return f"Не удалось выполнить запрос: {exc}"
 
 

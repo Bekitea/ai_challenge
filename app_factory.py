@@ -165,7 +165,6 @@ def initialize_application() -> UseCasesBundle:
         list_connected_mcp=ListConnectedMcpUseCase(),
         list_available_mcp=ListAvailableMcpUseCase(),
         run_scheduled_agent_task=RunScheduledAgentTaskUseCase(
-            repository=repository,
             create_chat=create_chat,
             send_message=send_message,
             connect_mcp=connect_mcp,

@@ -712,11 +712,12 @@ class ScheduledReport:
 
 
 class RunScheduledAgentTaskUseCase:
-    """Use case для выполнения периодической задачи агентом в изолированном чате.
+    """Use case для выполнения периодической задачи агентом в новом чате.
 
     Инкапсулирует всю бизнес-логику сценария «отчёт по расписанию»:
-    находит (или создаёт) чат-резидент, при необходимости подключает
-    необходимые MCP-серверы и отправляет агенту задание.
+    каждый запуск создаёт НОВЫЙ чат (переиспользование старого недопустимо:
+    накопленная история контекста ломает периодические запросы), подключает
+    в него необходимые MCP-серверы и отправляет агенту задание.
 
     Все зависимости передаются через конструктор фабрикой приложения
     (app_factory), поэтому Celery-слой общается с системой исключительно
@@ -725,36 +726,19 @@ class RunScheduledAgentTaskUseCase:
 
     def __init__(
         self,
-        repository: AgentRepository,
         create_chat: CreateChatUseCase,
         send_message: SendMessageUseCase,
         connect_mcp: ConnectMcpUseCase,
     ):
-        self.repository = repository
         self.create_chat = create_chat
         self.send_message = send_message
         self.connect_mcp = connect_mcp
 
-    def _find_agent_by_name(self, name: str) -> Agent | None:
-        """Ищет существующий чат по точному имени."""
-        for preview in self.repository.get_all_previews():
-            if preview.name == name:
-                return self.repository.get_agent(preview.agent_id)
-        return None
-
-    def _ensure_agent(self, name: str, system_prompt: str) -> Agent:
-        """Возвращает чат-резидент, создавая его при первом запуске."""
-        agent = self._find_agent_by_name(name)
-        if agent is not None:
-            return agent
-
-        agent = self.create_chat.execute(
-            name=name,
-            system_prompt=system_prompt,
-            settings=AgentSettings(),
-            strategy=DefaultStrategy(),
-        )
-        return agent
+    @staticmethod
+    def _run_chat_name(base_name: str) -> str:
+        """Формирует уникальное имя чата для конкретного запуска."""
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return f"{base_name} · {stamp}"
 
     def execute(
         self,
@@ -763,42 +747,35 @@ class RunScheduledAgentTaskUseCase:
         task: str,
         mcp_servers: list[str] | None = None,
     ) -> ScheduledReport:
-        """Выполняет задание task агентом из чата chat_name.
+        """Выполняет задание task в специально созданном для него чате.
 
         Args:
-            chat_name: Имя чата-резидента (создаётся при первом запуске).
+            chat_name: Базовое имя отчёта; реальный чат получает уникальное
+                имя на основе этого базового (отдельный чат на каждый запуск).
             system_prompt: Системный промпт для создаваемого чата.
             task: Запрос/задание, отправляемое агенту.
-            mcp_servers: MCP-серверы, которые должны быть подключены
-                к чату (подключаются при первом запуске).
+            mcp_servers: MCP-серверы, которые подключаются к новому чату
+                перед отправкой задания.
 
         Returns:
             ScheduledReport: DTO с ответом агента и счётчиками токенов.
         """
-        agent = self._ensure_agent(chat_name, system_prompt)
-
-        # Подключаем недостающие MCP-серверы. Проверка идёт не только по
-        # списку имён в чате, но и по живым подключениям данного процесса:
-        # список connected_mcp_servers хранится в БД и переживает перезапуск,
-        # а вот MCP_MANAGER (и event loop-потоки за ним) — нет. Без этого
-        # периодический отчёт в новом процессе воркера уходил в LLM без
-        # tools, и модель отвечала «у меня нет доступа к инструменту».
-        from mcp_client import MCP_MANAGER
-
-        live_connections = (
-            MCP_MANAGER.get_connections(agent.agent_id)
-            if agent.agent_id is not None
-            else {}
+        # Каждый запуск — новый чат с чистым контекстом. Ранее чат-резидент
+        # переиспользовался между запусками: история накапливалась, а
+        # MCP-подключения жили только в памяти процесса воркера и после
+        # перезапуска «протухали» (имя осталось в БД, соединения нет), из-за
+        # чего периодические запросы отрабатывали некорректно.
+        agent = self.create_chat.execute(
+            name=self._run_chat_name(chat_name),
+            system_prompt=system_prompt,
+            settings=AgentSettings(),
+            strategy=DefaultStrategy(),
         )
+
+        # Подключаем MCP-серверы к freshly created чату: живые соединения
+        # создаются в этом же процессе воркера, поэтому гарантированно
+        # доступны агенту при вызове LLM с tools.
         for server_name in mcp_servers or []:
-            conn = live_connections.get(server_name)
-            if conn is not None and conn.connected:
-                continue  # живое подключение в этом процессе уже есть
-            if server_name in agent.connected_mcp_servers:
-                # Имя сохранено в чате, но подключения в этом процессе нет
-                # (перезапуск воркера/смена процесса): переподключаемся —
-                # connect_mcp заменит мёртвое/отсутствующее подключение.
-                agent.connected_mcp_servers.remove(server_name)
             success, message = self.connect_mcp.execute(agent, server_name)
             if not success:
                 raise RuntimeError(

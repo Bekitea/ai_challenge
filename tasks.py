@@ -70,22 +70,13 @@ def run_agent_report(self, report_id: str) -> dict:
         logger.exception("Agent report %s failed, retrying", report_id)
         raise self.retry(exc=exc)
 
-    logger.info(
-        "Agent report %s ready (chat #%s, tokens p/c=%s/%s):\n%s",
-        report_id,
-        result.agent_id,
-        result.prompt_tokens,
-        result.completion_tokens,
-        result.answer,
-    )
+    logger.info(result.answer)
 
     # Возвращаем плоский сериализуемый dict (ScheduledReport -> JSON-safe).
     return {
         "report_id": report_id,
         "chat_name": result.chat_name,
         "agent_id": result.agent_id,
-        "task": result.task,
-        "answer": result.answer,
         "prompt_tokens": result.prompt_tokens,
         "completion_tokens": result.completion_tokens,
     }

@@ -9,6 +9,8 @@ from typing import Any
 from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
+    prompt_to_llm_dict,
+    sanitize_llm_messages,
 )
 from llm_providers import LlmProvider, LlmResponse
 
@@ -441,34 +443,14 @@ class Agent:
     def _build_llm_messages_with_tools(self, memory_text: str) -> list[dict]:
         """Готовит сообщения для повторного запроса к LLM в цикле tool calling.
 
-        Берёт всю историю как есть (стратегии контекстного окна не понимают
-        расширенные протокольные поля), дополняя их полями tool_calls /
-        tool_call_id / name в OpenAI-совместимом формате.
+        Берёт всю историю как есть (расширенные протокольные поля сохраняются
+        через prompt_to_llm_dict) и очищает её от невалидных фрагментов
+        протокола tool calling (см. sanitize_llm_messages).
         """
-        messages: list[dict[str, Any]] = []
-        for msg in self._messages:
-            entry: dict[str, Any] = {"role": msg.role, "content": msg.content}
-            if msg.role == "system" and memory_text:
-                entry["content"] = f"{msg.content}\n\n{memory_text}"
-            if msg.tool_calls:
-                entry["tool_calls"] = [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.name,
-                            "arguments": tc.arguments,
-                        },
-                    }
-                    for tc in msg.tool_calls
-                ]
-            if msg.role == "tool":
-                if msg.tool_call_id is not None:
-                    entry["tool_call_id"] = msg.tool_call_id
-                if msg.name is not None:
-                    entry["name"] = msg.name
-            messages.append(entry)
-        return messages
+        messages = [prompt_to_llm_dict(msg) for msg in self._messages]
+        if memory_text and messages and messages[0]["role"] == "system":
+            messages[0]["content"] = f"{messages[0]['content']}\n\n{memory_text}"
+        return sanitize_llm_messages(messages)
 
     def continue_dialog(self, user_prompt: str) -> LlmResponse:
         """
@@ -501,7 +483,7 @@ class Agent:
             agent_memory_text=memory_text,
         )
 
-        messages_for_llm = prepared.messages
+        messages_for_llm = sanitize_llm_messages(prepared.messages)
         settings = self._settings
         kwargs = settings.to_llm_request_properties()
 
@@ -518,49 +500,88 @@ class Agent:
             if not response.tool_calls:
                 break
 
-            # Записываем assistant-сообщение с tool_calls в историю
-            call_records = [
-                ToolCallRecord(
-                    id=call.id,
-                    name=call.name,
-                    arguments=(
-                        call.arguments
-                        if isinstance(call.arguments, str)
-                        else json.dumps(call.arguments or {})
-                    ),
-                )
-                for call in response.tool_calls
+            # Временный хвост протокола (assistant с tool_calls + результаты
+            # инструментов). Он НЕ попадает в постоянную историю и не
+            # сохраняется, пока группа не станет полной и не получит ответ —
+            # так прерывание процесса между запросами не может оставить в
+            # сохранённой истории «битый» неполный протокол (400 missing
+            # field tool_call_id при следующем запуске).
+            pending: list[dict[str, Any]] = [
+                {
+                    "role": "assistant",
+                    "content": response.content or "",
+                    "tool_calls": [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.name,
+                                "arguments": (
+                                    call.arguments
+                                    if isinstance(call.arguments, str)
+                                    else json.dumps(call.arguments or {})
+                                ),
+                            },
+                        }
+                        for call in response.tool_calls
+                    ],
+                }
             ]
-            self._messages.append(
-                Prompt(
-                    role="assistant",
-                    content=response.content or "",
-                    timestamp=datetime.now().astimezone(),
-                    reasoning=response.reasoning,
-                    prompt_tokens=response.prompt_tokens,
-                    completion_tokens=response.completion_tokens,
-                    tool_calls=call_records,
-                )
-            )
 
             # Вызываем каждый инструмент и добавляем результаты как role="tool"
-            for call, record in zip(response.tool_calls, call_records):
+            for call in response.tool_calls:
                 tool_result = self._execute_mcp_tool_call(call)
-                self._messages.append(
-                    Prompt(
-                        role="tool",
-                        content=tool_result,
-                        timestamp=datetime.now().astimezone(),
-                        tool_call_id=record.id,
-                        name=record.name,
-                    )
+                pending.append(
+                    {
+                        "role": "tool",
+                        "content": tool_result,
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                    }
                 )
 
-            # Повторный запрос к LLM уже с результатами инструментов.
-            # Готовим сообщения напрямую из истории (стратегии видят только
-            # role/content; расширенные поля дописываем вручную).
-            followup_messages = self._build_llm_messages_with_tools(memory_text)
+            # Повторный запрос к LLM уже с результатами инструментов:
+            # постоянная история (уже очищенная стратегией) + временный хвост.
+            followup_messages = messages_for_llm + pending
             response = self._llm_provider.generate(messages=followup_messages, **kwargs)
+
+            # Ответ получен — группа завершена, переносим её в историю.
+            for entry in pending:
+                if entry["role"] == "assistant":
+                    self._messages.append(
+                        Prompt(
+                            role="assistant",
+                            content=entry.get("content") or "",
+                            timestamp=datetime.now().astimezone(),
+                            reasoning=response.reasoning,
+                            prompt_tokens=response.prompt_tokens,
+                            completion_tokens=response.completion_tokens,
+                            tool_calls=[
+                                ToolCallRecord(
+                                    id=tc["id"],
+                                    name=tc["function"]["name"],
+                                    arguments=tc["function"]["arguments"],
+                                )
+                                for tc in entry["tool_calls"]
+                            ],
+                        )
+                    )
+                else:
+                    self._messages.append(
+                        Prompt(
+                            role="tool",
+                            content=entry["content"],
+                            timestamp=datetime.now().astimezone(),
+                            tool_call_id=entry["tool_call_id"],
+                            name=entry.get("name"),
+                        )
+                    )
+            pending = []
+
+        # Обновляем отправляемый набор сообщений итоговой историей: после
+        # завершённых групп tool-вызовов история содержит весь протокол, и
+        # повторять запрос с устаревшим messages_for_llm уже не нужно.
+        messages_for_llm = self._build_llm_messages_with_tools(memory_text)
 
         # Проверяем лимит контекстного окна (только для assistant prompt)
         context_window_size = (
@@ -636,16 +657,28 @@ class Agent:
 
     @property
     def message_count(self) -> int:
-        """Возвращает количество сообщений (без системного промпта)."""
-        return len([msg for msg in self._messages if msg.role != "system"])
+        """Возвращает количество сообщений (без системного промпта и
+        технических сообщений протокола tool calling — assistant с tool_calls
+        и role="tool")."""
+        return len(
+            [
+                msg
+                for msg in self._messages
+                if msg.role not in ("system", "tool") and not msg.tool_calls
+            ]
+        )
 
     def get_last_message_preview(self, max_length: int = 50) -> str | None:
         """Возвращает превью последнего сообщения пользователя или агента."""
-        non_system_messages = [msg for msg in self._messages if msg.role != "system"]
-        if not non_system_messages:
+        visible_messages = [
+            msg
+            for msg in self._messages
+            if msg.role not in ("system", "tool") and not msg.tool_calls
+        ]
+        if not visible_messages:
             return None
 
-        last_msg = non_system_messages[-1]
+        last_msg = visible_messages[-1]
         preview = last_msg.content[:max_length]
         if len(last_msg.content) > max_length:
             preview += "..."

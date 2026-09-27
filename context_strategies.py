@@ -41,6 +41,141 @@ class PreparedMessages:
     )
 
 
+def prompt_to_llm_dict(msg: Any) -> dict[str, Any]:
+    """Конвертирует объект Prompt в сообщение OpenAI-совместимого формата.
+
+    Сохраняет протокольные поля tool calling: у assistant-сообщений —
+    tool_calls, у role="tool" — tool_call_id и name. Без этого история с
+    вызовами инструментов становится невалидной для API (400 "missing field
+    tool_call_id"), а стратегии контекстного окна теряют протокол при
+    подготовке сообщений.
+    """
+    entry: dict[str, Any] = {"role": msg.role, "content": msg.content}
+    tool_calls = getattr(msg, "tool_calls", None)
+    if msg.role == "assistant" and tool_calls:
+        entry["tool_calls"] = [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {"name": tc.name, "arguments": tc.arguments},
+            }
+            for tc in tool_calls
+        ]
+    elif msg.role == "tool":
+        tool_call_id = getattr(msg, "tool_call_id", None)
+        if tool_call_id is not None:
+            entry["tool_call_id"] = tool_call_id
+        name = getattr(msg, "name", None)
+        if name is not None:
+            entry["name"] = name
+    return entry
+
+
+def group_tool_blocks(messages: list[Any]) -> list[list[Any]]:
+    """Группирует сообщения так, чтобы группы assistant(tool_calls) + их
+    tool-ответы оставались неделимыми.
+
+    Это нужно стратегиям (скользящее окно, суммаризация), чтобы никогда не
+    отрывать tool-ответы от соответствующего assistant-сообщения с tool_calls
+    — иначе LLM получает невалидный протокол и отвечает ошибкой 400.
+    """
+    groups: list[list[Any]] = []
+    current: list[Any] | None = None
+    for msg in messages:
+        if getattr(msg, "tool_calls", None):
+            if current is not None:
+                groups.append(current)
+            current = [msg]
+        elif msg.role == "tool" and current is not None:
+            current.append(msg)
+        else:
+            if current is not None:
+                groups.append(current)
+                current = None
+            groups.append([msg])
+    if current is not None:
+        groups.append(current)
+    return groups
+
+
+def align_group_boundary(groups: list[list[Any]], index: int) -> int:
+    """Сдвигает границу среза назад на целую группу сообщений.
+
+    Используется суммаризацией: срез history[:index] должен заканчиваться
+    целиком на границе группы, чтобы assistant(tool_calls) не уходил в
+    саммари, а его tool-ответы — в «хвост» (и наоборот).
+    """
+    remainder = 0
+    for g in groups[index:]:
+        remainder += len(g)
+    return (
+        max(0, min(index, len(groups) - 1))
+        if not groups
+        else _align_impl(groups, index, remainder)
+    )
+
+
+def _align_impl(groups: list[list[Any]], index: int, remainder: int) -> int:
+    while index > 0 and remainder < len(groups[index - 1]):
+        remainder += len(groups[index - 1])
+        index -= 1
+    return index
+
+
+def sanitize_llm_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Приводит список сообщений к валидному протоколу tool calling.
+
+    Убирает из запроса к LLM сообщения, которые ломают десериализацию на
+    стороне API (например, YandexGPT возвращает 400 "missing field
+    tool_call_id"):
+      - assistant-сообщения с tool_calls, для которых не все tool-ответы
+        присутствуют в истории (неполная группа — например, процесс был
+        прерван между записью assistant и tool-сообщений);
+      - tool-сообщения без корректной пары к assistant с tool_calls;
+      - tool-вызовы, идущие раньше первого сообщения пользователя.
+    """
+    result: list[dict[str, Any]] = []
+    i = 0
+    n = len(messages)
+
+    def has_user_before(start: int) -> bool:
+        for m in messages[:start]:
+            if m.get("role") == "user":
+                return True
+        return False
+
+    while i < n:
+        msg = messages[i]
+        tool_calls = msg.get("tool_calls")
+        if msg.get("role") == "assistant" and tool_calls:
+            required = {tc.get("id") for tc in tool_calls}
+            j = i + 1
+            responses: list[dict[str, Any]] = []
+            while j < n and messages[j].get("role") == "tool":
+                responses.append(messages[j])
+                j += 1
+            responded = {r.get("tool_call_id") for r in responses}
+            if required and required == responded and has_user_before(i):
+                result.append(msg)
+                result.extend(responses)
+            else:
+                # Неполная/некорректная группа — отбрасываем её целиком,
+                # сохранив текстовый контент assistant как обычное сообщение.
+                content = msg.get("content")
+                if content and has_user_before(i):
+                    result.append({"role": "assistant", "content": content})
+            i = j
+            continue
+        if msg.get("role") == "tool":
+            # Осиротевший tool-ответ (без предшествующего assistant с
+            # tool_calls) — в запрос отправлять нельзя.
+            i += 1
+            continue
+        result.append(msg)
+        i += 1
+    return result
+
+
 class ContextWindowStrategy(ABC):
     """Абстрактный базовый класс для стратегий управления контекстным окном."""
 
@@ -90,11 +225,8 @@ class DefaultStrategy(ContextWindowStrategy):
         llm_provider: LlmProvider | None = None,
         agent_memory_text: str | None = None,
     ) -> PreparedMessages:
-        """Просто возвращает все сообщения как есть."""
-        messages = []
-        for msg in history:
-            msg_dict: dict[str, Any] = {"role": msg.role, "content": msg.content}
-            messages.append(msg_dict)
+        """Просто возвращает все сообщения как есть (с сохранением протокола tool calling)."""
+        messages = [prompt_to_llm_dict(msg) for msg in history]
 
         # Добавляем память о пользователе если есть
         if agent_memory_text and messages and messages[0]["role"] == "system":
@@ -186,6 +318,12 @@ class SummarizationStrategy(ContextWindowStrategy):
             messages_to_summarize_count = (
                 messages_to_summarize_count // self.buffer_size
             ) * self.buffer_size
+            # Граница среза должна проходить по целой группе tool-вызовов,
+            # чтобы assistant(tool_calls) и его tool-ответы не разрывались
+            groups = group_tool_blocks(other_messages)
+            messages_to_summarize_count = align_group_boundary(
+                groups, messages_to_summarize_count
+            )
 
             if messages_to_summarize_count > 0:
                 messages_to_summarize = other_messages[:messages_to_summarize_count]
@@ -211,12 +349,12 @@ class SummarizationStrategy(ContextWindowStrategy):
                         {"role": "system", "content": f"История диалога: {new_summary}"}
                     )
 
-                # Добавляем оставшиеся сообщения
+                # Добавляем оставшиеся сообщения (с сохранением протокола tool calling)
                 for msg in remaining_messages:
-                    result_messages.append({"role": msg.role, "content": msg.content})
+                    result_messages.append(prompt_to_llm_dict(msg))
 
                 return PreparedMessages(
-                    messages=result_messages,
+                    messages=sanitize_llm_messages(result_messages),
                     summary=new_summary,
                     is_summarization_request=False,  # Основной запрос не технический
                     summarization_tokens=tech_tokens,
@@ -234,7 +372,7 @@ class SummarizationStrategy(ContextWindowStrategy):
             )
 
         for msg in other_messages:
-            messages.append({"role": msg.role, "content": msg.content})
+            messages.append(prompt_to_llm_dict(msg))
 
         # Добавляем память о пользователе если есть
         if agent_memory_text and messages and messages[0]["role"] == "system":
@@ -243,7 +381,7 @@ class SummarizationStrategy(ContextWindowStrategy):
             messages.insert(0, {"role": "system", "content": agent_memory_text})
 
         return PreparedMessages(
-            messages=messages,
+            messages=sanitize_llm_messages(messages),
             summary=self._summary,
             is_summarization_request=False,
         )
@@ -396,6 +534,12 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
             messages_to_summarize_count = (
                 messages_to_summarize_count // self.buffer_size
             ) * self.buffer_size
+            # Граница среза должна проходить по целой группе tool-вызовов,
+            # чтобы assistant(tool_calls) и его tool-ответы не разрывались
+            groups = group_tool_blocks(other_messages)
+            messages_to_summarize_count = align_group_boundary(
+                groups, messages_to_summarize_count
+            )
 
             if messages_to_summarize_count > 0:
                 messages_to_summarize = other_messages[:messages_to_summarize_count]
@@ -427,12 +571,12 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
                         {"role": "system", "content": agent_memory_text}
                     )
 
-                # Добавляем оставшиеся сообщения
+                # Добавляем оставшиеся сообщения (с сохранением протокола tool calling)
                 for msg in remaining_messages:
-                    result_messages.append({"role": msg.role, "content": msg.content})
+                    result_messages.append(prompt_to_llm_dict(msg))
 
                 return PreparedMessages(
-                    messages=result_messages,
+                    messages=sanitize_llm_messages(result_messages),
                     summary=new_summary,
                     is_summarization_request=False,  # Основной запрос не технический
                     summarization_tokens=tech_tokens,
@@ -454,10 +598,10 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
             messages.append({"role": "system", "content": agent_memory_text})
 
         for msg in other_messages:
-            messages.append({"role": msg.role, "content": msg.content})
+            messages.append(prompt_to_llm_dict(msg))
 
         return PreparedMessages(
-            messages=messages,
+            messages=sanitize_llm_messages(messages),
             summary=self._summary,
             is_summarization_request=False,
         )
@@ -589,12 +733,22 @@ class SlidingWindowStrategy(ContextWindowStrategy):
             else:
                 other_messages.append(msg)
 
-        # Берём только последние window_size сообщений
-        recent_messages = (
-            other_messages[-self.window_size :]
-            if self.window_size < len(other_messages)
-            else other_messages
-        )
+        # Берём только последние window_size сообщений, выровняв границу
+        # окна по целым группам tool-вызовов (assistant(tool_calls) +
+        # tool-ответы неразрывны)
+        start = max(0, len(other_messages) - self.window_size)
+        if start > 0:
+            groups = group_tool_blocks(other_messages)
+            offset = 0
+            aligned_index = 0
+            for g in groups:
+                if offset >= start:
+                    break
+                offset += len(g)
+                aligned_index += len(g)
+            recent_messages = other_messages[aligned_index:]
+        else:
+            recent_messages = other_messages
 
         # Формируем итоговые сообщения
         messages = []
@@ -606,10 +760,10 @@ class SlidingWindowStrategy(ContextWindowStrategy):
             messages.append({"role": "system", "content": agent_memory_text})
 
         for msg in recent_messages:
-            messages.append({"role": msg.role, "content": msg.content})
+            messages.append(prompt_to_llm_dict(msg))
 
         return PreparedMessages(
-            messages=messages,
+            messages=sanitize_llm_messages(messages),
             summary=None,
             is_summarization_request=False,
         )

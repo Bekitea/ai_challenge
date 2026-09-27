@@ -822,6 +822,9 @@ class CLIChat:
 
         all_messages = self.use_cases.show_history.execute(self.current_agent)
         for msg in all_messages:
+            # Технические сообщения протокола tool calling не показываем
+            if msg.role == "tool" or getattr(msg, "tool_calls", None):
+                continue
             role_prefix = "[USER]" if msg.role == "user" else "[AGENT]"
             print(f"{role_prefix}: {msg.content}")
         print("-" * 40)

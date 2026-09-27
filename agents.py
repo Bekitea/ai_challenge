@@ -351,8 +351,20 @@ class Agent:
         return True, f"MCP '{title}' отключен."
 
     def _collect_mcp_tools(self) -> list[dict]:
-        """Собирает OpenAI-compatible описания инструментов всех живых MCP-подключений."""
+        """Собирает OpenAI-compatible описания инструментов всех живых MCP-подключений.
+
+        Если сохранённый сервер ещё не имеет живого подключения в текущем
+        процессе (например, воркер Celery был перезапущен и пересоздал
+        MCP_MANAGER), выполняется попытка переподключения — иначе запрос к
+        LLM ушёл бы без tools, и модель ответила бы «у меня нет доступа к
+        инструменту». Причина неудачи пишется в лог, чтобы тихая деградация
+        была видна в логах воркера.
+        """
+        import logging
+
         from mcp_client import MCP_MANAGER
+
+        logger = logging.getLogger("agent.mcp")
 
         if not self.connected_mcp_servers or self.agent_id is None:
             return []
@@ -361,9 +373,41 @@ class Agent:
         for server_name in self.connected_mcp_servers:
             conn = connections.get(server_name)
             if conn is None or not conn.connected:
-                continue
+                conn, error = self._reconnect_mcp(server_name, MCP_MANAGER)
+                if conn is None:
+                    logger.warning(
+                        "MCP-сервер '%s' недоступен для чата #%s (%s): %s",
+                        server_name,
+                        self.agent_id,
+                        self.name,
+                        error or "неизвестная ошибка",
+                    )
+                    continue
             tools.extend(tool.to_openai_tool() for tool in conn.tools)
         return tools
+
+    def _reconnect_mcp(
+        self, server_name: str, manager
+    ) -> tuple[object | None, str | None]:
+        """Переподключает сохранённый MCP-сервер в текущем процессе.
+
+        Возвращает (подключение, None) при успехе или (None, причина ошибки)
+        при неудаче — вызывающий код решает, критично ли это (для периодических
+        отчётов отсутствие обязательного сервера должно приводить к retry,
+        а не к ответу LLM без инструментов).
+        """
+        from mcp_client import McpConnection
+        from mcp_registry import find_server
+
+        server_info = find_server(server_name)
+        if server_info is None:
+            return None, f"сервер '{server_name}' не найден в реестре"
+        connection = McpConnection(server_info)
+        connection.connect_and_list_tools()
+        if not connection.connected:
+            return None, connection.connect_error or "сервер не вернул инструменты"
+        manager.add_connection(self.agent_id, connection)
+        return connection, None
 
     def _execute_mcp_tool_call(self, call) -> str:
         """Выполняет один tool_call через живое подключение к нужному MCP-серверу."""

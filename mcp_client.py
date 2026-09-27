@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
+import sys
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -11,6 +13,70 @@ from mcp.client.stdio import stdio_client
 from mcp import ClientSession, StdioServerParameters
 from mcp_registry import McpServerInfo
 
+# Кэш настоящих stdout/stderr процесса (см. _real_std_streams).
+_CACHED_REAL_STREAMS: tuple[Any, Any] | None = None
+
+
+class _NullDevice:
+    """Заглушка потока вывода для дочерних процессов (бросает вывод в void)."""
+
+    def read(self, *_args: Any, **_kwargs: Any) -> bytes:
+        return b""
+
+    def readline(self, *_args: Any, **_kwargs: Any) -> bytes:
+        return b""
+
+    def write(self, *_args: Any, **_kwargs: Any) -> int:
+        return 0
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+def _real_std_streams() -> tuple[Any, Any]:
+    """Возвращает настоящие stdout/stderr процесса.
+
+    Celery на Windows подменяет sys.stdout/sys.stderr объектом LoggingProxy
+    (для перехвата вывода в лог воркера). У этого прокси нет метода fileno,
+    и anyio падает с AttributeError при запуске stdio-процесса MCP. Поэтому
+    перед каждым запуском event loop используются реальные потоки:
+    sys.__stdout__/__stderr__, а если и они уже заменены — оригинальные
+    файловые дескрипторы 1/2, восстановленные через os.dup().
+
+    Результат кэшируется на весь срок жизни процесса: дескрипторы не меняются,
+    а лишний dup() при каждом обращении только копировал бы fd.
+    """
+    global _CACHED_REAL_STREAMS
+    if _CACHED_REAL_STREAMS is not None:
+        return _CACHED_REAL_STREAMS
+
+    import os
+
+    def _has_fileno(stream: Any) -> bool:
+        try:
+            stream.fileno()
+            return True
+        except (AttributeError, OSError, ValueError, io.UnsupportedOperation):
+            return False
+
+    if _has_fileno(sys.__stdout__) and _has_fileno(sys.__stderr__):
+        _CACHED_REAL_STREAMS = (sys.__stdout__, sys.__stderr__)
+        return _CACHED_REAL_STREAMS
+
+    # Стандартные потоки заменены — восстанавливаем дескрипторы через dup.
+    def _make(fd: int) -> Any:
+        try:
+            saved_fd = os.dup(fd)
+        except OSError:
+            return _NullDevice()
+        return open(saved_fd, "wb", buffering=0, closefd=True)
+
+    _CACHED_REAL_STREAMS = (_make(1), _make(2))
+    return _CACHED_REAL_STREAMS
+
 
 def run_async_in_new_loop(coro_factory: Any, timeout: float | None = None) -> Any:
     """Запускает корутину в НОВОМ event loop в текущем потоке.
@@ -18,6 +84,10 @@ def run_async_in_new_loop(coro_factory: Any, timeout: float | None = None) -> An
     Важно: anyio-ресурсы (stdio-контексты MCP) привязаны к loops, в которых
     созданы, поэтому все операции с одним подключением должны выполняться
     в одном и том же типе запуска — новом loop в рабочем потоке.
+
+    Перед запуском временно восстанавливает настоящие stdout/stderr: под
+    Celery на Windows они заменены LoggingProxy без fileno(), из-за чего
+    запуск любого stdio-подпроцесса падал с AttributeError.
 
     Args:
         coro_factory: Функция без аргументов, возвращающая корутину.
@@ -30,6 +100,9 @@ def run_async_in_new_loop(coro_factory: Any, timeout: float | None = None) -> An
         Любое исключение, брошенное внутри корутины.
         TimeoutError: если превышен таймаут.
     """
+    saved_streams = (sys.stdout, sys.stderr)
+    real_out, real_err = _real_std_streams()
+    sys.stdout, sys.stderr = real_out, real_err
     loop = asyncio.new_event_loop()
     try:
         if timeout is not None:
@@ -38,6 +111,7 @@ def run_async_in_new_loop(coro_factory: Any, timeout: float | None = None) -> An
             )
         return loop.run_until_complete(coro_factory())
     finally:
+        sys.stdout, sys.stderr = saved_streams
         try:
             loop.run_until_complete(loop.shutdown_asyncgens())
         except Exception:
@@ -179,6 +253,34 @@ class McpConnection:
     def _server_params(self) -> StdioServerParameters:
         command, args = self.server_info.build_command()
         return StdioServerParameters(command=command, args=args, env=None)
+
+    @staticmethod
+    def _is_proxy_stream_error(exc: BaseException) -> bool:
+        """Проверяет, что ошибка вызвана подменёнными stdin/stdout процесса.
+
+        Celery на Windows подменяет стандартные потоки своего лога объектом
+        LoggingProxy (без метода fileno). Если такой поток каким-либо образом
+        попал в окружение воркера, anyio падает с AttributeError при запуске
+        дочернего stdio-процесса — это не ошибка сервера, а особенность
+        среды, поэтому её нужно переживать, а не считать фатальной.
+        """
+        candidates: list[BaseException] = []
+        seen: set[int] = set()
+
+        def _collect(e: BaseException | None) -> None:
+            if e is None or id(e) in seen:
+                return
+            seen.add(id(e))
+            candidates.append(e)
+            _collect(e.__cause__)
+            _collect(e.__context__)
+            for sub in getattr(e, "exceptions", []) or []:
+                _collect(sub)
+
+        _collect(exc)
+        return any(
+            isinstance(e, AttributeError) and "fileno" in str(e) for e in candidates
+        )
 
     def _precheck_spawn(self) -> str | None:
         """Быстрая проверка, что сервер вообще можно запустить.

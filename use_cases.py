@@ -743,11 +743,7 @@ class RunScheduledAgentTaskUseCase:
         return None
 
     def _ensure_agent(self, name: str, system_prompt: str) -> Agent:
-        """Возвращает чат-резидент, создавая его при первом запуске.
-
-        При создании сразу подключает указанные MCP-серверы — это часть
-        бизнес-правил сценария, а не слоя представления.
-        """
+        """Возвращает чат-резидент, создавая его при первом запуске."""
         agent = self._find_agent_by_name(name)
         if agent is not None:
             return agent
@@ -781,11 +777,34 @@ class RunScheduledAgentTaskUseCase:
         """
         agent = self._ensure_agent(chat_name, system_prompt)
 
-        # Подключаем недостающие MCP-серверы (идемпотентно: уже
-        # подключённые серверы Agent.connect_mcp отвергает как дубликаты).
+        # Подключаем недостающие MCP-серверы. Проверка идёт не только по
+        # списку имён в чате, но и по живым подключениям данного процесса:
+        # список connected_mcp_servers хранится в БД и переживает перезапуск,
+        # а вот MCP_MANAGER (и event loop-потоки за ним) — нет. Без этого
+        # периодический отчёт в новом процессе воркера уходил в LLM без
+        # tools, и модель отвечала «у меня нет доступа к инструменту».
+        from mcp_client import MCP_MANAGER
+
+        live_connections = (
+            MCP_MANAGER.get_connections(agent.agent_id)
+            if agent.agent_id is not None
+            else {}
+        )
         for server_name in mcp_servers or []:
-            if server_name not in agent.connected_mcp_servers:
-                self.connect_mcp.execute(agent, server_name)
+            conn = live_connections.get(server_name)
+            if conn is not None and conn.connected:
+                continue  # живое подключение в этом процессе уже есть
+            if server_name in agent.connected_mcp_servers:
+                # Имя сохранено в чате, но подключения в этом процессе нет
+                # (перезапуск воркера/смена процесса): переподключаемся —
+                # connect_mcp заменит мёртвое/отсутствующее подключение.
+                agent.connected_mcp_servers.remove(server_name)
+            success, message = self.connect_mcp.execute(agent, server_name)
+            if not success:
+                raise RuntimeError(
+                    f"Не удалось подключить MCP-сервер '{server_name}' "
+                    f"для периодического отчёта '{chat_name}': {message}"
+                )
 
         response, agent = self.send_message.execute(agent, task)
 

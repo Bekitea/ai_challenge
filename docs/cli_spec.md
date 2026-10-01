@@ -760,8 +760,8 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 
 #### 5.3.2 Main Success Scenario
 
-1. User observes option 3 shows "Вернуться в чат: {name}"
-2. User selects option 3
+1. User observes option 5 shows "Вернуться в чат: {name}"
+2. User selects option 5
 3. System validates active chat exists
 4. System enters chat loop for active chat
 5. Use case ends
@@ -1260,7 +1260,62 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 
 ---
 
-### UC-016: Delete Task Profile
+### UC-016: Manage Task Profile Invariants
+
+#### 5.16.0 Overview
+
+This section covers invariants management (UC-016) and profile deletion (UC-017).
+
+#### 5.16.1 Preconditions
+
+- Application is running
+- User is in the profiles list submenu (Task Profiles menu → option 2 → action 2)
+- At least one task profile exists
+
+#### 5.16.2 Main Success Scenario
+
+1. System displays prompt: `Выберите профиль (1-{n}):`
+2. User selects profile by index
+3. System displays header `--- ИНВАРИАНТЫ ПРОФИЛЯ: {name} ---` with numbered invariants (`(инварианты не заданы)` if empty) and actions:
+   ```
+   Действия:
+   1. Добавить инвариант
+   2. Удалить инвариант
+   3. Назад
+   ```
+4. User selects action 1 (Add invariant)
+5. System prompts: `Введите текст инварианта:`
+6. User enters invariant text
+7. System adds invariant via repository and displays `[OK] Инвариант добавлен!`
+8. System redisplays the invariants list (with the new invariant)
+9. User selects action 2 (Remove invariant)
+10. System prompts: `Выберите номер инварианта для удаления (1-{n}):`
+11. User enters a valid number
+12. System removes the invariant and displays `[OK] Инвариант удалён!`
+13. System redisplays the list; user selects `3. Назад`
+14. Control returns to the Task Profiles menu; use case ends
+
+#### 5.16.3 Alternative Flows
+
+- **A1: Empty Invariant Text**
+  - Step 6: User presses Enter without text
+  - Display `[WARN] Инвариант не может быть пустым.`; no invariant is added, the list is redisplayed
+
+- **A2: Invalid Invariant Number**
+  - Step 11: Unknown/out-of-range number → `[WARN] Некорректный номер.`; failure to remove → `[ERROR] Не удалось удалить инвариант.`
+
+- **A3: Repository ValueError On Add**
+  - Step 7: Repository raises `ValueError` (e.g. duplicate invariant)
+  - Display `[ERROR] {e}`; the list is redisplayed
+
+#### 5.16.4 Postconditions
+
+- Invariants list updated in the profile storage
+- User returned to the Task Profiles menu
+
+---
+
+### UC-017: Delete Task Profile
 
 #### 5.16.1 Preconditions
 
@@ -1407,8 +1462,8 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 | Step | Action            | Expected Result              |
 | ---- | ----------------- | ---------------------------- |
 | 1    | Start application | Main Menu                    |
-| 2    | Verify option 4   | Shows "(нет активного чата)" |
-| 3    | Select option 4   | Warning displayed            |
+| 2    | Verify option 5   | Shows "(нет активного чата)" |
+| 3    | Select option 5   | Warning displayed            |
 | 4    | Verify state      | Remains in Main Menu         |
 
 ---
@@ -1421,8 +1476,8 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 | ---- | --------------------- | ------------------------------- |
 | 1    | Create or select chat | Chat loop entered               |
 | 2    | Type "/menu"          | Main Menu displayed             |
-| 3    | Verify option 4       | Shows "Вернуться в чат: {name}" |
-| 4    | Select option 4       | Chat loop entered               |
+| 3    | Verify option 5       | Shows "Вернуться в чат: {name}" |
+| 4    | Select option 5       | Chat loop entered               |
 | 5    | Verify context        | Same chat, history intact       |
 
 ---
@@ -1515,7 +1570,7 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 | ---- | -------------- | ---------------------- |
 | 1    | Enter chat     | Prompt displayed       |
 | 2    | Type "/help"   | Command list displayed |
-| 3    | Verify content | All 4 commands listed  |
+| 3    | Verify content | All 12 commands listed |
 | 4    | Verify return  | Back to prompt         |
 
 ---
@@ -1527,9 +1582,8 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 | Step | Action                  | Expected Result               |
 | ---- | ----------------------- | ----------------------------- |
 | 1    | Enter chat              | Prompt displayed              |
-| 2    | Type "/unknown"         | Warning about unknown command |
-| 3    | Suggestion to use /help | Displayed                     |
-| 4    | Verify state            | Back to prompt                |
+| 2    | Type "/unknown"         | Treated as a regular message: sent to the agent (UC-004 A2), `[AGENT] печатает...` then `[AGENT]: {response}` |
+| 3    | Verify state            | Back to prompt                |
 
 ---
 
@@ -1542,7 +1596,7 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 | 1    | Create chat with system prompt | Prompt entered             |
 | 2    | Verify history                 | System message present     |
 | 3    | Check role                     | Role = "system"            |
-| 4    | Check display                  | Shown with [SYSTEM] prefix |
+| 4    | Check display                  | NOT displayed in the chat header (`[SYSTEM]` prefix does not exist; only `[USER]`/`[AGENT]` are printed, system messages are hidden) |
 
 ---
 
@@ -1565,9 +1619,9 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 
 | Step | Action              | Expected Result       |
 | ---- | ------------------- | --------------------- |
-| 1    | Enter 150-char name | Name truncated to 100 |
-| 2    | Verify storage      | Max 100 chars saved   |
-| 3    | Verify display      | Truncated name shown  |
+| 1    | Enter 150-char name | Accepted without truncation (CLI performs no length validation) |
+| 2    | Verify storage      | Full 150-char name saved (DB column limit is 255 chars, see §4.4.1)   |
+| 3    | Verify display      | Full name shown in chat list and header  |
 
 ---
 
@@ -1581,7 +1635,7 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 | 2    | Type "/menu"    | Main Menu        |
 | 3    | Select option 2, choose Chat B   | Active = B       |
 | 4    | Type "/menu"    | Main Menu        |
-| 5    | Select option 4 (Return to Chat)  | Returns to B     |
+| 5    | Select option 5 (Return to Chat)  | Returns to B     |
 | 6    | Verify A intact | Chat A unchanged |
 
 ---
@@ -1867,7 +1921,7 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 | Step | Action                                    | Expected Result                                       |
 | ---- | ----------------------------------------- | ----------------------------------------------------- |
 | 1    | Start application, stay in Main Menu      | No active chat selected                               |
-| 2    | Select option 3 (Global Memory) from menu | System displays global memory view                    |
+| 2    | Select option 4 (Global Memory) from menu | System displays global memory view                    |
 | 3    | Verify header displayed                   | `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---` is shown                  |
 | 4    | Verify facts or empty state               | Either numbered facts list OR `(память пуста)`        |
 | 5    | Verify separator line                     | 40 dashes are displayed                               |
@@ -1881,7 +1935,7 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 | ---- | ----------------------------------------- | ----------------------------------------------------- |
 | 1    | Start application                         | Application running                                   |
 | 2    | Ensure no chats exist and memory is empty | Repository returns empty list                         |
-| 3    | Select option 3 (Global Memory) from menu | System displays global memory view                    |
+| 3    | Select option 4 (Global Memory) from menu | System displays global memory view                    |
 | 4    | Verify header displayed                   | `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---` is shown                  |
 | 5    | Verify empty state message                | `(память пуста)` is displayed                         |
 | 6    | Verify separator line                     | 40 dashes are displayed                               |

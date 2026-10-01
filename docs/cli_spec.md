@@ -1365,84 +1365,232 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ## 6. Test Cases
 
-### TC-001: Create Chat with Default Values
+### TC-001: Quick Chat Creation With Defaults
 
-**Related UC**: UC-001
+**Related UC**: UC-001 A1
 
-| Step | Action                      | Expected Result                        |
-| ---- | --------------------------- | -------------------------------------- |
-| 1    | Select option 1 (New Chat)  | Name prompt displayed                  |
-| 2    | Press Enter (default name)  | System prompt prompt displayed         |
-| 3    | Press Enter (skip prompt)   | Model selection displayed              |
-| 4    | Select model 1              | Temperature prompt displayed           |
-| 5    | Press Enter (disable temp)  | Top P prompt displayed                 |
-| 6    | Press Enter (disable top_p) | Top K prompt displayed                 |
-| 7    | Press Enter (default 0)     | Reasoning effort prompt                |
-| 8    | Press Enter (default none)  | Success message with ID                |
-| 9    | Verify chat created         | Chat name = "Чат N", settings disabled |
+| Step | Action                                       | Expected Result                                                                                                   |
+| ---- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 1    | Select option 1 (New Chat)                   | Header `--- СОЗДАНИЕ НОВОГО ЧАТА ---` and prompt `Хотите настроить чат? (y/n, по умолчанию n):` displayed        |
+| 2    | Press Enter (empty input → default "n")      | `Используются настройки по умолчанию.` printed; steps 1–10 of the creation workflow skipped entirely               |
+| 3    | Verify completion message                    | `[OK] Чат 'Чат {N}' создан!` (auto-generated name), then chat loop entered                                        |
+| 4    | Verify chat settings                         | Model = `aliceai-llm-flash/latest`, temperature/top_p/top_k disabled (None), reasoning_effort "none", context window 200000 |
+| 5    | Verify strategy and profile                  | DefaultStrategy, task_profile_id = null                                                                            |
 
 ---
 
 ### TC-002: Create Chat with Custom Settings
 
-**Related UC**: UC-001
+**Related UC**: UC-001 (main success scenario, steps 1–24)
 
-| Step | Action              | Expected Result            |
-| ---- | ------------------- | -------------------------- |
-| 1    | Select option 1 (New Chat)   | Name prompt                |
-| 2    | Enter "Test Chat"   | System prompt prompt       |
-| 3    | Enter "Be concise"  | Model selection            |
-| 4    | Select model 2      | Temperature prompt         |
-| 5    | Enter "1.5"         | Top P prompt               |
-| 6    | Enter "0.8"         | Top K prompt               |
-| 7    | Enter "50"          | Reasoning effort prompt    |
-| 8    | Select "3" (medium) | Success message            |
-| 9    | Verify settings     | All values saved correctly |
+| Step | Action                             | Expected Result                                          |
+| ---- | ---------------------------------- | -------------------------------------------------------- |
+| 1    | Select option 1 (New Chat)         | Header `--- СОЗДАНИЕ НОВОГО ЧАТА ---` and configure prompt `Хотите настроить чат? (y/n, по умолчанию n):` displayed |
+| 2    | Enter "y"                          | Name prompt displayed                                    |
+| 3    | Enter "Test Chat"                  | System prompt input displayed                            |
+| 4    | Enter "Be concise"                 | Model selection displayed                                |
+| 5    | Select model 2                     | Temperature prompt displayed                             |
+| 6    | Enter "1.5"                        | Valid value (within 0.0–2.0): applied without warning; Top P prompt displayed |
+| 7    | Enter "0.8"                        | Top K prompt displayed                                   |
+| 8    | Enter "50"                         | Reasoning effort prompt displayed                        |
+| 9    | Select "3" (medium)                | Context window prompt displayed                          |
+| 10   | Enter "128000"                     | Strategy selection displayed                             |
+| 11   | Select "1" (DefaultStrategy)       | Task profile selection displayed                         |
+| 12   | Select "0" (no attachment)         | `[OK] Чат 'Test Chat' создан!`, chat loop entered        |
+| 13   | Verify settings                    | All entered values saved correctly: temperature = 1.5, top_p = 0.8, top_k = 50, reasoning_effort = "medium", context window = 128000, DefaultStrategy |
+
+**Note**: The main success scenario of UC-001 uses different sample values (model 1, temperature "0.7", Top P "0.9", Top K "40", reasoning effort "2" — low). This test intentionally exercises the same flow with other valid values; every step of UC-001's main scenario is covered.
 
 ---
 
 ### TC-003: Invalid Temperature Handling
 
-**Related UC**: UC-001
+**Related UC**: UC-001 A7
 
-| Step | Action                                | Expected Result               |
-| ---- | ------------------------------------- | ----------------------------- |
-| 1-3  | Create chat, reach temperature prompt | Temperature prompt displayed  |
-| 4    | Enter "abc"                           | Warning, temperature disabled |
-| 5    | Continue creation                     | Chat created with temp=None   |
-| 6    | Enter "-1"                            | Warning, temperature disabled |
-| 7    | Enter "3.0"                           | Warning, temperature disabled |
-
----
-
-### TC-004: Select Chat from Empty List
-
-**Related UC**: UC-002
-
-| Step | Action                      | Expected Result               |
-| ---- | --------------------------- | ----------------------------- |
-| 1    | Ensure no chats exist       | Empty storage                 |
-| 2    | Select option 2 (Select Chat)| Message "Нет доступных чатов" |
-| 3    | Verify navigation           | Returns to Main Menu          |
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Start chat creation with "y", pass name/system prompt, select model | Temperature prompt displayed                                                       |
+| 2    | Enter "abc"                                                     | Warning `Некорректное число. Используется значение по умолчанию (отключено).`; temperature = None; creation continues (Top P prompt) |
+| 3    | Press Enter at Top P/Top K prompts, answer remaining steps, finish creation | Chat created with temp=None                                                 |
+| 4    | Repeat creation, enter "-1" at temperature prompt               | Warning `Температура должна быть от 0.0 до 2.0. ...`; temperature = None, creation continues |
+| 5    | Repeat creation, enter "3.0" at temperature prompt              | Warning `Температура должна быть от 0.0 до 2.0. ...`; temperature = None, creation continues |
 
 ---
 
-### TC-005: Preview with System Prompt Only
+### TC-004: Invalid Answer To Configure Prompt
 
-**Related UC**: UC-002
+**Related UC**: UC-001 A2
 
-| Step | Action                              | Expected Result            |
-| ---- | ----------------------------------- | -------------------------- |
-| 1    | Create chat with system prompt only | Chat with 1 system message |
-| 2    | Return to menu                      | Chat list displayed        |
-| 3    | Verify preview                      | Shows "(нет сообщений)"    |
-| 4    | Verify count                        | Shows "Сообщений: 0"       |
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Select option 1 (New Chat)                                      | Configure prompt `Хотите настроить чат? (y/n, по умолчанию n):` displayed             |
+| 2    | Enter "maybe" (not y/да/д/n/нет/н and not empty)                | `Введите 'y' (да) или 'n' (нет)` displayed; the same question re-prompted (UC-001 A2) |
+| 3    | Enter "да"                                                      | Accepted as affirmative: manual path starts, name prompt displayed (§4.4.0)           |
 
 ---
 
-### TC-006: Preview with User Message
+### TC-005: Default Chat Name On Empty Input
 
-**Related UC**: UC-002
+**Related UC**: UC-001 A3
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Ensure exactly 2 chats exist in storage                         | Main Menu displayed                                                                    |
+| 2    | Select option 1 (New Chat), enter "y"                           | Name prompt `Введите название чата (по умолчанию 'Чат N'):` displayed                 |
+| 3    | Press Enter (empty input)                                       | System uses default name `Чат 3` (N = existing chats + 1, §4.4.1); system prompt step follows |
+| 4    | Complete creation (any valid answers)                           | `[OK] Чат 'Чат 3' создан!`                                                            |
+| 5    | Verify chat list                                                | New chat listed with name `Чат 3`                                                      |
+
+---
+
+### TC-006: Out-Of-Range Model Selection Re-Prompts
+
+**Related UC**: UC-001 A5
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Start manual creation, pass name/system prompt                  | Model selection block `--- НАСТРОЙКИ АГЕНТА ---` displayed                             |
+| 2    | Enter "5" (outside 1–3)                                         | `Неверный выбор, попробуйте снова.` displayed; model selection re-prompted (UC-001 A5)|
+| 3    | Enter "abc" (non-numeric)                                       | Same warning; model selection re-prompted again                                        |
+| 4    | Press Enter (empty input)                                       | Default model `aliceai-llm-flash/latest` selected; temperature prompt displayed (§4.4.3)|
+
+---
+
+### TC-007: Task Profile Selection - Invalid Choice Does Not Block Creation
+
+**Related UC**: UC-001 A13
+
+**Precondition**: At least one task profile exists
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Complete manual creation through strategy selection             | Task profile block `--- ПРИВЯЗКА ПРОФИЛЯ ЗАДАЧИ ---` displayed                        |
+| 2    | Enter "99" (out of range 0–n)                                   | `[WARN] Некорректный выбор. Профиль не привязан.` displayed; creation continues without attachment (no re-prompt, UC-001 A13) |
+| 3    | Verify completion                                               | `[OK] Чат '{name}' создан!`, chat loop entered                                         |
+| 4    | Type "/info"                                                    | Line `Профиль задачи: (не привязан)` shown                                             |
+
+---
+
+### TC-008: Non-Integer Strategy Parameter Repeats Strategy Selection
+
+**Related UC**: UC-001 A12
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Reach strategy selection during manual creation                 | Strategy block `--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---` displayed       |
+| 2    | Select "2" (SummarizationStrategy)                              | Prompt `Количество несжимаемых сообщений (по умолчанию 2):` displayed                 |
+| 3    | Enter "abc"                                                     | `Ошибка: {e}. Попробуйте снова.` displayed; the whole strategy selection repeats (UC-001 A12) |
+| 4    | Select "2", enter valid integers for both parameters            | SummarizationStrategy created with entered values; task profile step follows          |
+
+---
+
+### TC-070: Skip System Prompt On Empty Input
+
+**Related UC**: UC-001 A4
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Start manual creation ("y"), enter a name                        | System prompt input displayed                                                         |
+| 2    | Press Enter (empty input)                                        | Model selection displayed; no error                                                    |
+| 3    | Complete creation and send one message                           | Normal exchange                                                                        |
+| 4    | Verify history                                                   | History contains only user + assistant messages — no system message was added         |
+
+---
+
+### TC-071: Empty Inputs Disable Temperature And Top P
+
+**Related UC**: UC-001 A6
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Reach temperature prompt during manual creation                  | Temperature prompt displayed                                                            |
+| 2    | Press Enter (empty input)                                        | No warning; parameter set to None (disabled); Top P prompt displayed                    |
+| 3    | Press Enter at Top P prompt                                     | top_p = None; Top K prompt displayed                                                    |
+| 4    | Finish creation, type "/settings"                                | Температура and Top P shown as "отключена"/None (§4.6.1)                                |
+
+---
+
+### TC-072: Invalid Top K Re-Prompts; Zero Disables
+
+**Related UC**: UC-001 A8
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Reach Top K prompt during manual creation                        | Top K prompt displayed                                                                  |
+| 2    | Enter "-5"                                                       | Warning `Top K должен быть >= 0`; Top K re-prompted                                      |
+| 3    | Enter "abc"                                                      | Warning `Введите корректное число`; Top K re-prompted                                    |
+| 4    | Enter "0"                                                        | Accepted; value stored as None (disabled); reasoning effort prompt displayed            |
+
+---
+
+### TC-073: Invalid Reasoning Effort Re-Prompts; Empty Selects Default
+
+**Related UC**: UC-001 A9
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Reach reasoning effort prompt during manual creation             | Numbered options block displayed                                                        |
+| 2    | Enter "abc"                                                      | `Введите корректное число`; re-prompted                                                  |
+| 3    | Enter "5" (outside 1–4)                                          | `Выбор должен быть от 1 до 4`; re-prompted                                               |
+| 4    | Press Enter (empty input)                                        | Default selected — reasoning_effort "none"; context window prompt displayed             |
+
+---
+
+### TC-074: Invalid Context Window Falls Back To 200k
+
+**Related UC**: UC-001 A10
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Reach context window prompt during manual creation               | Context window prompt displayed                                                         |
+| 2    | Enter "abc"                                                      | Warning `Некорректное число. Используется 200k.`; value = 200000; creation continues     |
+| 3    | Repeat creation, enter "0" at the same prompt                    | Warning `Размер должен быть положительным числом. Используется 200k.`; value = 200000   |
+| 4    | Repeat creation, press Enter (empty input)                       | Value = 200000 without any warning                                                      |
+
+---
+
+### TC-075: Invalid Strategy Choice Re-Prompts
+
+**Related UC**: UC-001 A11
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Reach strategy selection during manual creation                  | Strategy block `--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---` displayed         |
+| 2    | Enter "5" (outside 1–4)                                          | `Неверный выбор, попробуйте снова.`; strategy selection re-prompted                     |
+| 3    | Enter "abc" (non-numeric)                                        | Same warning; strategy selection re-prompted again                                      |
+| 4    | Select "1"                                                       | Task profile step follows; chat created with DefaultStrategy                            |
+
+---
+
+### TC-009: Select Chat from Empty List
+
+**Related UC**: UC-002 A1
+
+| Step | Action                       | Expected Result                                                            |
+| ---- | ---------------------------- | ---------------------------------------------------------------------------- |
+| 1    | Ensure no chats exist        | Empty storage                                                              |
+| 2    | Select option 2 (Select Chat)| `print_chat_list()` prints `Нет активных чатов.`; then `Нет доступных чатов. Создайте новый.` |
+| 3    | Verify navigation            | Returns to Main Menu                                                       |
+
+---
+
+### TC-010: Preview with System Prompt Only
+
+**Related UC**: UC-002 (§4.3.2)
+
+| Step | Action                                             | Expected Result                                     |
+| ---- | -------------------------------------------------- | ----------------------------------------------------- |
+| 1    | Create chat with system prompt only (manual path)  | Chat with 1 system message, chat loop entered       |
+| 2    | Type "/menu"                                       | `Возврат в меню...`, Main Menu displayed            |
+| 3    | Select option 2 (Select Chat)                      | Chat list displayed                                 |
+| 4    | Verify preview                                     | Shows `(нет сообщений)` (system messages are not visible) |
+| 5    | Verify count                                       | Shows `Сообщений: 0`                                |
+
+---
+
+### TC-011: Preview with User Message
+
+**Related UC**: UC-002 (§4.3.2)
 
 | Step | Action                     | Expected Result              |
 | ---- | -------------------------- | ---------------------------- |
@@ -1455,20 +1603,46 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-007: Return to Chat Without Active Chat
+### TC-076: Chat List Selection Out Of Range
 
-**Related UC**: UC-003
+**Related UC**: UC-002 A2
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Ensure exactly 2 chats exist, select option 2 (Select Chat)      | Numbered list of 2 chats displayed                                                     |
+| 2    | Enter "0"                                                        | `Введите число от 1 до 2` displayed; selection re-prompted                             |
+| 3    | Enter "3" (greater than count)                                   | Same message; selection re-prompted again                                              |
+| 4    | Enter "1"                                                        | Chat loaded, header displayed, chat loop entered                                        |
+
+---
+
+### TC-077: Chat List Non-Numeric Selection
+
+**Related UC**: UC-002 A3
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Ensure at least one chat exists, select option 2                 | Chat list displayed                                                                    |
+| 2    | Enter "abc"                                                      | `Введите корректное число` displayed; selection re-prompted                            |
+| 3    | Enter "2.5" (parsed with int())                                  | Same message — falls into the non-integer flow (UC-002 A3 note); re-prompted            |
+| 4    | Enter a valid number                                             | Chat selected, chat loop entered                                                        |
+
+---
+
+### TC-012: Return to Chat Without Active Chat
+
+**Related UC**: UC-003 A1
 
 | Step | Action            | Expected Result              |
 | ---- | ----------------- | ---------------------------- |
 | 1    | Start application | Main Menu                    |
-| 2    | Verify option 5   | Shows "(нет активного чата)" |
-| 3    | Select option 5   | Warning displayed            |
+| 2    | Verify option 5   | Shows "Вернуться в чат (нет активного чата)" |
+| 3    | Select option 5   | `[WARN] Нет активного чата. Выберите или создайте чат.` displayed |
 | 4    | Verify state      | Remains in Main Menu         |
 
 ---
 
-### TC-008: Return to Chat With Active Chat
+### TC-013: Return to Chat With Active Chat
 
 **Related UC**: UC-003
 
@@ -1477,12 +1651,12 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | 1    | Create or select chat | Chat loop entered               |
 | 2    | Type "/menu"          | Main Menu displayed             |
 | 3    | Verify option 5       | Shows "Вернуться в чат: {name}" |
-| 4    | Select option 5       | Chat loop entered               |
+| 4    | Select option 5       | `[OK] Возврат в чат: {name}` (§4.2.2), chat loop entered |
 | 5    | Verify context        | Same chat, history intact       |
 
 ---
 
-### TC-009: Send Multiple Messages
+### TC-014: Send Multiple Messages
 
 **Related UC**: UC-004
 
@@ -1497,9 +1671,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-010: Empty Message Handling
+### TC-015: Empty Message Handling
 
-**Related UC**: UC-004
+**Related UC**: UC-004 A1
 
 | Step | Action              | Expected Result     |
 | ---- | ------------------- | ------------------- |
@@ -1510,59 +1684,135 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-011: View Settings
+### TC-078: Token Statistics Lines After Response
 
-**Related UC**: UC-005
+**Related UC**: UC-004 (steps 9–12)
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Enter chat, send a message                                      | `[AGENT] печатает...` shown while processing, cleared on response                       |
+| 2    | Verify response display                                         | `[AGENT]: {response}` printed; prompt re-displayed afterwards                            |
+| 3    | Verify token line                                               | `  [Токены: prompt: {p}, completion: {c}]` displayed when usage reported                 |
+| 4    | Verify context fill line                                        | `  [Заполненность контекста: {prompt_tokens}/{context_window_size} ({percent:.1f}%)]` displayed when prompt_tokens is not None |
+| 5    | Verify history                                                  | Both user and assistant messages saved; chat preview updated with last message          |
+
+---
+
+### TC-079: Context Window Exceeded Error
+
+**Related UC**: UC-004 A3
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Fill chat history until the backend raises `ContextWindowExceededError` | "печатает..." line cleared                                              |
+| 2    | Verify error output                                             | `[ERROR] {message}` followed by `Необходимо очистить историю сообщений или создать новый чат.` |
+| 3    | Verify navigation                                               | Chat loop exited, Main Menu displayed                                                   |
+| 4    | Select option 5 (Return to Chat)                                | The same chat is still active and reachable (chat remains active)                        |
+
+---
+
+### TC-080: Backend Error During Message Exchange
+
+**Related UC**: UC-004 A4
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Arrange the backend to raise an arbitrary exception on send     | Chat loop entered                                                                       |
+| 2    | Send any message                                                | `[ERROR] Ошибка: {message}` displayed                                                    |
+| 3    | Verify navigation                                               | Chat loop exited, Main Menu displayed                                                   |
+
+---
+
+### TC-081: Keyboard Interrupt During Exchange
+
+**Related UC**: UC-004 A5
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Enter chat loop                                                 | Prompt displayed                                                                        |
+| 2    | Send Ctrl+C at the input prompt (or during processing)          | `Прервано пользователем.` displayed                                                      |
+| 3    | Verify navigation                                               | Chat loop exited, Main Menu displayed; chat remains active                               |
+
+---
+
+### TC-082: Long Response Wrapping
+
+**Related UC**: UC-004 A6
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Request a response longer than the terminal width               | Agent returns a long response                                                            |
+| 2    | Verify display                                                  | Text wraps appropriately; no lines broken/garbled                                       |
+
+---
+
+### TC-083: Reasoning Display Prompt
+
+**Related UC**: UC-004 A7
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Configure reasoning effort (e.g. "low"), send a message         | Response carries reasoning content                                                      |
+| 2    | Verify extra prompt                                             | `Показать рассуждения модели? (y/n):` displayed after token lines                        |
+| 3    | Enter "y"                                                       | Indented `[Reasoning]:` block printed                                                    |
+| 4    | Repeat exchange, enter "n"                                      | No reasoning block printed; back to prompt                                               |
+
+---
+
+### TC-016: View Settings
+
+**Related UC**: UC-005 (steps 1–4, 11)
 
 | Step | Action                              | Expected Result                   |
 | ---- | ----------------------------------- | --------------------------------- |
 | 1    | Enter chat with configured settings | Prompt displayed                  |
-| 2    | Type "/settings"                    | Current settings displayed        |
-| 3    | Verify format                       | All 5 parameters shown            |
-| 4    | Verify disabled display             | Shows "отключена" for None values |
-| 5    | Verify return                       | Back to chat prompt               |
+| 2    | Type "/settings"                    | `--- ТЕКУЩИЕ НАСТРОЙКИ ---` block displayed, then prompt `Изменить настройки? (y/n):` |
+| 3    | Verify format                       | All 6 parameters shown: Модель, Температура, Top P, Top K, Reasoning Effort, Размер контекстного окна (§4.6.1) |
+| 4    | Verify disabled display             | Shows "отключена"/"отключен"/"отключено" for None values |
+| 5    | Enter "n" at change prompt          | Back to chat prompt, no changes (UC-005 A1) |
 
 ---
 
-### TC-012: Change Partial Settings
+### TC-017: Change Settings With Empty Inputs Disables Parameters
 
-**Related UC**: UC-005
+**Related UC**: UC-005 (§4.6.2)
 
-| Step | Action                  | Expected Result          |
-| ---- | ----------------------- | ------------------------ |
-| 1    | Type "/settings"        | Settings view            |
-| 2    | Change only temperature | Other prompts shown      |
-| 3    | Press Enter for others  | Values unchanged         |
-| 4    | Verify update           | Only temperature changed |
+| Step | Action                                                  | Expected Result                                             |
+| ---- | ------------------------------------------------------- | ------------------------------------------------------------- |
+| 1    | Type "/settings", enter "y"                             | Header `--- НАСТРОЙКИ ДЛЯ '{chat_name}' ---`, all prompts re-displayed sequentially |
+| 2    | Enter new temperature "1.0"                             | Value applied                                                |
+| 3    | Press Enter at Top P prompt                             | top_p = None (empty input disables the parameter; there is no "keep current value" semantics) |
+| 4    | Press Enter at remaining prompts, finish flow           | `[OK] Настройки обновлены!` + refreshed `--- ТЕКУЩИЕ НАСТРОЙКИ ---` block |
+| 5    | Verify update                                           | Temperature changed; Top P and other skipped parameters disabled (None), not preserved |
 
 ---
 
-### TC-013: Menu Navigation from Chat
+### TC-018: Menu Navigation from Chat
 
 **Related UC**: UC-006
 
 | Step | Action                  | Expected Result              |
 | ---- | ----------------------- | ---------------------------- |
 | 1    | Enter chat              | Chat loop                    |
-| 2    | Type "/menu"            | Main Menu displayed          |
+| 2    | Type "/menu"            | `Возврат в меню...`, memory saved via `save_agent_memory`, Main Menu displayed |
 | 3    | Verify chat preserved   | Chat still exists in storage |
-| 4    | Select "Return to Chat" | Same chat reloaded           |
+| 4    | Select option 5 (Return to Chat) | Same chat reloaded        |
 
 ---
 
-### TC-014: Stop Command When Idle
+### TC-019: Stop Command When Idle
 
 **Related UC**: UC-007
 
-| Step | Action                       | Expected Result                |
-| ---- | ---------------------------- | ------------------------------ |
-| 1    | Enter chat                   | Prompt displayed               |
-| 2    | Type "/stop" (no generation) | Warning "Генерация не активна" |
-| 3    | Verify state                 | Still in chat loop             |
+| Step | Action                       | Expected Result                                          |
+| ---- | ---------------------------- | ---------------------------------------------------------- |
+| 1    | Enter chat                   | Prompt displayed                                         |
+| 2    | Type "/stop" (no generation) | `[INFO] Генерация не активна.` displayed                 |
+| 3    | Verify state                 | Chat loop exits, Main Menu displayed (UC-007 step 3)     |
 
 ---
 
-### TC-015: Help Command
+### TC-020: Help Command
 
 **Related UC**: UC-008
 
@@ -1570,14 +1820,14 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | ---- | -------------- | ---------------------- |
 | 1    | Enter chat     | Prompt displayed       |
 | 2    | Type "/help"   | Command list displayed |
-| 3    | Verify content | All 12 commands listed |
+| 3    | Verify content | All 12 commands listed in the exact `HELP_COMMANDS` order (§4.5.3 `/help`) |
 | 4    | Verify return  | Back to prompt         |
 
 ---
 
-### TC-016: Unknown Command Handling
+### TC-021: Unknown Command Handling
 
-**Related UC**: UC-004
+**Related UC**: UC-004 A2
 
 | Step | Action                  | Expected Result               |
 | ---- | ----------------------- | ----------------------------- |
@@ -1587,9 +1837,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-017: System Prompt in History
+### TC-022: System Prompt in History
 
-**Related UC**: UC-001
+**Related UC**: UC-001 (steps 6–7), §4.4.2
 
 | Step | Action                         | Expected Result            |
 | ---- | ------------------------------ | -------------------------- |
@@ -1600,9 +1850,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-018: Special Characters in Input
+### TC-023: Special Characters in Input
 
-**Related UC**: UC-001, UC-004
+**Related UC**: UC-001 (steps 5, 7), UC-004 (main success scenario)
 
 | Step | Action                             | Expected Result             |
 | ---- | ---------------------------------- | --------------------------- |
@@ -1613,9 +1863,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-019: Long Chat Name Handling
+### TC-024: Long Chat Name Handling
 
-**Related UC**: UC-001
+**Related UC**: UC-001 (§4.4.1)
 
 | Step | Action              | Expected Result       |
 | ---- | ------------------- | --------------------- |
@@ -1625,9 +1875,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-020: Concurrent Chat Operations
+### TC-025: Concurrent Chat Operations
 
-**Related UC**: UC-002, UC-003
+**Related UC**: UC-002 (main success scenario), UC-003 (main success scenario)
 
 | Step | Action          | Expected Result  |
 | ---- | --------------- | ---------------- |
@@ -1640,7 +1890,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-021: View Summary With Summarization
+### TC-026: View Summary With Summarization
 
 **Related UC**: UC-009
 
@@ -1653,9 +1903,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-022: View Summary Without Summarization
+### TC-027: View Summary Without Summarization
 
-**Related UC**: UC-009
+**Related UC**: UC-009 A1
 
 | Step | Action                         | Expected Result                                     |
 | ---- | ------------------------------ | --------------------------------------------------- |
@@ -1665,21 +1915,21 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-023: View Chat Info With Token Statistics
+### TC-028: View Chat Info With Token Statistics
 
 **Related UC**: UC-010
 
 | Step | Action                  | Expected Result                        |
 | ---- | ----------------------- | -------------------------------------- |
 | 1    | Open chat with messages | Chat active                            |
-| 2    | Type "/info"            | Chat info header displayed             |
+| 2    | Type "/info"            | Header `--- ИНФОРМАЦИЯ О ЧАТЕ ---` displayed |
 | 3    | Verify token statistics | `Prompt токены` and `Completion токены` shown       |
 | 4    | Verify strategy type    | Strategy name displayed                |
 | 5    | Verify no state changes | Chat remains active                    |
 
 ---
 
-### TC-024: Create Branch And Switch
+### TC-029: Create Branch And Switch
 
 **Related UC**: UC-011
 
@@ -1695,9 +1945,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-025: Create Branch And Stay
+### TC-030: Create Branch And Stay
 
-**Related UC**: UC-011
+**Related UC**: UC-011 A1
 
 | Step | Action                                     | Expected Result                                        |
 | ---- | ------------------------------------------ | ------------------------------------------------------ |
@@ -1711,9 +1961,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-026: Create Branch With Custom Name
+### TC-031: Create Branch With Custom Name
 
-**Related UC**: UC-011
+**Related UC**: UC-011 A2
 
 | Step | Action                   | Expected Result                  |
 | ---- | ------------------------ | -------------------------------- |
@@ -1724,24 +1974,24 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-027: Settings Change With Confirmation
+### TC-032: Settings Change With Confirmation
 
-**Related UC**: UC-005
+**Related UC**: UC-005 (steps 5–10)
 
-| Step | Action                               | Expected Result                            |
-| ---- | ------------------------------------ | ------------------------------------------ |
-| 1    | Type "/settings"                     | Current settings displayed                 |
-| 2    | Prompt: "Изменить настройки? (y/n):" | Displayed                                  |
-| 3    | Enter "y"                            | All settings prompts shown (like creation) |
-| 4    | Change temperature to 0.8            | Other settings kept as-is                  |
-| 5    | Verify update                        | `[OK] Настройки обновлены!` displayed      |
-| 6    | Verify only temperature changed      | Other settings preserved                   |
+| Step | Action                               | Expected Result                                                     |
+| ---- | ------------------------------------ | ---------------------------------------------------------------------- |
+| 1    | Type "/settings"                     | `--- ТЕКУЩИЕ НАСТРОЙКИ ---` block displayed                         |
+| 2    | Prompt: `Изменить настройки? (y/n):` | Displayed                                                           |
+| 3    | Enter "y"                            | Header `--- НАСТРОЙКИ ДЛЯ '{chat_name}' ---`, all settings prompts shown (like creation) |
+| 4    | Enter valid values at ALL prompts (model, temperature, top_p, top_k, reasoning effort, context window) | Values applied; nothing skipped — no "keep as-is" semantics exists (§4.6.2) |
+| 5    | Verify update                        | `[OK] Настройки обновлены!` + refreshed `--- ТЕКУЩИЕ НАСТРОЙКИ ---` block |
+| 6    | Verify return                        | Back to chat prompt                                                 |
 
 ---
 
-### TC-028: Settings Change Cancelled
+### TC-033: Settings Change Cancelled
 
-**Related UC**: UC-005
+**Related UC**: UC-005 A1
 
 | Step | Action                               | Expected Result                     |
 | ---- | ------------------------------------ | ----------------------------------- |
@@ -1752,9 +2002,59 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-029: Stop Command Exits Chat Loop
+### TC-084: Decline Settings Change With Empty Or Other Input
 
-**Related UC**: UC-007
+**Related UC**: UC-005 A1
+
+| Step | Action                               | Expected Result                     |
+| ---- | ------------------------------------ | ----------------------------------- |
+| 1    | Type "/settings", press Enter at `Изменить настройки? (y/n):` | No settings prompts shown; back to chat prompt |
+| 2    | Type "/settings", enter "maybe"      | Treated as decline (any input other than "y"); no changes made |
+| 3    | Verify state                         | Settings unchanged, chat loop continues |
+
+---
+
+### TC-085: Invalid Input During Settings Re-Prompting
+
+**Related UC**: UC-005 A2
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Type "/settings", enter "y", reach temperature prompt            | All settings prompts re-displayed like during creation                                  |
+| 2    | Enter "abc" at temperature                                      | Warning `Некорректное число. Используется значение по умолчанию (отключено).`; parameter disabled; flow continues (UC-001 A7 semantics) |
+| 3    | Enter "-1" at Top P                                             | Out-of-range warning; top_p = None; flow continues                                      |
+| 4    | Enter negative value at Top K                                   | `Top K должен быть >= 0`; Top K re-prompted (UC-001 A8 semantics)                       |
+| 5    | Complete the flow                                               | `[OK] Настройки обновлены!` with the resulting values                                    |
+
+---
+
+### TC-086: KeyboardInterrupt During Settings Flow
+
+**Related UC**: UC-005 A3
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Type "/settings", enter "y"                                     | Settings prompts displayed                                                              |
+| 2    | Press Ctrl+C mid-flow (or feed end of input — EOFError)         | `Прервано пользователем.` displayed                                                     |
+| 3    | Verify navigation                                               | Chat loop exited, Main Menu displayed                                                    |
+
+---
+
+### TC-087: Backend Error While Applying Settings
+
+**Related UC**: UC-005 A4
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Arrange the `change_settings` use case to raise an exception    | Chat loop entered                                                                        |
+| 2    | Type "/settings", enter "y", complete all prompts               | `[ERROR] Ошибка: {message}` displayed                                                    |
+| 3    | Verify navigation                                               | Chat loop exited, Main Menu displayed                                                    |
+
+---
+
+### TC-034: Stop Command Keeps Active Chat
+
+**Related UC**: UC-007 (postconditions)
 
 | Step | Action                        | Expected Result                                        |
 | ---- | ----------------------------- | ------------------------------------------------------ |
@@ -1764,21 +2064,22 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-030: Stop Command Output And State
+### TC-035: Stop Command Preserves Chat State
 
-**Related UC**: UC-007
+**Related UC**: UC-007 (postconditions), UC-003
 
 | Step | Action                        | Expected Result                                          |
 | ---- | ----------------------------- | -------------------------------------------------------- |
-| 1    | Type "/stop" at any moment    | `[INFO] Генерация не активна.` displayed                 |
-| 2    | Verify return to menu         | Main Menu displayed                                      |
-| 3    | Verify chat state             | Chat preserved, remains the active chat                  |
+| 1    | Send a message in chat        | Exchange saved to history                                |
+| 2    | Type "/stop" at any moment    | `[INFO] Генерация не активна.` displayed                 |
+| 3    | Verify return to menu         | Main Menu displayed                                      |
+| 4    | Select option 5 (Return to Chat) | Same chat reloaded with the exchange intact          |
 
 ---
 
-### TC-031: SlidingWindowStrategy Creation
+### TC-036: SlidingWindowStrategy Creation
 
-**Related UC**: UC-001
+**Related UC**: UC-001 (step 19), §4.4.9
 
 | Step | Action                          | Expected Result                         |
 | ---- | ------------------------------- | --------------------------------------- |
@@ -1790,9 +2091,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-032: SlidingWindowStrategy With Custom Window
+### TC-037: SlidingWindowStrategy With Custom Window
 
-**Related UC**: UC-001
+**Related UC**: UC-001 (step 19), §4.4.9
 
 | Step | Action                          | Expected Result                         |
 | ---- | ------------------------------- | --------------------------------------- |
@@ -1804,9 +2105,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-033: SummarizationStrategy Creation
+### TC-038: SummarizationStrategy Creation
 
-**Related UC**: UC-001
+**Related UC**: UC-001 (step 19), §4.4.9
 
 | Step | Action                          | Expected Result                              |
 | ---- | ------------------------------- | -------------------------------------------- |
@@ -1819,9 +2120,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-034: SummarizationStrategy With Custom Parameters
+### TC-039: SummarizationStrategy With Custom Parameters
 
-**Related UC**: UC-001
+**Related UC**: UC-001 (step 19), §4.4.9
 
 | Step | Action                          | Expected Result                             |
 | ---- | ------------------------------- | ------------------------------------------- |
@@ -1834,9 +2135,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-035: KeyValueMemoryStrategy Creation
+### TC-040: KeyValueMemoryStrategy Creation
 
-**Related UC**: UC-001
+**Related UC**: UC-001 (step 19), §4.4.9
 
 | Step | Action                           | Expected Result                              |
 | ---- | -------------------------------- | -------------------------------------------- |
@@ -1849,9 +2150,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-036: KeyValueMemoryStrategy With Custom Parameters
+### TC-041: KeyValueMemoryStrategy With Custom Parameters
 
-**Related UC**: UC-001
+**Related UC**: UC-001 (step 19), §4.4.9
 
 | Step | Action                           | Expected Result                             |
 | ---- | -------------------------------- | ------------------------------------------- |
@@ -1864,22 +2165,22 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-037: DefaultStrategy Creation
+### TC-042: DefaultStrategy Creation
 
-**Related UC**: UC-001
+**Related UC**: UC-001 (step 19), §4.4.9
 
 | Step | Action                     | Expected Result                                                       |
 | ---- | -------------------------- | --------------------------------------------------------------------- |
 | 1    | Create new chat            | Strategy selection prompt                                             |
-| 2    | Select option 1 (Default)  | Chat created immediately without extra prompts                        |
+| 2    | Select option 1 (Default)  | Task profile selection displayed without extra parameter prompts      |
 | 3    | Verify strategy            | Strategy type = "DefaultStrategy"                                     |
 | 4    | Verify no extra parameters | non_compressible_count = null, buffer_size = null, window_size = null |
 
 ---
 
-### TC-038: View Info For Different Strategies
+### TC-043: View Info For Different Strategies
 
-**Related UC**: UC-010
+**Related UC**: UC-010 (steps 3–5)
 
 | Step | Action                                | Expected Result                                       |
 | ---- | ------------------------------------- | ----------------------------------------------------- |
@@ -1890,9 +2191,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-039: Branch Preserves Strategy Type
+### TC-044: Branch Preserves Strategy Type
 
-**Related UC**: UC-011
+**Related UC**: UC-011 (step 5)
 
 | Step | Action                               | Expected Result                                  |
 | ---- | ------------------------------------ | ------------------------------------------------ |
@@ -1902,9 +2203,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-040: Branch Preserves SlidingWindow Configuration
+### TC-045: Branch Preserves SlidingWindow Configuration
 
-**Related UC**: UC-011
+**Related UC**: UC-011 (step 5)
 
 | Step | Action                                                | Expected Result                         |
 | ---- | ----------------------------------------------------- | --------------------------------------- |
@@ -1914,7 +2215,19 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-041: View Global Memory from Main Menu (No Chat Required)
+### TC-088: Branch Creation Backend Error
+
+**Related UC**: UC-011 A3
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Arrange the `create_branch` use case to raise an exception       | Chat loop entered                                                                        |
+| 2    | Type "/branch", provide a name                                    | `[ERROR] Ошибка при создании ветки: {e}` displayed                                       |
+| 3    | Verify state                                                    | Back to chat prompt; no switch happened — `current_agent` still points to original chat |
+
+---
+
+### TC-046: View Global Memory from Main Menu (No Chat Required)
 
 **Related UC**: UC-012
 
@@ -1927,9 +2240,11 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | 5    | Verify separator line                     | 40 dashes are displayed                               |
 | 6    | Verify return to menu                     | Main Menu is displayed again                          |
 
-### TC-042: View Global Memory - Empty State
+---
 
-**Related UC**: UC-012
+### TC-047: View Global Memory - Empty State
+
+**Related UC**: UC-012 A1
 
 | Step | Action                                    | Expected Result                                       |
 | ---- | ----------------------------------------- | ----------------------------------------------------- |
@@ -1941,9 +2256,11 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | 6    | Verify separator line                     | 40 dashes are displayed                               |
 | 7    | Verify return to menu                     | Main Menu is displayed again                          |
 
-### TC-043: View Global Memory - With Facts (End-to-End Flow)
+---
 
-**Related UC**: UC-012
+### TC-048: View Global Memory - With Facts (End-to-End Flow)
+
+**Related UC**: UC-012 (steps 4–7), UC-006
 
 **Purpose**: Verify that memory is populated during chat interaction, saved when exiting to menu, and correctly displayed from the repository.
 
@@ -1962,35 +2279,38 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-044: Create Task Profile with Valid Data
+### TC-049: Create Task Profile with Valid Data
 
 **Related UC**: UC-014
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | From Main Menu, select option 3 (Task Profiles) | Task Profiles menu displayed                 |
-| 2    | Select option 1 (Create new profile)          | Name prompt displayed                        |
-| 3    | Enter "Project Alpha"                         | Description prompt displayed                 |
-| 4    | Enter "Development of Project Alpha system"   | Success message displayed with ID and timestamp |
-| 5    | Verify profile saved                          | Profile exists in repository with empty facts |
+| 2    | Select option 1 (Create new profile)          | Name prompt `Введите название профиля:` displayed |
+| 3    | Enter "Project Alpha"                         | Description prompt `Введите описание задачи:` displayed |
+| 4    | Enter "Development of Project Alpha system"   | Preferences prompt `Введите предпочтения/инструкции (Enter для пропуска):` displayed |
+| 5    | Enter preferences text                        | Invariants block displayed (`--- ИНВАРИАНТЫ (строгие правила/ограничения) ---`, prompt `>` per line) |
+| 6    | Enter one invariant, then press Enter (empty line) | Creation proceeds; success message `[OK] Профиль задачи '{name}' создан!` + ID + Дата создания + `Инвариантов: 1` |
+| 7    | Verify profile saved                          | Profile exists in repository with empty facts, entered preferences and 1 invariant |
+| 8    | Verify return                                 | Control returns to the Task Profiles menu    |
 
 ---
 
-### TC-045: Create Task Profile - Empty Name Validation
+### TC-050: Create Task Profile - Empty Name Validation
 
-**Related UC**: UC-014
+**Related UC**: UC-014 A1
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | From Task Profiles menu, select Create        | Name prompt displayed                        |
-| 2    | Press Enter (empty input)                     | `[ERROR] Название не может быть пустым.` + re-prompt |
+| 2    | Press Enter (empty input)                     | `[ERROR] Название профиля не может быть пустым.` + re-prompt |
 | 3    | Enter valid name                              | Proceed to description prompt                |
 
 ---
 
-### TC-046: Create Task Profile - Long Name Accepted
+### TC-051: Create Task Profile - Long Name Accepted
 
-**Related UC**: UC-014
+**Related UC**: UC-014 (step 3)
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
@@ -2000,9 +2320,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-047: Create Task Profile - Empty Description Validation
+### TC-052: Create Task Profile - Empty Description Validation
 
-**Related UC**: UC-014
+**Related UC**: UC-014 A2
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
@@ -2012,9 +2332,21 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-048: View Task Profiles List - Empty State
+### TC-089: Create Task Profile - No Invariants Omits Count Line
 
-**Related UC**: UC-013
+**Related UC**: UC-014 A4
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Reach the invariants block during profile creation | Header `--- ИНВАРИАНТЫ (строгие правила/ограничения) ---` and prompt `>` displayed |
+| 2    | Press Enter immediately (empty first line)    | Profile created with an empty invariants list |
+| 3    | Verify success message                        | `[OK] Профиль задачи '{name}' создан!` + ID + Дата создания; the `Инвариантов:` line is omitted |
+
+---
+
+### TC-053: View Task Profiles List - Empty State
+
+**Related UC**: UC-013 A1
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
@@ -2024,9 +2356,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-049: View Task Profiles List - Multiple Profiles
+### TC-054: View Task Profiles List - Multiple Profiles
 
-**Related UC**: UC-013
+**Related UC**: UC-013 (steps 5–7)
 
 **Precondition**: At least 2 task profiles exist in repository
 
@@ -2038,7 +2370,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-050: View Task Profile Memory - With Facts
+### TC-055: View Task Profile Memory - With Facts
 
 **Related UC**: UC-015
 
@@ -2053,9 +2385,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-051: View Task Profile Memory - Empty State
+### TC-056: View Task Profile Memory - Empty State
 
-**Related UC**: UC-015
+**Related UC**: UC-015 (steps 5–7, empty state)
 
 **Precondition**: Task profile exists with empty facts list
 
@@ -2067,9 +2399,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-052: Delete Task Profile - Not Attached
+### TC-057: Delete Task Profile - Not Attached
 
-**Related UC**: UC-016
+**Related UC**: UC-017 (steps 4–6)
 
 **Precondition**: Task profile exists, not attached to any agents
 
@@ -2079,12 +2411,13 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | 2    | Select profile by index                       | Confirmation prompt: `Вы уверены, что хотите удалить профиль '{name}'? (y/n):` |
 | 3    | Enter 'y'                                     | `[OK] Профиль '{name}' успешно удалён.`      |
 | 4    | Verify deletion                               | Profile no longer in repository              |
+| 5    | Verify return                                 | Control returns to the Task Profiles menu    |
 
 ---
 
-### TC-053: Delete Task Profile - Attached to Agents
+### TC-058: Delete Task Profile - Attached to Agents
 
-**Related UC**: UC-016
+**Related UC**: UC-017 A3
 
 **Precondition**: Task profile exists, attached to 2 agents
 
@@ -2097,9 +2430,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-054: Delete Task Profile - Cancelled
+### TC-059: Delete Task Profile - Cancelled
 
-**Related UC**: UC-016
+**Related UC**: UC-017 A2
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
@@ -2110,51 +2443,122 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-055: Create Chat with Task Profile Attachment
+### TC-060: Manage Invariants - Add and Remove
 
-**Related UC**: UC-001, UC-013
+**Related UC**: UC-016
 
 **Precondition**: At least one task profile exists
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | From Main Menu, select option 1 (New Chat)    | Chat creation workflow starts                |
-| 2    | Complete steps 1-8 (name, prompt, model, settings, strategy) | Task profile selection prompt displayed      |
-| 3    | Select profile index (e.g., 1)                | Chat created with profile attached           |
-| 4    | Verify completion message                     | Shows `Профиль задачи: {profile_name}`       |
-| 5    | Verify agent saved                            | Agent has task_profile_id set to selected UUID |
+| 1    | From profiles list submenu, select action 2 (Manage invariants) | Profile selection prompt `Выберите профиль (1-{n}):` displayed |
+| 2    | Select profile by index                       | Header `--- ИНВАРИАНТЫ ПРОФИЛЯ: {name} ---` with numbered invariants (`(инварианты не заданы)` if empty) and actions `1. Добавить инвариант / 2. Удалить инвариант / 3. Назад` |
+| 3    | Select action 1, enter invariant text         | `[OK] Инвариант добавлен!`, invariants list redisplayed with the new entry |
+| 4    | Select action 1, press Enter (empty text)     | `[WARN] Инвариант не может быть пустым.`; nothing added, list redisplayed (UC-016 A1) |
+| 5    | Select action 2, enter a valid number         | `[OK] Инвариант удалён!`, list redisplayed   |
+| 6    | Select action 2, enter an unknown number      | `[WARN] Некорректный номер.` (UC-016 A2)     |
+| 7    | Select action 3 (Назад)                       | Control returns to the Task Profiles menu    |
 
 ---
 
-### TC-056: Create Chat Without Task Profile
+### TC-090: Manage Invariants - Repository ValueError On Add
 
-**Related UC**: UC-001
+**Related UC**: UC-016 A3
+
+**Precondition**: Profile with an existing invariant "Rule A"
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | From Main Menu, select option 1 (New Chat)    | Complete chat creation through step 9        |
+| 1    | Open invariants submenu for the profile       | Invariant list displayed                     |
+| 2    | Select action 1, enter duplicate/invalid text causing repository `ValueError` | `[ERROR] {e}` displayed; nothing added, list redisplayed (UC-016 A3) |
+
+---
+
+### TC-091: Profiles Menu And Submenu Invalid Choices Re-Prompt
+
+**Related UC**: UC-013 A2, UC-013 A3
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Main Menu select option 3, enter "9" at the Task Profiles menu prompt | `[WARN] Неверный выбор, попробуйте снова.`; menu re-displayed (UC-013 A2) |
+| 2    | Open profiles list, enter "99" at `Выберите действие (1-4):` | Same warning; action prompt re-displayed      |
+| 3    | Choose action 1, enter out-of-range index     | `Введите число от 1 до {n}`; profile selection re-prompted (UC-013 A3) |
+| 4    | Enter "abc" as profile index                  | `Введите корректное число`; re-prompted (UC-013 A3) |
+| 5    | Enter valid index                             | Requested action proceeds                     |
+
+---
+
+### TC-092: View Task Profile Memory - Profile Not Found
+
+**Related UC**: UC-015 A3
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Arrange `get_task_profile_memory` to return None for the selected profile | Action 1 chosen from the profiles list submenu |
+| 2    | Verify error                                  | `[ERROR] Профиль не найден.` displayed        |
+| 3    | Verify navigation                             | Control returns to the Task Profiles menu     |
+
+---
+
+### TC-093: Delete Task Profile - Invalid Selection Re-Prompts
+
+**Related UC**: UC-017 A1
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From profiles list submenu, select action 3 (Delete) | Prompt `Выберите профиль для удаления (1-{n}):` displayed |
+| 2    | Enter out-of-range number                     | `Введите число от 1 до {n}`; selection re-prompted (UC-017 A1) |
+| 3    | Enter "abc"                                   | `Введите корректное число`; selection re-prompted |
+| 4    | Enter a valid index                           | Confirmation prompt displayed for the chosen profile |
+
+---
+
+### TC-061: Create Chat with Task Profile Attachment
+
+**Related UC**: UC-001 (steps 22–24), §4.4.10
+
+**Precondition**: At least one task profile exists
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Main Menu, select option 1 (New Chat), enter "y" | Chat creation workflow starts (manual path)  |
+| 2    | Complete steps 1–9 (name, system prompt, model, settings, context window, strategy) | Task profile selection block `--- ПРИВЯЗКА ПРОФИЛЯ ЗАДАЧИ ---` displayed |
+| 3    | Select profile index (e.g., 1)                | Chat created with profile attached           |
+| 4    | Verify completion                             | `[OK] Чат '{name}' создан!`; chat loop entered |
+| 5    | Type "/info"                                  | Line `Профиль задачи: {profile_name}` shown  |
+| 6    | Verify agent saved                            | Agent has task_profile_id set to selected UUID |
+
+---
+
+### TC-062: Create Chat Without Task Profile
+
+**Related UC**: UC-001 (step 22), §4.4.10
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From Main Menu, select option 1 (New Chat), enter "y" | Complete manual creation through step 9 (strategy) |
 | 2    | At profile selection, choose 0 (none) or press Enter | Chat created without profile attachment      |
-| 3    | Verify completion message                     | Shows `Профиль задачи: (не привязан)`        |
+| 3    | Type "/info" in chat loop                     | Shows `Профиль задачи: (не привязан)`        |
 | 4    | Verify agent saved                            | Agent has task_profile_id = null             |
 
 ---
 
-### TC-057: Task Profile Selection - No Profiles Available
+### TC-063: Task Profile Selection - No Profiles Available
 
-**Related UC**: UC-001
+**Related UC**: UC-001 (§4.4.10)
 
 **Precondition**: No task profiles exist in repository
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | Create new chat, reach step 9 (profile selection) | `(нет доступных профилей)` displayed, skip to completion |
+| 1    | Create new chat via manual path, reach profile selection step (step 10 of §4.4) | `(нет доступных профилей)` displayed, creation continues without attachment |
 | 2    | Verify chat created                           | Chat has task_profile_id = null              |
 
 ---
 
-### TC-058: Memory Integration - Global + Task Profile in System Prompt
+### TC-064: Memory Integration - Global + Task Profile in System Prompt
 
-**Related UC**: UC-004
+**Related UC**: UC-004 (§3 Memory integration)
 
 **Precondition**: Global memory has facts, task profile has facts and preferences, agent attached to task profile
 
@@ -2168,9 +2572,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-059: Preferences Display in System Prompt - Empty Preferences
+### TC-065: Preferences Display in System Prompt - Empty Preferences
 
-**Related UC**: UC-004
+**Related UC**: UC-004 (§3 Memory integration)
 
 **Precondition**: Global memory has facts, task profile has no preferences (empty string), agent attached to task profile
 
@@ -2183,9 +2587,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-060: Preferences Display in View Profile - With Preferences
+### TC-066: Preferences Display in View Profile - With Preferences
 
-**Related UC**: UC-015
+**Related UC**: UC-015 (step 6)
 
 **Precondition**: Task profile exists with non-empty preferences text
 
@@ -2197,9 +2601,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-061: Preferences Display in View Profile - Empty Preferences
+### TC-067: Preferences Display in View Profile - Empty Preferences
 
-**Related UC**: UC-015
+**Related UC**: UC-015 (step 6, §4.7.3)
 
 **Precondition**: Task profile exists with empty preferences
 
@@ -2207,28 +2611,28 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | Navigate to Task Profiles menu, select "View memory" | Profile selection prompt displayed           |
 | 2    | Select profile with empty preferences         | Profile details displayed                    |
-| 3    | Verify preferences display                    | `Предпочтения: (не указаны)` shown           |
+| 3    | Verify preferences display                    | The `Предпочтения:` line is omitted entirely (no placeholder like `(не указаны)`) |
 
 ---
 
-### TC-062: Create Profile With Preferences
+### TC-068: Create Profile With Preferences
 
-**Related UC**: UC-014
+**Related UC**: UC-014 (steps 7–9)
 
 **Precondition**: User is creating a new task profile
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | Enter name and description                    | Preferences prompt displayed                 |
-| 2    | Enter multi-line preferences text             | Preferences accepted without validation      |
-| 3    | Complete profile creation                     | Profile saved with preferences text          |
+| 2    | Enter preferences text (single line; multi-line input is not supported by the CLI) | Preferences accepted without validation      |
+| 3    | Complete profile creation (invariants block → empty line) | Profile saved with preferences text          |
 | 4    | View created profile                          | Preferences displayed correctly              |
 
 ---
 
-### TC-063: Create Profile Without Preferences
+### TC-069: Create Profile Without Preferences
 
-**Related UC**: UC-014
+**Related UC**: UC-014 A3, UC-015 (step 6)
 
 **Precondition**: User is creating a new task profile
 
@@ -2237,4 +2641,4 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | 1    | Enter name and description                    | Preferences prompt displayed                 |
 | 2    | Press Enter without entering preferences      | Empty preferences accepted (no error)        |
 | 3    | Complete profile creation                     | Profile saved with empty preferences         |
-| 4    | View created profile                          | `Предпочтения: (не указаны)` displayed       |
+| 4    | View created profile                          | The `Предпочтения:` line is omitted entirely |

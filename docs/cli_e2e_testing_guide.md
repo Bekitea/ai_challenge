@@ -347,15 +347,12 @@ class TestUC001_CreateChatWithAllSettings:
 
     def test_tc_001_create_chat_default_values(self):
         \"\"\"
-        TC-001: Create Chat with Default Values
+        TC-001: Quick Chat Creation With Defaults
 
         Steps:
         1. Select "New Chat"
-        2. Press Enter (default name)
-        3. Press Enter (skip prompt)
-        4. Select model 1
-        5. Press Enter (disable temp)
-        6. Verify chat created
+        2. Press Enter at the configure prompt (default "n")
+        3. Verify defaults applied and chat created
         \"\"\"
         test_input = (
             "1\\n"           # Новый чат
@@ -382,9 +379,9 @@ pytest cli_tests/test_cli_e2e.py -v
 **Smoke Test (comprehensive scenario):**
 ```bash
 # Runs multiple test cases via pytest to verify critical paths:
-# - TC-009: Multiple message exchange (mock provider + history)
-# - TC-027: Settings modification (storage read/write)
-# - TC-024: Branching operations (storage + navigation)
+# - TC-014: Send Multiple Messages (mock provider + history)
+# - TC-032: Settings Change With Confirmation (storage read/write)
+# - TC-029: Create Branch And Switch (branching + navigation)
 python cli_tests/smoke_test.py
 ```
 
@@ -608,8 +605,8 @@ assert "Ошибка" in stdout or "Error" in stdout
 When tests need prior state, create it within the test:
 
 ```python
-def test_tc_008_return_to_chat_with_active_chat(self):
-    """TC-008: Must have active chat first."""
+def test_tc_013_return_to_chat_with_active_chat(self):
+    """TC-013: Must have active chat first."""
     # Step 1: Create chat
     # Step 2: Send message (makes it active)
     # Step 3: Go to menu
@@ -769,8 +766,8 @@ python cli_tests/smoke_test.py
 ```
 
 ### Test Coverage
-- **40 test cases** covering all requirements from `cli_spec.md`
-- **11 Use Cases** organized by user workflow
+- **93 test cases** covering all requirements from `cli_spec.md`
+- **17 Use Cases** organized by user workflow
 - **100% specification traceability** via naming convention
 - **Complete data isolation** via APPLICATION_MODE and test-data directory
 

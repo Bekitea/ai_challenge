@@ -13,170 +13,33 @@ This document provides a comprehensive specification for the Command Line Interf
 
 ### 1.2 Scope
 
-- **In Scope**: CLI interface, menu navigation, chat management, message handling, settings configuration, command processing
-- **Out of Scope**: Backend LLM provider implementation, other frontends, API specifications
+- **In Scope**: CLI interface (`cli_app.py`, class `CLIChat`), menu navigation, chat management, message handling, settings configuration, slash-command processing, task profiles management, global/task memory viewing, MCP connection management from the chat loop
+- **Out of Scope**: Backend LLM provider implementation, other frontends, API specifications, Celery workers/beat and scheduled tasks (they are not part of the CLI application)
 
 ### 1.3 Definitions
 
-| Term             | Definition                                           |
-| ---------------- | ---------------------------------------------------- |
-| Chat             | A conversation session identified by a unique UUID   |
-| System Prompt    | Initial instruction message that sets agent behavior |
-| Preview          | Short excerpt (max 50 chars) of the last message     |
-| Active Chat      | Currently selected chat session in CLI state         |
-| Disabled Setting | Parameter with `None` value, not passed to LLM       |
+| Term              | Definition                                                                        |
+| ----------------- | --------------------------------------------------------------------------------- |
+| Chat / Agent      | A conversation session; internal ID is a UUID (`conversation_id`), user-facing ID is a numeric `agent_id` |
+| System Prompt     | Initial instruction message that sets agent behavior                              |
+| Preview           | Short excerpt (max 50 chars) of the last visible message, suffixed with `...` if truncated |
+| Active Chat       | Currently selected agent stored in CLI state (`current_agent`)                    |
+| Disabled Setting  | Parameter with `None` value, not passed to LLM                                    |
+| Phase             | Agent workflow stage: PLAN / EXECUTE / VALIDATE / REPORT                          |
+| Invariant         | Strict rule attached to a task profile that the agent must never violate          |
+| MCP               | Model Context Protocol server whose tools can be connected to a chat              |
 
 ---
 
 ## 2. Architecture
 
-### State Machine
+The presentation layer (`CLIChat` in `cli_app.py`) is separated from application initialization (`app_factory.py`, `main_cli.py`). `CLIChat` receives all its functionality through a `UseCasesBundle` container of use cases (`use_cases.py`) and never touches repositories or the LLM provider directly.
 
-Слой представления отделен от слоя инициализации приложения.
-
-## 3. Data Structures
-
-### 3.1 Chat Object
-
-```json
-{
-  "id": "string (UUID format)",
-  "name": "string",
-  "created_at": "ISO 8601 timestamp",
-  "messages": [
-    {
-      "role": "system|user|assistant",
-      "content": "string",
-      "timestamp": "ISO 8601 timestamp"
-    }
-  ],
-  "settings": {
-    "model": "string (model identifier)",
-    "temperature": "float|null (0.0-2.0)",
-    "top_p": "float|null (0.0-1.0)",
-    "top_k": "integer (0 = disabled)",
-    "reasoning_effort": "string (none|low|medium|high)"
-  }
-}
-```
-
-### 3.2 AgentPreview Object
-
-Returned by `Agents.get_chats_preview()` method:
-
-```python
-class AgentPreview:
-    id: str                    # Chat UUID (displayed in full, not truncated)
-    name: str                  # Chat name
-    message_count: int         # Total messages excluding system prompt
-    last_message_time: str     # Formatted timestamp
-    last_message_preview: str  # First 50 chars of last message content
-```
-
-### 3.3 TaskProfile Object
-
-Represents a task-specific memory profile that can be attached to an agent:
-
-```python
-class TaskProfile:
-    id: str                     # UUID format, unique identifier
-    name: str                   # Task profile name (max 100 chars)
-    description: str            # Task description (max 500 chars)
-    created_at: str             # ISO 8601 timestamp
-    facts: list[str]            # List of task-related facts (auto-updated)
-    preferences: str            # User instructions/preferences (free-form text, no length limit)
-```
-
-### 3.4 Agent Settings Extended
-
-```json
-{
-  "model": "string (model identifier)",
-  "temperature": "float|null (0.0-2.0)",
-  "top_p": "float|null (0.0-1.0)",
-  "top_k": "integer (0 = disabled)",
-  "reasoning_effort": "string (none|low|medium|high)",
-  "context_window_size": "integer (default 200000, tokens, retained for backward compatibility)",
-  "strategy": "ContextWindowStrategy object (see section 3.4)",
-  "task_profile_id": "string|null (UUID of attached TaskProfile, optional)"
-}
-```
-
-**Note**: `task_profile_id` is set only at chat creation time and cannot be changed afterwards. If `null`, the agent uses only global memory.
-
-### 3.5 Context Window Strategy Object
-
-Strategy for managing context window when it exceeds limits:
-
-```python
-class ContextWindowStrategy:
-    strategy_type: str         # "DefaultStrategy" | "SummarizationStrategy" | "KeyValueMemoryStrategy" | "SlidingWindowStrategy"
-    non_compressible_count: int|null  # For summarization strategies only
-    buffer_size: int|null             # For summarization strategies only
-    window_size: int|null             # For SlidingWindowStrategy only
-    summary: str|null                 # Current summary text (auto-managed)
-```
-
-#### Strategy Types:
-
-| Strategy                 | Description                                                   | Parameters Required                 |
-| ------------------------ | ------------------------------------------------------------- | ----------------------------------- |
-| `DefaultStrategy`        | Passes all messages as-is, throws error on overflow           | None                                |
-| `SummarizationStrategy`  | Summarizes old messages using free-form text summarization    | non_compressible_count, buffer_size |
-| `KeyValueMemoryStrategy` | Summarizes into structured JSON format with predefined schema | non_compressible_count, buffer_size |
-| `SlidingWindowStrategy`  | Keeps only last N messages, discards older ones               | window_size                         |
-
-#### Default Values:
-
-- `non_compressible_count`: 2 (messages kept in original form)
-- `buffer_size`: 3 (messages grouped for summarization)
-- `window_size`: 10 (for SlidingWindowStrategy)
+State model: the CLI keeps a single piece of state — `current_agent: Agent | None`. Menu option 5 ("Вернуться в чат") re-enters the chat loop for this agent. The active chat reference is kept when exiting a chat via `/menu`; it is replaced on chat creation/selection.
 
 ---
 
-### 3.6 Message Roles
-
-| Role      | Description               | Display Prefix | Editable              |
-| --------- | ------------------------- | -------------- | --------------------- |
-| system    | Initial agent instruction | [SYSTEM]       | No (only at creation) |
-| user      | User input                | [USER]         | No                    |
-| assistant | AI response               | [AGENT]        | No                    |
-
----
-
-### 3.7 Memory Display Format
-
-When displaying memory (global or task profile), facts are shown as a numbered list:
-
-```
---- {MEMORY_TITLE} ---
-{fact_1}
-{fact_2}
-...
-----------------------------------------
-```
-
-If memory is empty: `(память пуста)`
-
-Memory facts are auto-extracted from dialogues by LLM and saved to respective repositories.
-
----
-
-### 3.8 Preferences Display Format
-
-When displaying user preferences in the system prompt, preferences text is shown as a separate block:
-
-```
---- ПРЕДПОЧТЕНИЯ ПОЛЬЗОВАТЕЛЯ ---
-{preferences_text}
-----------------------------------------
-```
-
-If preferences is empty (empty string): The entire preferences section is omitted from the system prompt.
-
-Preferences are user-provided instructions entered during task profile creation and remain static (not auto-updated).
-
----
+## 4. Interface Specification
 
 ### 4.1 Visual Style Guidelines
 
@@ -185,95 +48,114 @@ Preferences are user-provided instructions entered during task profile creation 
   - `[OK]` - Success operations
   - `[WARN]` - Warnings
   - `[ERROR]` - Errors
-  - `[USER]` - User messages
-  - `[AGENT]` - Agent responses
-  - `[SYSTEM]` - System prompts
   - `[INFO]` - Informational messages
-- **Separators**: Lines of 40-50 dashes (`----------------------------------------`)
-- **Headers**: Centered text with decorative borders
-- **Input Prompts**: Clear instructions with default values in parentheses
+  - `[USER]` / `[AGENT]` - Message prefixes in the chat loop
+  - `[OFFLINE]` - MCP server without a live connection
+- **Separators**: Lines of 40 dashes (`----------------------------------------`)
+- **Headers**: `--- ЗАГОЛОВОК ---` style; app header is a 60-char `=` border block:
+  ```
+  ============================================================
+         AI CHAT CLI - Консольный чат с AI агентами
+  ============================================================
+  ```
+- **Input Prompts**: Clear instructions with defaults in parentheses; pressing Enter accepts the default where one is documented
+- **Screen clearing**: `clear_screen()` (os.system("cls"/"clear")) is called once on application start, before printing the header; the main menu is re-printed without clearing
 
 ### 4.2 Main Menu
 
-#### 4.2.1 Display Format
+#### 4.2.1 Display Format (`print_menu()`)
 
 ```
-============================================================
-       AI CHAT CLI - Консольный чат с AI агентами
-============================================================
-
 --- МЕНЮ ---
 1. Новый чат
 2. Выбрать чат
 3. Профили задач
-4. Просмотр глобальной памяти
-5. Вернуться в чат: {chat_name}|(нет активного чата)
+4. Просмотреть глобальную память
+5. Вернуться в чат: {chat_name} | Вернуться в чат (нет активного чата)
 6. Выход
 ----------------------------------------
-
-Ваш выбор (1-6):
 ```
+
+Prompt line: `Ваш выбор (1-6):`
 
 #### 4.2.2 Dynamic Behavior
 
-- Option 4 label changes based on `current_chat_id` state:
-  - If active chat exists: `Вернуться в чат: {chat_name}`
-  - If no active chat: `Вернуться в чат (нет активного чата)`
+- Option 5 label depends on `current_agent` state:
+  - Active chat exists: `5. Вернуться в чат: {chat_name}`
+  - No active chat: `5. Вернуться в чат (нет активного чата)` (no colon)
+- Selecting option 5 with an active chat prints `[OK] Возврат в чат: {name}` and enters the chat loop.
+- Selecting option 5 without an active chat prints `[WARN] Нет активного чата. Выберите или создайте чат.` and stays in the menu.
+- Option 6 prints `До свидания!` and terminates the application.
 
 #### 4.2.3 Input Validation
 
-- Accept only integers 1-6
-- Invalid input: Display `[ERROR] Неверный выбор. Введите число от 1 до 6.` and re-prompt
-- Empty input: Re-prompt without error message
+- Accept only strings "1".."6" (exact match after strip)
+- Any other input: `[WARN] Неверный выбор, попробуйте снова.` and re-prompt
+- `KeyboardInterrupt` / `EOFError` at the menu prompt: print `До свидания!` and exit cleanly
+- On application start (before the menu loop) the system executes `save_unsaved_memories` use case: for every agent with unremembered prompts it extracts facts into global/task memory (technical token counters).
 
 ### 4.3 Chat List Display (Select Chat Option)
 
-#### 4.3.1 Display Format
+#### 4.3.1 Display Format (`print_chat_list()`)
 
 ```
 --- ВАШИ ЧАТЫ ---
 {index}. {chat_name}
-   Сообщений: {count} | Последнее: {timestamp}
-   Превью: {preview_text}
-   ID: {full_id}
+   Сообщений: {count} | Последнее: {YYYY-MM-DD HH:MM}
+   Превью: {preview_text}|(нет сообщений)
+   ID: {agent_id}
 ----------------------------------------
-
-Выберите чат (1-{n}):
 ```
 
-**Note**: `{full_id}` displays the complete UUID without truncation or ellipsis.
+- `{index}` — position in the sorted list (1-based), not the DB ID
+- Timestamp format `%Y-%m-%d %H:%M`; the `Последнее:` value is empty when `last_message_timestamp` is None
+- Chats are ordered by last message time, newest first (chats without messages last)
+- `{preview_text}` — stored `last_message_preview` or `(нет сообщений)` when absent
+- Selection prompt: `Выберите чат (1-{n}):`; out-of-range number → `Введите число от 1 до {n}`, non-numeric → `Введите корректное число`, both re-prompt
 
 #### 4.3.2 Preview Logic
 
-| Condition                   | Preview Text                           |
-| --------------------------- | -------------------------------------- |
-| No messages array           | `(нет сообщений)`                      |
-| Only system message         | `(нет сообщений)`                      |
-| Has user/assistant messages | First 50 chars of last message content |
-| Message > 50 chars          | Truncate with `...`                    |
+| Condition                        | Preview Text                              |
+| -------------------------------- | ----------------------------------------- |
+| No visible messages              | `(нет сообщений)`                         |
+| Only system message              | `(нет сообщений)`                         |
+| Has user/assistant messages      | First 50 chars of last visible message    |
+| Message > 50 chars               | Truncated to 50 chars + `...`             |
+
+Visible messages exclude role="system", role="tool" and assistant messages carrying `tool_calls`. The preview is computed by the domain (`Agent.get_last_message_preview`) and persisted on each save; the CLI renders it verbatim.
 
 #### 4.3.3 Empty State
 
-If no chats exist:
+`print_chat_list()` prints `Нет активных чатов.`; then `select_chat()` prints `Нет доступных чатов. Создайте новый.` and control returns to the Main Menu.
 
-```
-Нет доступных чатов. Создайте новый.
+#### 4.3.4 After Selection
 
---- МЕНЮ ---
-```
+1. Agent is loaded via `select_chat.get_agent(agent_id)`; becomes `current_agent`
+2. Memory is refreshed via `refresh_agent_memory` use case
+3. Displays `[OK] Выбран чат: {name}`
+4. Enters the chat loop immediately; after the loop ends (e.g. `/menu`), control returns to the Main Menu
 
 ### 4.4 Chat Creation Workflow
+
+#### 4.4.0 Step 0: Configure Prompt
+
+```
+--- СОЗДАНИЕ НОВОГО ЧАТА ---
+Хотите настроить чат? (y/n, по умолчанию n):
+```
+
+- Accepted affirmative answers: `y`, `да`, `д`; negative: `n`, `нет`, `н`; empty → `n`; anything else → re-prompt with `Введите 'y' (да) или 'n' (нет)`
+- **Quick path (n)**: prints `Используются настройки по умолчанию.`; name is auto-generated, system prompt skipped, default settings (`get_default_agent_settings`: model = Alice AI LLM Flash (`aliceai-llm-flash/latest`), temperature/top_p/top_k disabled, reasoning_effort "none", context window 200k), strategy = DefaultStrategy, no task profile — steps 1–10 are skipped entirely
+- **Manual path (y)**: steps 1–10 below
 
 #### 4.4.1 Step 1: Name Input
 
 ```
---- СОЗДАНИЕ НОВОГО ЧАТА ---
-Введите название чата (по умолчанию 'Чат {N}'):
+Введите название чата (по умолчанию 'Чат N'):
 ```
 
-- Default naming: `Чат 1`, `Чат 2`, etc. (incremental counter)
-- Empty input: Use default name
-- Max length: 100 characters (truncate if exceeded)
+- Empty input: default name `Чат {N}`, where N = (number of existing chats) + 1
+- The CLI performs no length validation/truncation; the DB column limit is 255 characters (`String(255)`)
 
 #### 4.4.2 Step 2: System Prompt
 
@@ -282,7 +164,7 @@ If no chats exist:
 ```
 
 - Empty input: Skip, no system message added
-- Non-empty: Add to messages array as `{"role": "system", "content": "{input}"}`
+- Non-empty: stored as message `{"role": "system", "content": "{input}"}`
 - Multi-line: Not supported (single line only)
 
 #### 4.4.3 Step 3: Model Selection
@@ -294,12 +176,13 @@ If no chats exist:
   1. GPT OSS 120B (gpt-oss-120b/latest)
   2. Qwen3.6-35B (qwen3.6-35b-a3b/latest)
   3. Alice AI LLM Flash (aliceai-llm-flash/latest)
+  Enter — модель по умолчанию
 
 Ваш выбор (1-3):
 ```
 
-- Invalid input: Re-prompt with `[ERROR] Неверный выбор модели.`
-- Default: No default, must select
+- Invalid input: Re-prompt with `Неверный выбор, попробуйте снова.`
+- Empty input: default model `aliceai-llm-flash/latest`
 
 #### 4.4.4 Step 4: Temperature
 
@@ -309,8 +192,8 @@ If no chats exist:
 
 - Valid range: 0.0 to 2.0 (inclusive)
 - Empty input: Set to `None` (disabled)
-- Invalid number: Set to `None` with warning `[WARN] Некорректное значение. Температура отключена.`
-- Out of range: Set to `None` with warning `[WARN] Значение вне диапазона. Температура отключена.`
+- Invalid number: Set to `None` with warning `Некорректное число. Используется значение по умолчанию (отключено).`
+- Out of range: Set to `None` with warning `Температура должна быть от 0.0 до 2.0. Используется значение по умолчанию (отключено).`
 
 #### 4.4.5 Step 5: Top P
 
@@ -319,9 +202,7 @@ Top P (0.0 - 1.0, Enter для отключения):
 ```
 
 - Valid range: 0.0 to 1.0 (inclusive)
-- Empty input: Set to `None` (disabled)
-- Invalid number: Set to `None` with warning
-- Out of range: Set to `None` with warning
+- Empty input / invalid number / out of range: `None` (disabled), warnings analogous to Temperature (`Top P должен быть от 0.0 до 1.0. ...`)
 
 #### 4.4.6 Step 6: Top K
 
@@ -329,9 +210,8 @@ Top P (0.0 - 1.0, Enter для отключения):
 Top K (0 для отключения, по умолчанию 0):
 ```
 
-- Valid: Non-negative integer
-- Empty input: Default to 0 (disabled)
-- Invalid: Default to 0 with warning
+- Valid: integer >= 0, re-prompt loop on negative (`Top K должен быть >= 0`) or non-integer (`Введите корректное число`)
+- Value 0 is stored as `None` (disabled); values > 0 stored as int
 
 #### 4.4.7 Step 7: Reasoning Effort
 
@@ -345,19 +225,21 @@ Reasoning Effort:
 Ваш выбор (1-4, по умолчанию 1):
 ```
 
-- Default: 1 (none)
-- Invalid input: Default to 1
+- Default: 1 (none); empty input → 1
+- Invalid/out-of-range: re-prompt (`Введите корректное число` / `Выбор должен быть от 1 до 4`)
 
 #### 4.4.8 Step 8: Context Window Size
 
 ```
+Размер контекстного окна (в токенах):
+  По умолчанию: 200000 токенов (200k)
+  Примеры: 4000, 8000, 32000, 128000, 200000
 Введите размер контекстного окна (Enter для 200k):
 ```
 
-- Valid: Positive integer
 - Empty input: Default to 200000 tokens
-- Invalid number: Default to 200000 with warning `[WARN] Некорректное значение. Используется 200k.`
-- Out of range (<=0): Default to 200000 with warning
+- Invalid number: Default to 200000 with warning `Некорректное число. Используется 200k.`
+- Non-positive: Default to 200000 with warning `Размер должен быть положительным числом. Используется 200k.`
 
 #### 4.4.9 Step 9: Context Strategy Selection
 
@@ -371,105 +253,103 @@ Reasoning Effort:
 Выберите стратегию (1-4, по умолчанию 1):
 ```
 
-- Default: 1 (DefaultStrategy)
+- Default: 1 (DefaultStrategy); invalid choice → re-prompt (`Неверный выбор, попробуйте снова.`)
 - If strategy 2 or 3 selected, prompt for parameters:
-  - `non_compressible_count` (default 2)
-  - `buffer_size` (default 3)
-- If strategy 4 selected, prompt for parameters:
-  - `window_size` (default 10)
-- Invalid input: Default to 1
+  - `Количество несжимаемых сообщений (по умолчанию 2):`
+  - `Размер буфера для суммаризации (по умолчанию 3):`
+- If strategy 4 selected, prompt for parameter:
+  - `Размер скользящего окна N (по умолчанию 10):`
+- Non-integer parameter: `Ошибка: {e}. Попробуйте снова.` → strategy selection repeats
 
-#### 4.4.9 Step 9: Task Profile Selection (Optional)
-
-After context strategy selection, prompt for task profile attachment:
+#### 4.4.10 Step 10: Task Profile Selection (Optional)
 
 ```
 --- ПРИВЯЗКА ПРОФИЛЯ ЗАДАЧИ ---
 Доступные профили задач:
-  1. {profile_name_1} ({description_preview_1})
-  2. {profile_name_2} ({description_preview_2})
+  1. {profile_name_1}
+  2. {profile_name_2}
   ...
   0. Не привязывать профиль
 
 Выберите профиль задачи (0-{n}, по умолчанию 0):
 ```
 
-- `description_preview`: First 50 characters of description, truncated with `...` if longer
-- If no profiles exist: Display `(нет доступных профилей)` and skip to completion
+- Profiles are listed sorted by profile ID ascending (only names are shown)
+- If no profiles exist: Display `(нет доступных профилей)` and continue without attachment
 - Default: 0 (no profile attached)
-- Invalid input: Default to 0
+- Invalid/out-of-range input: `[WARN] Некорректный выбор. Профиль не привязан.` → continue without attachment
 - **Note**: Once set, `task_profile_id` cannot be changed for this chat
 
-#### 4.4.10 Completion Message
+#### 4.4.11 Completion Message
 
 ```
 [OK] Чат '{name}' создан!
-  ID: {full_id}
-  Стратегия: {strategy_type}
-  Профиль задачи: {profile_name}|(не привязан)
 ```
 
-**Note**: `{full_id}` displays the complete UUID without truncation or ellipsis.
+Then the chat loop starts immediately (history is displayed in its header). The numeric agent ID is available later via `/info`.
 
 ### 4.5 Chat Interaction Loop
 
-#### 4.5.1 Display Header
+#### 4.5.1 Display Header (`chat_loop()` entry)
 
 ```
---- ЧАТ: {chat_name} ---
-Введите сообщение и нажмите Enter для отправки.
-Команды:
-  /menu - вернуться в меню
-  /stop - остановить генерацию
-  /settings - показать настройки и изменить их
-  /summary - показать саммари диалога
-  /info - показать информацию о чате (счетчики токенов)
-  /branch - создать ветку текущего чата
-  /help - показать список команд
+--- ЧАТ: {chat_name} [Фаза: {PLAN|EXECUTE|VALIDATE|REPORT}] ---
+[USER]: {message}
+[AGENT]: {message}
+...
+----------------------------------------
+
+--- Подсказка ---
+Введите сообщение /help и нажмите Enter для просмотра списка команд
 ----------------------------------------
 ```
 
+- Full visible history is replayed on entering the loop (system and technical tool-calling messages hidden; roles mapped to `[USER]`/`[AGENT]`)
+- Input prompt for each iteration: `\n[USER]: `
+
 #### 4.5.2 Message Flow
 
-1. Display prompt
-2. Wait for user input
-3. If empty: Re-prompt
-4. If command: Execute command handler
-5. If text:
-   - Send to backend agent
-   - Display `[AGENT]: {response}`
-   - Save to history
-6. Repeat
+1. Display prompt, wait for user input
+2. If empty: re-prompt (no message sent)
+3. If command (see 4.5.3): execute command handler
+4. If plain text:
+   - Display `[AGENT] печатает...` (cleared once the response arrives)
+   - Send to backend agent via `send_message` use case
+   - Display `[AGENT]: {response.content}`
+   - If token usage reported, display two lines:
+     ```
+       [Токены: prompt: {p}, completion: {c}]
+       [Заполненность контекста: {prompt_tokens}/{context_window_size} ({percent:.1f}%)]
+     ```
+   - If the response contains reasoning, ask `Показать рассуждения модели? (y/n):`; on `y` print indented `[Reasoning]:` block
+   - Save to history (automatic per-message save), repeat
+5. On `ContextWindowExceededError`: print `[ERROR] {message}` plus `Необходимо очистить историю сообщений или создать новый чат.` and exit the chat loop back to the menu
 
 #### 4.5.3 Commands Specification
 
+All commands are matched case-insensitively. Unknown slash-commands are treated as regular messages and sent to the agent.
+
+##### Phase commands: `/plan`, `/execute`, `/validate`, `/report`
+
+- **Action**: Transition the agent workflow phase via `Agent.handle_phase_command`
+- **Rules**: Forward transition allowed only to the next phase in order PLAN → EXECUTE → VALIDATE → REPORT; any backward transition is allowed; forward skips are rejected
+- **Output**: `[INFO] {message}` where message is either `Фаза изменена: {OLD} -> {NEW}` or `Нельзя перескочить этап: переход из {OLD} сразу в {NEW} запрещен`, followed by updated header line `--- ЧАТ: {name} [Фаза: {PHASE}] ---`
+
 ##### `/menu`
 
-- **Action**: Save current state, clear `current_chat_id`, return to Main Menu
-- **Output**: None (direct transition)
-- **Side Effects**: None
+- **Action**: Save agent memory via `save_agent_memory` use case (LLM fact extraction into global and task-profile memory), then return to Main Menu
+- **Output**: `Возврат в меню...`
+- **Side Effects**: Active chat reference is preserved (option 5 can return to it)
 
 ##### `/stop`
 
-- **Action**: Interrupt current LLM generation (if active)
-- **Output**: `Генерация остановлена.` if generation was active, or `Генерация не активна.` if idle
-- **Side Effects**: Partial response may be saved
-
-##### `/settings`
-
-- **Action**: Execute `print_settings()` then prompt for change confirmation
-- **Flow**:
-  1. Display current settings using `print_settings()`
-  2. Prompt: `Изменить настройки? (y/n):`
-  3. If 'y': Execute `change_settings()` which prompts for all settings (same as creation workflow)
-  4. If 'n' or other: Return to chat loop without changes
-- **Output**: Current settings display, optionally followed by change prompts
-- **Side Effects**: Settings updated only if user confirms with 'y'
+- **Action**: In the current synchronous implementation generation is never active while input is read
+- **Output**: `[INFO] Генерация не активна.` and the chat loop exits (returns to menu)
 
 ##### `/help`
 
-- **Action**: Display available commands
-- **Output**:
+- **Action**: Display available commands (`HELP_COMMANDS` constant)
+- **Output** (exact order of the `HELP_COMMANDS` list):
 
 ```
 --- ДОСТУПНЫЕ КОМАНДЫ ---
@@ -477,86 +357,253 @@ After context strategy selection, prompt for task profile attachment:
   /stop - остановить текущую генерацию
   /settings - показать текущие настройки и изменить их
   /summary - показать саммари диалога
-  /info - показать информацию о чате (счетчики токенов)
+  /info - показать информацию о чате (счетчики токенов, профиль задачи)
   /branch - создать ветку текущего чата (копируются настройки, история и саммари)
+  /plan - перейти в фазу планирования
+  /execute - перейти в фазу исполнения
+  /validate - перейти в фазу тестирования
+  /report - перейти в фазу отчета
+  /mcp - показать подключённые к чату MCP и подключить новые
   /help - показать этот список команд
 ```
 
 ##### `/summary`
 
-- **Action**: Display current conversation summary from active strategy
+- **Action**: Display current conversation summary from active strategy (`show_summary` use case)
 - **Output**:
-  - If summary exists: Display the summary text
-  - If no summary: Display `[INFO] Суммаризация еще не выполнялась.`
+  - If summary exists: header `--- САММАРИ ДИАЛОГА ---`, the summary text and a 40-dash separator
+  - If no summary: `[INFO] Саммари пока недоступно.`
 - **Side Effects**: None
 
 ##### `/info`
 
-- **Action**: Display detailed chat statistics including token counts
-- **Output**:
+- **Action**: Display detailed chat statistics (`show_chat_info` use case → `ChatInfo`)
+- **Output** (two-space indentation, fields printed in this exact order):
 
 ```
 --- ИНФОРМАЦИЯ О ЧАТЕ ---
-Название: {chat_name}
-ID: {full_id}
-Создан: {timestamp}
-Сообщений: {count}
-Стратегия: {strategy_type}
-{Strategy parameters: non_compressible_count and buffer_size if applicable}
-Токенов использовано:
-  Prompt: {total_prompt_tokens}
-  Completion: {total_completion_tokens}
-  Всего: {total_tokens}
+  Название: {name}
+  ID: {agent_id}
+  Стратегия: {strategy_type}
+  Профиль задачи: {profile_name}|(не привязан)
+  Текущая фаза: {phase}|(не установлена)
+  Сообщений: {message_count}
+  Prompt токены: {total_prompt_tokens}
+  Completion токены: {total_completion_tokens}
+  Есть саммари: Да                      # only if has_summary
+  Несжимаемые сообщения: {non_compressible_count}   # only if not None
+  Размер буфера: {buffer_size}          # only if not None
 ----------------------------------------
 ```
 
 - **Side Effects**: None
 
+##### `/settings`
+
+- **Action**: Execute `print_settings()`, then prompt `Изменить настройки? (y/n):`
+- **Flow**:
+  1. Display current settings (format in 4.6.1)
+  2. Prompt: `Изменить настройки? (y/n):`
+  3. If 'y': Execute `change_settings()` which re-prompts all `AgentSettings` values (same prompts as creation workflow steps 3–8) and applies them via `change_settings` use case
+  4. If 'n' or other: Return to chat loop without changes
+- **Output**: `Настройки для '{chat_name}'` header, then `[OK] Настройки обновлены!` and refreshed settings view
+- **Side Effects**: Settings updated only if user confirms with 'y'; strategy, task profile and phase are never changed here
+
 ##### `/branch`
 
-- **Action**: Create a new chat branch copying current chat history and settings
+- **Action**: Create a new chat branch copying current chat state (`create_branch` use case → `Agent.branch`)
 - **Flow**:
-  1. Prompt for branch name (default: `{current_name} (branch)`)
-  2. Copy all messages, settings, and strategy from current chat
-  3. Create new chat with copied data
-  4. Ask if user wants to continue in new branch: `Продолжить в новой ветке? (y/n):`
-  5. If 'y': Switch to new branch chat
-  6. If 'n': Stay in current chat
-- **Output**:
-  - Success: `[OK] Ветка '{name}' создана!` with ID and message count
-  - Continue prompt as described above
-- **Side Effects**: New chat created in storage, optionally becomes active chat
+  1. Display header `--- СОЗДАНИЕ ВЕТКИ ОТ '{current_name}' ---`
+  2. Prompt for branch name: `Введите название ветки (Enter для автогенерации):`; empty → auto-name `{current_name} (branch {YYYY-MM-DD HH:MM:SS})`
+  3. Copy all messages, settings, token counters and strategy (with its accumulated state); the branch receives a new `conversation_id` (UUID) and no ID until saved
+  4. `current_agent` is switched to the branch immediately after creation
+  5. Ask: `Продолжить в новой ветке? (y/n):`
+  6. If 'y': enter the chat loop for the branch
+  7. Otherwise: print `Ветка создана. Вы можете вернуться к ней через меню.` and stay in the current chat loop (note: `current_agent` already points to the branch; the original chat is reachable via "Выбрать чат")
+- **Error handling** (alternative flow of UC-011): if `create_branch` raises any exception, print `[ERROR] Ошибка при создании ветки: {e}` and return to the chat prompt
+- **Side Effects**: New chat created in storage; original chat unchanged
 
-#### 4.5.4 Error States
+##### `/mcp`
 
-| Error             | Display                                                        | Recovery         |
-| ----------------- | -------------------------------------------------------------- | ---------------- |
-| Backend exception | `[ERROR] Ошибка: {message}`                                    | Return to prompt |
-| Network timeout   | `[ERROR] Таймаут соединения`                                   | Return to prompt |
-| Invalid command   | `[WARN] Неизвестная команда. Введите /help для списка команд.` | Return to prompt |
+- **Action**: Manage MCP servers connected to the current chat (`mcp_menu`)
+- **Flow**:
+  1. Display connected servers:
+     ```
+     --- MCP-СЕРВЕРЫ ЧАТА: {chat_name} ---
+       [OK] {title} ({name}) — инструменты: {tool1, tool2}
+       [OFFLINE] {title} ({name}) — подключение не установлено
+     ```
+     If none: `К этому чату ещё не подключено ни одного MCP-сервера.`
+  2. Prompt: `Подключить новые MCP? (y/n):` — anything other than `y` ends the flow
+  3. List registry servers not yet connected to this chat:
+     ```
+     --- ДОСТУПНЫЕ ДЛЯ ПОДКЛЮЧЕНИЯ MCP ---
+       {idx}. {title} ({name}) — {description}
+     ```
+     If all already connected: `[INFO] Все доступные MCP-серверы уже подключены к этому чату.`
+  4. Prompt: `Введите номер сервера для подключения (или название, 0 — отмена):`
+     - Empty input or `0`: `[INFO] Подключение отменено.` → end of flow
+     - Numeric out of range: `[ERROR] Неверный номер сервера.` → end of flow
+     - Non-numeric text is treated as a server name and passed to the use case
+  5. On selection: `[INFO] Подключаю MCP '{name}'...`, then result `[OK] {message}` or `[ERROR] {message}` from `connect_mcp` use case
+- **Side Effects**: Successful connection persists the server list on the agent; tools become available to the LLM in subsequent messages (tool-calling loop inside `continue_dialog`)
+
+#### 4.5.4 Error Handling
+
+Error handling in the chat loop is not centralized in a separate matrix: every error case is specified as an alternative flow of the corresponding use case (§5):
+
+- **Context window exceeded** — UC-004 A3 (`[ERROR] {message}` + hint, exit to Main Menu)
+- **Backend exception during message send** — UC-004 A4 (`[ERROR] Ошибка: {message}`, exit to Main Menu)
+- **KeyboardInterrupt / EOFError** — UC-003 A2 (menu prompt) and UC-004 A5 / UC-005 A3 (chat loop: `Прервано пользователем.`)
+- **Errors while applying settings** — UC-005 A4
+- **Unknown slash-command** — not an error: treated as a regular message (UC-004 A2)
 
 ### 4.6 Settings Management
 
-#### 4.6.1 Print Settings (`print_settings`)
+#### 4.6.1 Print Settings (`_print_current_settings`)
 
 ```
 --- ТЕКУЩИЕ НАСТРОЙКИ ---
-Модель: {model_name}
-Температура: {value}|отключена
-Top P: {value}|отключен
-Top K: {value}|отключен
-Reasoning Effort: {effort}
+  Модель: {model_id}
+  Температура: {value}|отключена
+  Top P: {value}|отключен
+  Top K: {value}|отключено
+  Reasoning Effort: {effort}
+  Размер контекстного окна: {context_window_size} токенов
 ----------------------------------------
 ```
 
+Model is shown by its identifier (not display name). Missing `context_window_size` is displayed as 200000.
+
 #### 4.6.2 Change Settings (`change_settings`)
 
-Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
+Same prompts as creation workflow (Section 4.4.3–4.4.8) applied sequentially; each answer fully replaces the previous value (empty input disables the parameter — there is no "keep current value" semantics). Strategy, task profile and phase cannot be changed for existing chats. Confirmation: `[OK] Настройки обновлены!` followed by the refreshed settings block.
 
-- Shows current value as hint
-- Only changed settings are updated (model, temperature, top_p, top_k, reasoning_effort)
-- Strategy and context window size cannot be changed for existing chats
-- Confirmation: `[OK] Настройки обновлены!`
+### 4.7 Task Profiles Menu
+
+Entered from Main Menu option 3 (`task_profiles_menu`).
+
+#### 4.7.1 Task Profiles Menu (`task_profiles_menu`)
+
+```
+--- ПРОФИЛИ ЗАДАЧ ---
+1. Создать новый профиль
+2. Просмотреть список профилей
+3. Назад в главное меню
+----------------------------------------
+```
+
+Prompt: `Ваш выбор (1-3):`. Invalid choice: `[WARN] Неверный выбор, попробуйте снова.` Option 3 returns to the Main Menu.
+
+#### 4.7.1.1 Profiles List (`_view_task_profiles_list`)
+
+Empty list: prints `Нет доступных профилей задач.` and a separator, then returns to the Task Profiles menu.
+
+```
+--- СПИСОК ПРОФИЛЕЙ ЗАДАЧ ---
+{i}. {name}
+   ID: {profile_id}
+   Дата создания: {YYYY-MM-DD HH:MM}
+   Фактов в памяти: {facts_count}
+   Инвариантов: {invariants_count}
+   Описание: {description truncated to 50 chars + "..." if longer, else full text}
+
+----------------------------------------
+Действия:
+1. Просмотреть память профиля
+2. Управление инвариантами
+3. Удалить профиль
+4. Назад к списку
+```
+
+Prompt: `Выберите действие (1-4):`. Invalid action: `[WARN] Неверный выбор, попробуйте снова.` Actions 1–3 first require profile selection by index (`Выберите профиль (1-{n}):` / `Выберите профиль для удаления (1-{n}):`; out-of-range → `Введите число от 1 до {n}`, non-numeric → `Введите корректное число`). After an action completes, control returns to the Task Profiles menu.
+
+#### 4.7.2 Create Profile (`_create_task_profile`)
+
+```
+--- СОЗДАНИЕ НОВОГО ПРОФИЛЯ ЗАДАЧИ ---
+Введите название профиля:
+Введите описание задачи:
+Введите предпочтения/инструкции (Enter для пропуска):
+
+--- ИНВАРИАНТЫ (строгие правила/ограничения) ---
+Примеры: 'Использовать только Kotlin', 'Не использовать Java',
+         'Стек: PostgreSQL + Redis', 'Пользователь — веган'
+Введите инварианты по одному. Пустая строка для завершения:
+  >
+```
+
+- Name and description are required: empty input re-prompts in place with `[ERROR] Название профиля не может быть пустым.` / `[ERROR] Описание задачи не может быть пустым.`; the CLI performs no length validation/truncation
+- Preferences: single line, optional (empty allowed)
+- Invariants: entered one per line until an empty line terminates input
+- Success output:
+  ```
+  [OK] Профиль задачи '{name}' создан!
+    ID: {profile_id}
+    Дата создания: {YYYY-MM-DD HH:MM:SS}
+    Инвариантов: {count}      # printed only when at least one invariant was entered
+  ```
+
+#### 4.7.3 View Profile Memory (`_view_profile_memory`)
+
+Profile is selected by index from the listed profiles (`Выберите профиль (1-{n}):`). Output:
+
+```
+--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---
+  ID: {full_uuid}
+  Название: {name}
+  Описание: {description}
+  Дата создания: {YYYY-MM-DD HH:MM:SS}
+  Предпочтения: {preferences}          # строка отсутствует, если пусто
+
+--- ПАМЯТЬ ПРОФИЛЯ ---
+  1. {fact_1} ... |(память пуста)
+
+--- ИНВАРИАНТЫ ---
+  1. {invariant_1} ... |(инварианты не заданы)
+----------------------------------------
+```
+
+#### 4.7.4 Manage Invariants (`_manage_invariants`)
+
+After profile selection, shows numbered invariants (`--- ИНВАРИАНТЫ ПРОФИЛЯ: {name} ---`, `(инварианты не заданы)` if empty) and actions:
+
+```
+Действия:
+1. Добавить инвариант
+2. Удалить инвариант
+3. Назад
+```
+
+- Add: `Введите текст инварианта:`; empty → `[WARN] Инвариант не может быть пустым.`; success → `[OK] Инвариант добавлен!`; repository `ValueError` → `[ERROR] {e}`
+- Remove: `Выберите номер инварианта для удаления (1-{n}):`; unknown number → `[WARN] Некорректный номер.`; failure → `[ERROR] Не удалось удалить инвариант.`; success → `[OK] Инвариант удалён!`
+- The list is redisplayed after each action until `3. Назад`
+
+#### 4.7.5 Delete Profile (`_delete_profile`)
+
+1. Select profile by index
+2. If the profile is linked to any agents:
+   ```
+   [WARN] Невозможно удалить профиль '{name}': он привязан к одному или нескольким агентам.
+   Сначала удалите или пересоздайте агентов, использующих этот профиль.
+   ```
+   and the operation aborts (deletion is blocked, not confirmable)
+3. Otherwise confirmation: `Вы уверены, что хотите удалить профиль '{name}'? (y/n):`
+   - Not `y`: `[INFO] Удаление отменено.`
+   - `y`: `[OK] Профиль '{name}' успешно удалён.` or `[ERROR] Не удалось удалить профиль '{name}'.`
+
+### 4.8 Global Memory View
+
+Main Menu option 4 (`print_global_memory`), available without an active chat:
+
+```
+--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---
+  1. {fact_1}
+  2. {fact_2}
+----------------------------------------
+```
+
+Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation prompt).
 
 ---
 
@@ -573,42 +620,86 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 #### 5.1.2 Main Success Scenario
 
 1. User selects option 1 (New Chat)
-2. System displays name prompt
-3. User enters "My Test Chat"
-4. System displays system prompt input
-5. User enters "You are a helpful assistant"
-6. System displays model selection
-7. User selects model 1
-8. System prompts for temperature
-9. User enters "0.7"
-10. System prompts for Top P
-11. User enters "0.9"
-12. System prompts for Top K
-13. User enters "40"
-14. System prompts for reasoning effort
-15. User selects "2" (low)
-16. System creates chat with all settings
-17. System displays success message with ID
-18. System enters chat loop
-19. Use case ends
+2. System displays `--- СОЗДАНИЕ НОВОГО ЧАТА ---` and asks `Хотите настроить чат? (y/n, по умолчанию n):`
+3. User enters "y" (manual configuration path)
+4. System displays name prompt
+5. User enters "My Test Chat"
+6. System displays system prompt input
+7. User enters "You are a helpful assistant"
+8. System displays model selection
+9. User selects model 1
+10. System prompts for temperature
+11. User enters "0.7"
+12. System prompts for Top P
+13. User enters "0.9"
+14. System prompts for Top K
+15. User enters "40"
+16. System prompts for reasoning effort
+17. User selects "2" (low)
+18. System prompts for context window size; user enters "128000"
+19. System prompts for context strategy; user selects "1" (DefaultStrategy)
+20. System prompts for task profile; user selects "0" (no attachment)
+21. System creates chat with all settings
+22. System displays `[OK] Чат '{name}' создан!`
+23. System enters chat loop
+24. Use case ends
 
 #### 5.1.3 Alternative Flows
 
-- **A1: Default Name**
-  - Step 3: User presses Enter
-  - System uses default "Чат N"
+- **A1: Quick Creation With Defaults**
+  - Step 3: User enters "n" or presses Enter (default is "n")
+  - System prints `Используются настройки по умолчанию.` and skips steps 4–20 entirely
+  - Chat is created with auto-generated name and `get_default_agent_settings()` (model = Alice AI LLM Flash `aliceai-llm-flash/latest`, temperature/top_p/top_k disabled, reasoning_effort "none", context window 200000), DefaultStrategy, no task profile
+  - Continue from step 21
 
-- **A2: Skip System Prompt**
+- **A2: Invalid Answer To Configure Prompt**
+  - Step 3: User enters text other than `y`/`да`/`д`/`n`/`нет`/`н`
+  - System displays `Введите 'y' (да) или 'n' (нет)` and re-prompts the same question
+
+- **A3: Default Name**
   - Step 5: User presses Enter
+  - System generates default name `Чат {N}`, where N = (number of existing chats) + 1
+
+- **A4: Skip System Prompt**
+  - Step 7: User presses Enter
   - No system message added to history
 
-- **A3: Disable Temperature**
-  - Step 9: User presses Enter
-  - Temperature set to None
+- **A5: Invalid Model Selection**
+  - Step 9: User enters "5"
+  - System displays `Неверный выбор, попробуйте снова.` and re-prompts step 9
+  - Empty input at step 9 selects the default model (`aliceai-llm-flash/latest`)
 
-- **A4: Invalid Model Selection**
-  - Step 7: User enters "5"
-  - System displays error, re-prompts step 7
+- **A6: Disable Temperature / Top P**
+  - Step 11/13: User presses Enter
+  - Parameter is set to `None` (disabled)
+
+- **A7: Invalid Or Out-Of-Range Temperature**
+  - Step 11: User enters "abc" → warning `Некорректное число. Используется значение по умолчанию (отключено).`, temperature = None, creation continues
+  - Step 11: User enters value < 0 or > 2.0 → warning `Температура должна быть от 0.0 до 2.0. Используется значение по умолчанию (отключено).`, temperature = None, creation continues
+  - Top P (step 13) behaves analogously: non-numeric → `Некорректное число...`; out of 0.0–1.0 → `Top P должен быть от 0.0 до 1.0. Используется значение по умолчанию (отключено).`
+
+- **A8: Invalid Top K**
+  - Step 15: Negative integer → warning `Top K должен быть >= 0`, re-prompt step 15
+  - Step 15: Non-integer → warning `Введите корректное число`, re-prompt step 15
+  - Value 0 is stored as `None` (disabled)
+
+- **A9: Invalid Reasoning Effort**
+  - Step 17: Non-integer → `Введите корректное число`; out of range 1–4 → `Выбор должен быть от 1 до 4`; both re-prompt step 17
+  - Empty input selects the default (1 — none)
+
+- **A10: Invalid Context Window Size**
+  - Step 18: Non-integer → warning `Некорректное число. Используется 200k.`, value = 200000, creation continues
+  - Step 18: Zero or negative → warning `Размер должен быть положительным числом. Используется 200k.`, value = 200000, creation continues
+  - Empty input → 200000 without any warning
+
+- **A11: Invalid Strategy Choice**
+  - Step 19: Input outside "1"–"4" → `Неверный выбор, попробуйте снова.`, re-prompt step 19
+
+- **A12: Invalid Strategy Parameters**
+  - Step 19: After choosing strategy 2/3/4, a non-integer value for its parameters (non-compressible count, buffer size, window size) → `Ошибка: {e}. Попробуйте снова.`; the whole strategy selection (step 19) repeats
+
+- **A13: Invalid Task Profile Choice**
+  - Step 20: Non-numeric or out-of-range (not 0…n) input → `[WARN] Некорректный выбор. Профиль не привязан.`, creation continues without profile attachment (no re-prompt)
 
 #### 5.1.4 Postconditions
 
@@ -640,16 +731,17 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 - **A1: No Chats Exist**
   - Step 2: Backend returns empty list
-  - System displays "Нет доступных чатов. Создайте новый."
+  - `print_chat_list()` prints `Нет активных чатов.`; then the system displays `Нет доступных чатов. Создайте новый.`
   - System returns to Main Menu
 
-- **A2: Invalid Selection**
+- **A2: Invalid Selection (Out Of Range)**
   - Step 4: User enters "0" or number > count
-  - System displays error, re-prompts step 4
+  - System displays `Введите число от 1 до {n}` and re-prompts step 4
 
-- **A3: Cancel Selection**
-  - Step 4: User enters "q" or Ctrl+C
-  - System returns to Main Menu
+- **A3: Non-Numeric Selection**
+  - Step 4: User enters non-integer text (e.g. "abc")
+  - System displays `Введите корректное число` and re-prompts step 4
+  - Note: selection input is parsed with `int()`, so values such as "2.5" also fall into this flow
 
 #### 5.2.4 Postconditions
 
@@ -677,10 +769,14 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 #### 5.3.3 Alternative Flows
 
 - **A1: No Active Chat**
-  - Step 1: Option 3 shows "(нет активного чата)"
-  - Step 2: User selects option 3 anyway
-  - System displays warning "[WARN] Нет активного чата."
+  - Step 1: Option 5 shows `Вернуться в чат (нет активного чата)`
+  - Step 2: User selects option 5 anyway
+  - System displays `[WARN] Нет активного чата. Выберите или создайте чат.`
   - System remains in Main Menu
+
+- **A2: KeyboardInterrupt / EOFError At Menu Prompt**
+  - Any step: User presses Ctrl+C or the input stream ends at `Ваш выбор (1-6):`
+  - System prints `До свидания!` and terminates the application cleanly (same as option 6)
 
 #### 5.3.4 Postconditions
 
@@ -701,13 +797,15 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 1. System displays chat header and prompt
 2. User types "Hello, how are you?"
 3. User presses Enter
-4. System sends message to backend agent
-5. Backend calls LLM provider
-6. LLM generates response
-7. System displays "[AGENT]: {response}"
-8. System saves both messages to history
-9. System re-displays prompt
-10. Use case ends
+4. System prints `[AGENT] печатает...` (cleared once the response arrives)
+5. System sends message to backend agent (`send_message` use case)
+6. Backend calls LLM provider
+7. LLM generates response
+8. System displays "[AGENT]: {response}"
+9. System displays token lines if usage was reported: `  [Токены: prompt: {p}, completion: {c}]` and `  [Заполненность контекста: {prompt_tokens}/{context_window_size} ({percent:.1f}%)]` (the fill line is printed only when prompt_tokens is not None)
+10. System saves both messages to history
+11. System re-displays prompt
+12. Use case ends
 
 #### 5.4.3 Alternative Flows
 
@@ -715,14 +813,31 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
   - Step 2: User presses Enter without text
   - System re-displays prompt without sending
 
-- **A2: Backend Error**
-  - Step 6: Backend raises exception
-  - System displays "[ERROR] Ошибка: {message}"
-  - System re-displays prompt
+- **A2: Unknown Slash-Command**
+  - Step 2: User enters an unrecognized slash-command (e.g. "/xyz")
+  - It is not intercepted as a command; it is sent to the agent as a regular message (main flow continues from step 4)
 
-- **A3: Long Response**
-  - Step 7: Response exceeds terminal width
+- **A3: Context Window Exceeded**
+  - Step 6: Backend raises `ContextWindowExceededError`
+  - System clears the "печатает..." line, displays `[ERROR] {message}` followed by `Необходимо очистить историю сообщений или создать новый чат.`
+  - System exits the chat loop and returns to Main Menu (the chat remains active for option 5)
+
+- **A4: Any Other Backend Error**
+  - Step 6: Any other exception is raised while sending/processing
+  - System displays `[ERROR] Ошибка: {message}`
+  - System exits the chat loop and returns to Main Menu
+
+- **A5: KeyboardInterrupt During Exchange**
+  - Any step: User presses Ctrl+C at the input prompt or during processing
+  - System displays `Прервано пользователем.` and exits the chat loop back to Main Menu
+
+- **A6: Long Response**
+  - Step 8: Response exceeds terminal width
   - System wraps text appropriately
+
+- **A7: Reasoning In Response**
+  - After step 9: response carries reasoning content
+  - System asks `Показать рассуждения модели? (y/n):`; on `y` it prints the indented `[Reasoning]:` block, otherwise nothing extra
 
 #### 5.4.4 Postconditions
 
@@ -742,27 +857,32 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 1. User types "/settings"
 2. System executes `print_settings()`
-3. System displays current settings
-4. System executes `change_settings()`
-5. System prompts for each setting
-6. User changes temperature to "1.0"
-7. User presses Enter for other settings (keep unchanged)
-8. System updates settings in backend
-9. System displays "[OK] Настройки обновлены!"
+3. System displays current settings (`--- ТЕКУЩИЕ НАСТРОЙКИ ---` block)
+4. System prompts: `Изменить настройки? (y/n):`
+5. User enters "y"
+6. System executes `change_settings()`: displays header `--- НАСТРОЙКИ ДЛЯ '{chat_name}' ---` and re-prompts ALL agent settings (model, temperature, top_p, top_k, reasoning effort, context window size — the same prompts as chat creation steps; empty input disables a parameter, there is no "keep current value" semantics)
+7. User enters new values (e.g. temperature "1.0")
+8. System updates settings via `change_settings` use case
+9. System displays "[OK] Настройки обновлены!" followed by the refreshed `--- ТЕКУЩИЕ НАСТРОЙКИ ---` block
 10. System returns to chat prompt
 11. Use case ends
 
 #### 5.5.3 Alternative Flows
 
-- **A1: Cancel During Change**
-  - Step 6: User presses Ctrl+C
-  - System aborts changes
-  - System returns to chat prompt
+- **A1: Decline Changing**
+  - Step 5: User enters "n", presses Enter, or enters any text other than "y"
+  - No changes are made; system returns to the chat prompt
 
-- **A2: Invalid Input During Change**
-  - Step 6: User enters "abc"
-  - System displays warning, disables parameter
-  - Continues to next setting
+- **A2: Invalid Input During Re-Prompting**
+  - Step 6: Each individual setting validates exactly like during chat creation (see UC-001 A7–A10): out-of-range/non-numeric temperature and top_p disable the parameter with a warning; top_k, reasoning effort re-prompt on invalid input; context window falls back to 200k with a warning
+
+- **A3: KeyboardInterrupt / EOFError During Settings Flow**
+  - Any step: Ctrl+C or end of input propagates to the chat loop handler
+  - System displays `Прервано пользователем.` and exits the chat loop back to Main Menu
+
+- **A4: Backend Error While Applying Settings**
+  - Step 8: `change_settings` use case raises an exception
+  - System displays `[ERROR] Ошибка: {message}` and exits the chat loop back to Main Menu
 
 #### 5.5.4 Postconditions
 
@@ -780,46 +900,36 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 #### 5.6.2 Main Success Scenario
 
 1. User types "/menu"
-2. System saves chat state
-3. System clears active chat reference (optional)
-4. System displays Main Menu
+2. System displays `Возврат в меню...`
+3. System saves chat memory via `save_agent_memory` use case (LLM fact extraction into global and task-profile memory)
+4. System exits the chat loop and displays Main Menu
 5. Use case ends
 
 #### 5.6.3 Postconditions
 
 - Chat preserved in backend storage
 - User in Main Menu
-- Chat may remain as "active" for quick return
+- Chat remains the "active" chat for quick return (option 5)
 
 ---
 
-### UC-007: Stop Ongoing Generation
+### UC-007: Stop Command
 
 #### 5.7.1 Preconditions
 
 - User is in chat interaction loop
-- Agent is currently generating response
 
 #### 5.7.2 Main Success Scenario
 
-1. User observes "Thinking..." indicator
-2. User types "/stop"
-3. System interrupts backend generation
-4. System displays "Прервано пользователем."
-5. System returns to prompt
-6. Use case ends
+1. User types "/stop"
+2. System displays `[INFO] Генерация не активна.` (in the synchronous implementation generation is never active while input is being read)
+3. System exits the chat loop and returns to Main Menu
+4. Use case ends
 
-#### 5.7.3 Alternative Flows
+#### 5.7.3 Postconditions
 
-- **A1: No Active Generation**
-  - Step 2: User types "/stop" when idle
-  - System displays "[WARN] Генерация не активна."
-  - System returns to prompt
-
-#### 5.7.4 Postconditions
-
-- Partial response may be saved
-- User can send new message
+- Chat remains the active chat (option 5 can return to it)
+- User is in Main Menu
 
 ---
 
@@ -863,7 +973,7 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 - **A1: No Summary Yet**
   - Step 2: Strategy has no summary (summarization not triggered yet)
-  - System displays `[INFO] Суммаризация еще не выполнялась.`
+  - System displays `[INFO] Саммари пока недоступно.`
   - Continue to step 4
 
 #### 5.9.4 Postconditions
@@ -882,11 +992,11 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 #### 5.10.2 Main Success Scenario
 
 1. User types "/info"
-2. System calculates total token usage from message history
-3. System displays chat information header
-4. System displays token statistics (prompt, completion, total)
-5. System displays strategy type
-6. System returns to prompt
+2. System retrieves chat statistics via `show_chat_info` use case (`ChatInfo`)
+3. System displays header `--- ИНФОРМАЦИЯ О ЧАТЕ ---` with name, ID, strategy, task profile, phase, message count (§4.5.3 `/info`)
+4. System displays token counters (`Prompt токены`, `Completion токены`)
+5. System displays conditional lines: `Есть саммари: Да` (if summary exists), `Несжимаемые сообщения`, `Размер буфера` (if the strategy exposes them)
+6. System displays a 40-dash separator and returns to the chat prompt
 7. Use case ends
 
 #### 5.10.3 Postconditions
@@ -906,33 +1016,36 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 #### 5.11.2 Main Success Scenario
 
 1. User types "/branch"
-2. System prompts for branch name with default
-3. User enters name or accepts default
-4. System creates new chat copying:
-   - All messages
-   - All settings
-   - Context strategy with current state
-5. System displays success message with ID and message count
-6. System asks: `Продолжить в новой ветке? (y/n):`
-7. User enters "y"
-8. System switches to new branch chat
-9. Use case ends
+2. System displays header `--- СОЗДАНИЕ ВЕТКИ ОТ '{current_name}' ---`
+3. System prompts: `Введите название ветки (Enter для автогенерации):`
+4. User enters name or presses Enter (auto-name `{current_name} (branch {YYYY-MM-DD HH:MM:SS})`)
+5. System creates the branch via `create_branch` use case, copying all messages, settings, token counters and the context strategy with its accumulated state; a new `conversation_id` (UUID) is generated
+6. System switches `current_agent` to the branch
+7. System asks: `Продолжить в новой ветке? (y/n):`
+8. User enters "y"
+9. System enters the chat loop for the branch chat
+10. Use case ends
 
 #### 5.11.3 Alternative Flows
 
-- **A1: Stay in Current Chat**
-  - Step 7: User enters "n"
-  - System remains in current chat
-  - Use case ends
+- **A1: Stay In Current Chat Loop**
+  - Step 8: User enters anything other than "y"
+  - System prints `Ветка создана. Вы можете вернуться к ней через меню.` and stays in the current chat loop
+  - Note: `current_agent` already points to the branch; the original chat is reachable via Main Menu option 2 ("Выбрать чат")
 
 - **A2: Custom Branch Name**
-  - Step 3: User enters custom name
-  - System uses provided name for new branch
+  - Step 4: User enters a custom name
+  - System uses the provided name for the new branch
+
+- **A3: Backend Error While Creating Branch**
+  - Step 5: `create_branch` use case raises an exception
+  - System displays `[ERROR] Ошибка при создании ветки: {e}`
+  - System returns to the chat prompt; no switch happens
 
 #### 5.11.4 Postconditions
 
-- New chat created with copied data
-- Optionally: new chat becomes active chat
+- New chat created in storage with copied data
+- `current_agent` points to the branch chat
 - Original chat preserved unchanged
 
 ---
@@ -982,46 +1095,52 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 #### 5.13.2 Main Success Scenario
 
 1. User selects option 3 (Task Profiles) from Main Menu
-2. System retrieves all task profiles from TaskProfileRepository
-3. If no profiles exist:
-   - Display `(нет доступных профилей)`
-   - Display menu options: `[1. Создать новый профиль]`, `[2. Назад в меню]`
-   - Handle selection and proceed accordingly
-4. If profiles exist:
-   - Display header: `--- ПРОФИЛИ ЗАДАЧ ---`
-   - Display numbered list of profiles (one per block):
-     ```
-     {index}. {name}
-        Описание: {description_preview}
-        Создан: {created_at}
-        ID: {full_id}
-     ----------------------------------------
-     ```
-   - Display menu options: `[1. Создать новый профиль]`, `[2. Просмотреть память профиля]`, `[3. Удалить профиль]`, `[4. Назад в меню]`
-   - Wait for user selection
-5. System processes user choice:
-   - If "Create new": Execute UC-014
-   - If "View memory": Execute UC-015
-   - If "Delete": Execute UC-016
-   - If "Back": Return to Main Menu
-6. Use case ends
+2. System displays the Task Profiles menu:
+   ```
+   --- ПРОФИЛИ ЗАДАЧ ---
+   1. Создать новый профиль
+   2. Просмотреть список профилей
+   3. Назад в главное меню
+   ----------------------------------------
+   ```
+3. User selects option 2 (View profiles list)
+4. System retrieves all task profiles via `list_task_profiles.execute()`
+5. If no profiles exist: display `Нет доступных профилей задач.` + separator, return to the Task Profiles menu
+6. If profiles exist: display header `--- СПИСОК ПРОФИЛЕЙ ЗАДАЧ ---` and a block per profile:
+   ```
+   {index}. {name}
+      ID: {profile_id}
+      Дата создания: {YYYY-MM-DD HH:MM}
+      Фактов в памяти: {facts_count}
+      Инвариантов: {invariants_count}
+      Описание: {description[:50] + "..." if longer than 50 chars, else full description}
+   ```
+7. System displays actions (`Действия:` / `1. Просмотреть память профиля` / `2. Управление инвариантами` / `3. Удалить профиль` / `4. Назад к списку`) and prompts `Выберите действие (1-4):`
+8. System processes user choice:
+   - Action 1: profile selection by index, then UC-015 (view memory)
+   - Action 2: profile selection by index, then manage invariants (§4.7.4)
+   - Action 3: profile selection by index, then UC-016 (delete)
+   - Action 4: return to the Task Profiles menu
+9. Use case ends
 
 #### 5.13.3 Alternative Flows
 
 - **A1: Empty Task Profiles List**
-  - Step 3: Repository returns empty list
-  - System shows only "Create new" option
-  - Continue with UC-014 or return to menu
+  - Step 5: Repository returns empty list
+  - System shows `Нет доступных профилей задач.` and returns to the Task Profiles menu (no action submenu)
 
 - **A2: Invalid Menu Choice**
-  - Step 5: User enters invalid option
-  - Display `[ERROR] Неверный выбор.` and re-prompt
+  - Step 3/8: User enters an option outside the displayed range
+  - Display `[WARN] Неверный выбор, попробуйте снова.` and re-prompt
+
+- **A3: Invalid Profile Index**
+  - Step 8: Out-of-range number → `Введите число от 1 до {n}`; non-numeric → `Введите корректное число`; re-prompt until valid
 
 #### 5.13.4 Postconditions
 
 - User viewed task profiles list (or empty state)
-- Optionally created, viewed, or deleted a profile
-- Returned to Main Menu if "Back" selected
+- Optionally viewed memory, managed invariants, or deleted a profile
+- Returned to the Task Profiles menu / Main Menu when requested
 
 ---
 
@@ -1034,24 +1153,25 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 #### 5.14.2 Main Success Scenario
 
-1. System displays name prompt: `Введите название профиля задачи (макс. 100 символов):`
+1. System displays name prompt: `Введите название профиля:`
 2. User enters profile name
-3. System validates name (non-empty, max 100 chars)
-4. System displays description prompt: `Введите описание профиля (макс. 500 символов):`
+3. System validates name (non-empty; no length limit enforced by the CLI) and re-prompts on empty input with `[ERROR] Название профиля не может быть пустым.`
+4. System displays description prompt: `Введите описание задачи:`
 5. User enters description
-6. System validates description (non-empty, max 500 chars)
-7. System displays preferences prompt: `Введите предпочтения и инструкции пользователя (Enter для пропуска):`
+6. System validates description (non-empty; no length limit enforced by the CLI) and re-prompts on empty input with `[ERROR] Описание задачи не может быть пустым.`
+7. System displays preferences prompt: `Введите предпочтения/инструкции (Enter для пропуска):`
 8. User enters preferences text (or presses Enter to skip)
 9. System accepts preferences (no validation, empty input allowed)
-10. System generates UUID for profile
-11. System records current timestamp as `created_at`
-12. System creates empty facts list
+10. System displays the invariants block header (`--- ИНВАРИАНТЫ (строгие правила/ограничения) ---`, examples and `Введите инварианты по одному. Пустая строка для завершения:`) and reads invariants one per line until an empty line
+11. System creates the profile via `create_task_profile.execute(name, description, preferences, invariants)`
+12. System records current timestamp as `created_at`
 13. System saves profile to TaskProfileRepository
 14. System displays success message:
     ```
     [OK] Профиль задачи '{name}' создан!
-      ID: {full_id}
-      Создан: {timestamp}
+      ID: {profile_id}
+      Дата создания: {YYYY-MM-DD HH:MM:SS}
+      Инвариантов: {count}   # only when at least one invariant was entered
     ```
 15. System returns to Task Profiles menu
 16. Use case ends
@@ -1060,23 +1180,19 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 - **A1: Empty Name**
   - Step 3: User enters empty string
-  - Display `[ERROR] Название не может быть пустым.` and re-prompt
+  - Display `[ERROR] Название профиля не может быть пустым.` and re-prompt the same question
 
-- **A2: Name Too Long**
-  - Step 3: User enters >100 characters
-  - Truncate to 100 characters with warning `[WARN] Название сокращено до 100 символов.`
-
-- **A3: Empty Description**
+- **A2: Empty Description**
   - Step 6: User enters empty string
-  - Display `[ERROR] Описание не может быть пустым.` and re-prompt
+  - Display `[ERROR] Описание задачи не может быть пустым.` and re-prompt the same question
 
-- **A4: Description Too Long**
-  - Step 6: User enters >500 characters
-  - Truncate to 500 characters with warning `[WARN] Описание сокращено до 500 символов.`
-
-- **A5: Empty Preferences**
+- **A3: Empty Preferences**
   - Step 9: User presses Enter without entering text
   - Accept empty string as valid preferences value (no error)
+
+- **A4: No Invariants**
+  - Step 10: User presses Enter immediately on the first `>` prompt
+  - Profile is created with an empty invariants list; the `Инвариантов:` line is omitted from the success output
 
 #### 5.14.4 Postconditions
 
@@ -1092,51 +1208,54 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 #### 5.15.1 Preconditions
 
 - Application is running
-- User is in Task Profiles menu
+- User is in the profiles list submenu (Task Profiles menu → option 2 → action 1)
 - At least one task profile exists
 
 #### 5.15.2 Main Success Scenario
 
-1. System displays prompt: `Выберите профиль для просмотра памяти (1-{n}):`
+1. System displays prompt: `Выберите профиль (1-{n}):`
 2. User selects profile by index
-3. System validates selection
-4. System retrieves profile details and facts from TaskProfileRepository
-5. System displays profile information:
+3. System retrieves profile details, facts and invariants via `get_task_profile_memory.execute(profile_id)`
+4. System displays profile information:
    ```
    --- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---
-   Название: {name}
-   ID: {full_id}
-   Создан: {created_at}
-   Описание: {description}
-   Предпочтения: {preferences}|(не указаны)
-   ----------------------------------------
+     ID: {profile_id}
+     Название: {name}
+     Описание: {description}
+     Дата создания: {YYYY-MM-DD HH:MM:SS}
+     Предпочтения: {preferences}    # строка выводится только если preferences непустые
 
    --- ПАМЯТЬ ПРОФИЛЯ ---
-   {fact_1}
-   {fact_2}
-   ...
+     1. {fact_1}
+     2. {fact_2}
+     ...              |(память пуста)
+
+   --- ИНВАРИАНТЫ ---
+     1. {invariant_1}
+     ...              |(инварианты не заданы)
    ----------------------------------------
    ```
-6. If memory is empty: display `(память пуста)` instead of facts list
-7. If preferences is empty: display `(не указаны)` instead of preferences text
-8. System displays `[Нажмите Enter для возврата]`
-9. User presses Enter
-10. System returns to Task Profiles menu
-11. Use case ends
+5. If memory is empty: display `(память пуста)` instead of the facts list
+6. If preferences are empty: the `Предпочтения:` line is omitted entirely
+7. If invariants are empty: display `(инварианты не заданы)`
+8. Use case ends; control returns to the Task Profiles menu
 
 #### 5.15.3 Alternative Flows
 
 - **A1: Invalid Profile Selection**
-  - Step 3: User enters invalid index
-  - Display `[ERROR] Неверный выбор профиля.` and re-prompt
+  - Step 2: Out-of-range number → `Введите число от 1 до {n}`; non-numeric → `Введите корректное число`; re-prompt until valid
 
 - **A2: Empty Memory**
-  - Step 6: Repository returns empty facts list
+  - Step 5: Repository returns empty facts list
   - Display `(память пуста)` instead of fact list
+
+- **A3: Profile Not Found**
+  - Step 3: `get_task_profile_memory` returns None
+  - Display `[ERROR] Профиль не найден.` and return to the Task Profiles menu
 
 #### 5.15.4 Postconditions
 
-- User viewed task profile details and memory facts
+- User viewed task profile details, memory facts and invariants
 - Returned to Task Profiles menu
 
 ---
@@ -1146,47 +1265,45 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 #### 5.16.1 Preconditions
 
 - Application is running
-- User is in Task Profiles menu
+- User is in the profiles list submenu (Task Profiles menu → option 2 → action 3)
 - At least one task profile exists
 
 #### 5.16.2 Main Success Scenario
 
 1. System displays prompt: `Выберите профиль для удаления (1-{n}):`
 2. User selects profile by index
-3. System validates selection
-4. System checks if profile is attached to any agents
-5. If attached to agents:
-   - Display warning: `[WARN] Этот профиль привязан к {count} чат(а/ов). При удалении профиля чаты останутся без привязки.`
-   - Prompt for confirmation: `Продолжить удаление? (y/n):`
-6. If not attached:
-   - Prompt for confirmation: `Удалить профиль '{name}'? (y/n):`
-7. If user confirms with 'y':
+3. System checks whether the profile is linked to any agents (`is_profile_linked_to_agents`)
+4. If not linked, system prompts for confirmation: `Вы уверены, что хотите удалить профиль '{name}'? (y/n):`
+5. If user confirms with 'y':
    - System deletes profile from TaskProfileRepository
-   - Display success: `[OK] Профиль '{name}' удален!`
-8. If user declines ('n' or other):
+   - Display success: `[OK] Профиль '{name}' успешно удалён.`
+6. If user declines (any input other than `y`):
    - Display `[INFO] Удаление отменено.`
-9. System returns to Task Profiles menu
-10. Use case ends
+7. If deletion fails: `[ERROR] Не удалось удалить профиль '{name}'.`
+8. System returns to Task Profiles menu
+9. Use case ends
 
 #### 5.16.3 Alternative Flows
 
 - **A1: Invalid Profile Selection**
-  - Step 3: User enters invalid index
-  - Display `[ERROR] Неверный выбор профиля.` and re-prompt
+  - Step 2: Out-of-range number → `Введите число от 1 до {n}`; non-numeric → `Введите корректное число`; re-prompt until valid
 
 - **A2: Confirmation Declined**
-  - Step 7: User enters 'n' or other
-  - Deletion cancelled, return to menu
+  - Step 5: User enters anything other than `y`
+  - Deletion cancelled with `[INFO] Удаление отменено.`, return to menu
 
-- **A3: Profile Attached to Agents**
-  - Step 5: System detects attached agents
-  - Show extended warning with agent count
-  - Require explicit confirmation
+- **A3: Profile Attached to Agents (deletion blocked)**
+  - Step 3: System detects attached agents; deletion is NOT offered at all:
+    ```
+    [WARN] Невозможно удалить профиль '{name}': он привязан к одному или нескольким агентам.
+    Сначала удалите или пересоздайте агентов, использующих этот профиль.
+    ```
+  - Operation aborts, return to the Task Profiles menu
 
 #### 5.16.4 Postconditions
 
-- If confirmed: TaskProfile deleted from repository
-- If declined: Profile remains unchanged
+- If confirmed and unlinked: TaskProfile deleted from repository
+- If declined or linked to agents: Profile remains unchanged
 - User returned to Task Profiles menu
 
 ---
@@ -1489,7 +1606,7 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 | Step | Action                         | Expected Result                                     |
 | ---- | ------------------------------ | --------------------------------------------------- |
 | 1    | Open new chat (no summary yet) | Chat active                                         |
-| 2    | Type "/summary"                | `[INFO] Суммаризация еще не выполнялась.` displayed |
+| 2    | Type "/summary"                | `[INFO] Саммари пока недоступно.` displayed          |
 | 3    | Verify no state changes        | Chat remains active                                 |
 
 ---
@@ -1502,7 +1619,7 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 | ---- | ----------------------- | -------------------------------------- |
 | 1    | Open chat with messages | Chat active                            |
 | 2    | Type "/info"            | Chat info header displayed             |
-| 3    | Verify token statistics | Prompt, Completion, Total tokens shown |
+| 3    | Verify token statistics | `Prompt токены` and `Completion токены` shown       |
 | 4    | Verify strategy type    | Strategy name displayed                |
 | 5    | Verify no state changes | Chat remains active                    |
 
@@ -1515,10 +1632,10 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 | Step | Action                                     | Expected Result                                   |
 | ---- | ------------------------------------------ | ------------------------------------------------- |
 | 1    | Open chat with messages                    | Chat active                                       |
-| 2    | Type "/branch"                             | Branch name prompt with default                   |
-| 3    | Press Enter (accept default)               | Success message with ID and message count         |
-| 4    | Prompt: "Продолжить в новой ветке? (y/n):" | Displayed                                         |
-| 5    | Enter "y"                                  | Switch to new branch chat                         |
+| 2    | Type "/branch"                             | Header `--- СОЗДАНИЕ ВЕТКИ ОТ '{name}' ---` + name prompt |
+| 3    | Press Enter (accept auto-name)             | Branch created with name `{name} (branch {timestamp})` |
+| 4    | Prompt: "Продолжить в новой ветке? (y/n):" | Displayed (`current_agent` already switched to branch) |
+| 5    | Enter "y"                                  | Chat loop entered for the branch chat             |
 | 6    | Verify new chat                            | Has same messages, settings, strategy as original |
 | 7    | Verify original chat                       | Unchanged                                         |
 
@@ -1528,15 +1645,15 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 **Related UC**: UC-011
 
-| Step | Action                                     | Expected Result            |
-| ---- | ------------------------------------------ | -------------------------- |
-| 1    | Open chat with messages                    | Chat active                |
-| 2    | Type "/branch"                             | Branch name prompt         |
-| 3    | Press Enter                                | Success message            |
-| 4    | Prompt: "Продолжить в новой ветке? (y/n):" | Displayed                  |
-| 5    | Enter "n"                                  | Stay in current chat       |
-| 6    | Verify branch created                      | New chat exists in storage |
-| 7    | Verify active chat                         | Still original chat        |
+| Step | Action                                     | Expected Result                                        |
+| ---- | ------------------------------------------ | ------------------------------------------------------ |
+| 1    | Open chat with messages                    | Chat active                                            |
+| 2    | Type "/branch"                             | Branch name prompt                                     |
+| 3    | Press Enter                                | Branch created                                         |
+| 4    | Prompt: "Продолжить в новой ветке? (y/n):" | Displayed                                              |
+| 5    | Enter "n"                                  | `Ветка создана. Вы можете вернуться к ней через меню.` |
+| 6    | Verify branch created                      | New chat exists in storage                             |
+| 7    | Verify CLI state                           | `current_agent` points to the branch (UC-011 A1 note)  |
 
 ---
 
@@ -1548,7 +1665,7 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 | ---- | ------------------------ | -------------------------------- |
 | 1    | Open chat                | Chat active                      |
 | 2    | Type "/branch"           | Branch name prompt               |
-| 3    | Enter "My Custom Branch" | Success message with custom name |
+| 3    | Enter "My Custom Branch" | Branch created with that name    |
 | 4    | Verify branch name       | "My Custom Branch" used          |
 
 ---
@@ -1581,29 +1698,27 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 ---
 
-### TC-029: Stop Command During Generation
+### TC-029: Stop Command Exits Chat Loop
 
 **Related UC**: UC-007
 
-| Step | Action                          | Expected Result                    |
-| ---- | ------------------------------- | ---------------------------------- |
-| 1    | Send message, generation starts | "Thinking..." indicator visible    |
-| 2    | Type "/stop"                    | Generation interrupted             |
-| 3    | Verify output                   | `Генерация остановлена.` displayed |
-| 4    | Verify partial response         | May be saved or discarded          |
+| Step | Action                        | Expected Result                                        |
+| ---- | ----------------------------- | ------------------------------------------------------ |
+| 1    | In chat loop, type "/stop"    | `[INFO] Генерация не активна.` displayed               |
+| 2    | Verify navigation             | Chat loop exits, Main Menu displayed                   |
+| 3    | Verify active chat            | Option 5 still shows "Вернуться в чат: {name}"         |
 
 ---
 
-### TC-030: Stop Command When Idle
+### TC-030: Stop Command Output And State
 
 **Related UC**: UC-007
 
-| Step | Action                  | Expected Result                   |
-| ---- | ----------------------- | --------------------------------- |
-| 1    | Wait for idle state     | No generation active              |
-| 2    | Type "/stop"            | No action taken                   |
-| 3    | Verify output           | `Генерация не активна.` displayed |
-| 4    | Verify no state changes | Chat remains active               |
+| Step | Action                        | Expected Result                                          |
+| ---- | ----------------------------- | -------------------------------------------------------- |
+| 1    | Type "/stop" at any moment    | `[INFO] Генерация не активна.` displayed                 |
+| 2    | Verify return to menu         | Main Menu displayed                                      |
+| 3    | Verify chat state             | Chat preserved, remains the active chat                  |
 
 ---
 
@@ -1819,15 +1934,15 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 ---
 
-### TC-046: Create Task Profile - Long Name Truncation
+### TC-046: Create Task Profile - Long Name Accepted
 
 **Related UC**: UC-014
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | From Task Profiles menu, select Create        | Name prompt displayed                        |
-| 2    | Enter 150-character string                    | `[WARN] Название сокращено до 100 символов.` + proceed |
-| 3    | Verify saved name length                      | Name truncated to exactly 100 characters     |
+| 2    | Enter 150-character string                    | Accepted without error or truncation warning |
+| 3    | Verify saved name                             | Full 150-character name stored and displayed |
 
 ---
 
@@ -1839,7 +1954,7 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | From Task Profiles menu, select Create        | Name prompt → enter valid name               |
 | 2    | Description prompt displayed                  | Press Enter (empty input)                    |
-| 3    | Verify error                                  | `[ERROR] Описание не может быть пустым.` + re-prompt |
+| 3    | Verify error                                  | `[ERROR] Описание задачи не может быть пустым.` + re-prompt |
 
 ---
 
@@ -1849,9 +1964,9 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | From Main Menu, select option 3 (Task Profiles) | `(нет доступных профилей)` displayed         |
-| 2    | Verify menu options                           | Only `[1. Создать новый профиль]`, `[2. Назад в меню]` shown |
-| 3    | Select option 2                               | Return to Main Menu                          |
+| 1    | From Main Menu, select option 3 (Task Profiles) | Task Profiles menu displayed (options 1-3)   |
+| 2    | Select option 2 (View profiles list)          | `Нет доступных профилей задач.` + separator displayed |
+| 3    | Verify return                                 | Control returns to the Task Profiles menu    |
 
 ---
 
@@ -1863,9 +1978,9 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | From Main Menu, select option 3               | `--- ПРОФИЛИ ЗАДАЧ ---` header displayed     |
-| 2    | Verify profile list format                    | Each profile shows: name, description preview, created_at, full ID |
-| 3    | Verify menu options                           | All 4 options displayed (Create, View Memory, Delete, Back) |
+| 1    | From Main Menu, select option 3, then option 2 | `--- СПИСОК ПРОФИЛЕЙ ЗАДАЧ ---` header displayed |
+| 2    | Verify profile block format                   | Each profile shows: index+name, ID, Дата создания (`%Y-%m-%d %H:%M`), Фактов в памяти, Инвариантов, Описание (50 chars + `...` if longer) |
+| 3    | Verify action options                         | `Действия:` with 4 options (View Memory, Manage Invariants, Delete, Back to list) and prompt `Выберите действие (1-4):` |
 
 ---
 
@@ -1877,10 +1992,10 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | From Task Profiles menu, select option 2 (View Memory) | Profile selection prompt displayed           |
-| 2    | Select profile by index                       | Profile info displayed: name, ID, created_at, description |
-| 3    | Verify memory section                         | `--- ПАМЯТЬ ПРОФИЛЯ ---` header + facts listed |
-| 4    | Press Enter                                   | Return to Task Profiles menu                 |
+| 1    | From profiles list submenu, select action 1 (View memory) | Profile selection prompt `Выберите профиль (1-{n}):` displayed |
+| 2    | Select profile by index                       | `--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---`: ID, Название, Описание, Дата создания (+ Предпочтения if non-empty) |
+| 3    | Verify memory section                         | `--- ПАМЯТЬ ПРОФИЛЯ ---` header + numbered facts; `--- ИНВАРИАНТЫ ---` section shown |
+| 4    | Verify return                                 | Control returns to the Task Profiles menu    |
 
 ---
 
@@ -1892,9 +2007,9 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | From Task Profiles menu, select option 2      | Select profile                               |
-| 2    | Verify memory display                         | `(память пуста)` shown instead of facts      |
-| 3    | Press Enter                                   | Return to menu                               |
+| 1    | From profiles list submenu, select action 1   | Select profile                               |
+| 2    | Verify memory display                         | `(память пуста)` shown instead of facts; `(инварианты не заданы)` if no invariants |
+| 3    | Verify return                                 | Return to the Task Profiles menu             |
 
 ---
 
@@ -1906,9 +2021,9 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | From Task Profiles menu, select option 3 (Delete) | Profile selection prompt displayed           |
-| 2    | Select profile by index                       | Confirmation prompt: `Удалить профиль '{name}'? (y/n):` |
-| 3    | Enter 'y'                                     | `[OK] Профиль '{name}' удален!`              |
+| 1    | From profiles list submenu, select action 3 (Delete) | Profile selection prompt `Выберите профиль для удаления (1-{n}):` displayed |
+| 2    | Select profile by index                       | Confirmation prompt: `Вы уверены, что хотите удалить профиль '{name}'? (y/n):` |
+| 3    | Enter 'y'                                     | `[OK] Профиль '{name}' успешно удалён.`      |
 | 4    | Verify deletion                               | Profile no longer in repository              |
 
 ---
@@ -1921,10 +2036,10 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | From Task Profiles menu, select option 3      | Select profile                               |
-| 2    | Verify warning                                | `[WARN] Этот профиль привязан к 2 чат(а/ов)...` + confirmation prompt |
-| 3    | Enter 'y'                                     | Profile deleted, agents remain without link  |
-| 4    | Verify agents still exist                     | Agents accessible, task_profile_id = null    |
+| 1    | From profiles list submenu, select action 3   | Select profile                               |
+| 2    | Verify block message                          | `[WARN] Невозможно удалить профиль '{name}': он привязан к одному или нескольким агентам.` + `Сначала удалите или пересоздайте агентов, использующих этот профиль.` — NO confirmation prompt |
+| 3    | Verify profile not deleted                    | Profile still in repository                  |
+| 4    | Verify agents unchanged                       | Agents keep their task_profile_id link       |
 
 ---
 
@@ -1934,7 +2049,7 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | From Task Profiles menu, select option 3      | Select profile                               |
+| 1    | From profiles list submenu, select action 3   | Select profile (profile must be unlinked)    |
 | 2    | Confirmation prompt displayed                 | Enter 'n'                                    |
 | 3    | Verify cancellation                           | `[INFO] Удаление отменено.`                  |
 | 4    | Verify profile exists                         | Profile still in repository                  |
@@ -2069,241 +2184,3 @@ Same prompts as creation workflow (Section 4.4.3-4.4.8), but:
 | 2    | Press Enter without entering preferences      | Empty preferences accepted (no error)        |
 | 3    | Complete profile creation                     | Profile saved with empty preferences         |
 | 4    | View created profile                          | `Предпочтения: (не указаны)` displayed       |
-
----
-
-## 7. Error Handling Matrix
-
-| Error Type                 | Trigger                          | Display Message                                                                 | Recovery Action  |
-| -------------------------- | -------------------------------- | ------------------------------------------------------------------------------- | ---------------- |
-| InvalidMenuChoice          | Menu input not 1-6               | `[ERROR] Неверный выбор. Введите число от 1 до 6.`                              | Re-prompt        |
-| InvalidModelSelection      | Model input not 1-3              | `[ERROR] Неверный выбор модели.`                                                | Re-prompt        |
-| InvalidTemperature         | Temp < 0 or > 2.0                | `[WARN] Значение вне диапазона. Температура отключена.`                         | Set None         |
-| NonNumericTemperature      | Temp = "abc"                     | `[WARN] Некорректное значение. Температура отключена.`                          | Set None         |
-| InvalidTopP                | TopP < 0 or > 1.0                | `[WARN] Значение вне диапазона. Top P отключен.`                                | Set None         |
-| EmptyChatList              | Select chat with 0 chats         | `Нет доступных чатов. Создайте новый.`                                          | Return to menu   |
-| NoActiveChat               | Return to chat with none         | `[WARN] Нет активного чата.`                                                    | Stay in menu     |
-| BackendException           | LLM provider error               | `[ERROR] Ошибка: {message}`                                                     | Return to prompt |
-| NetworkTimeout             | Connection timeout               | `[ERROR] Таймаут соединения`                                                    | Return to prompt |
-| UnknownCommand             | Input "/xyz"                     | `[WARN] Неизвестная команда. Введите /help для списка команд.`                  | Return to prompt |
-| EmptyInput                 | Chat prompt Enter                | (no message)                                                                    | Re-prompt        |
-| InvalidSettingsConfirm     | Settings y/n != y/n              | Return to chat loop without changes                                             | No action        |
-| InvalidBranchConfirm       | Branch y/n != y/n                | Stay in current chat                                                            | No action        |
-| EmptyProfileName           | Task profile name is empty       | `[ERROR] Название не может быть пустым.`                                        | Re-prompt        |
-| EmptyProfileDescription    | Task profile description empty   | `[ERROR] Описание не может быть пустым.`                                        | Re-prompt        |
-| InvalidProfileSelection    | Profile index out of range       | `[ERROR] Неверный выбор профиля.`                                               | Re-prompt        |
-| InvalidTaskProfileChoice   | Task profile menu invalid input  | `[ERROR] Неверный выбор.`                                                       | Re-prompt        |
-| DeleteConfirmationDeclined | User declines delete confirmation| `[INFO] Удаление отменено.`                                                     | Return to menu   |
-
----
-
-## 8. Implementation Requirements
-
-### 8.1 Coding Standards
-
-- **Language**: Python 3.12+
-- **Style**: PEP 8 compliant
-- **Encoding**: UTF-8 for all I/O
-- **Error Handling**: Try-catch around all backend calls
-- **Logging**: Optional debug logging to file
-
-### 8.2 Performance Requirements
-
-- Menu render time: < 100ms
-- Message send latency: < 500ms (excluding LLM response time)
-- Chat list load: < 200ms for up to 100 chats
-
-### 8.3 Security Considerations
-
-- No sensitive data in logs
-- Input sanitization for file paths
-- No command injection via chat messages
-
-### 8.4 Accessibility
-
-- High contrast text (white on black)
-- Clear error messages
-- Consistent navigation patterns
-
----
-
-## 9. Testing Strategy
-
-### 9.1 Unit Tests
-
-- Test individual functions: `print_menu()`, `get_user_input()`, `validate_temperature()`
-- Mock backend calls
-- Coverage target: 90%
-
-### 9.2 Integration Tests
-
-- Test complete workflows: UC-001 through UC-008
-- Use temporary test storage
-- Verify state transitions
-
-### 9.3 End-to-End Tests
-
-- Simulate user input via stdin
-- Capture stdout for verification
-- Test with real backend (mocked LLM)
-
-### 9.4 Test Data
-
-```json
-{
-  "test_chats": [
-    {
-      "name": "Test Empty",
-      "messages": [],
-      "settings": { "model": "test", "temperature": null }
-    },
-    {
-      "name": "Test System Only",
-      "messages": [{ "role": "system", "content": "Test prompt" }],
-      "settings": { "model": "test" }
-    },
-    {
-      "name": "Test With Messages",
-      "messages": [
-        { "role": "user", "content": "Hello" },
-        { "role": "assistant", "content": "Hi there!" }
-      ],
-      "settings": { "model": "test", "temperature": 0.7 }
-    }
-  ]
-}
-```
-
-### 9.5 Test Execution
-
-```bash
-# Run unit tests
-pytest tests/unit/
-
-# Run integration tests
-pytest tests/integration/
-
-# Run E2E tests
-pytest tests/e2e/
-
-# Generate coverage report
-pytest --cov=cli --cov-report=html
-```
-
----
-
-## 10. Version History
-
-| Version | Date       | Author       | Changes                                                                                                                                                                                                                                       |
-| ------- | ---------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | 2026-09-13 | AI Assistant | Initial comprehensive specification                                                                                                                                                                                                           |
-| 1.1     | 2026-09-13 | AI Assistant | Added detailed test cases, error matrix                                                                                                                                                                                                       |
-| 1.2     | 2026-09-13 | AI Assistant | Added new features: SlidingWindowStrategy, /summary, /info, /branch commands; Updated UC-005, UC-007, UC-009, UC-010, UC-011; Added TC-021 to TC-032; Updated error matrix; Clarified context_window_size retained for backward compatibility |
-| 1.3     | 2026-09-13 | AI Assistant | Added TaskProfile feature: new entity (UC-013 to UC-016), task profile management CLI menu option, chat creation step for profile attachment, memory integration in system prompt (global + task); Added TC-044 to TC-058; Updated error matrix |
-| 1.4     | 2026-09-13 | AI Assistant | Added preferences field to TaskProfile: updated entity definition, UC-014 (create profile with preferences), UC-015 (view profile with preferences display); Added TC-059 to TC-063 for preferences functionality; Updated TC-058 for preferences ordering in system prompt |
-
----
-
-## 11. Appendix
-
-### 11.1 Sample Session Log
-
-```
-============================================================
-       AI CHAT CLI - Консольный чат с AI агентами
-============================================================
-
---- МЕНЮ ---
-1. Новый чат
-2. Выбрать чат
-3. Вернуться в чат (нет активного чата)
-4. Выход
-----------------------------------------
-
-Ваш выбор (1-4): 1
-
---- СОЗДАНИЕ НОВОГО ЧАТА ---
-Введите название чата (по умолчанию 'Чат 1'): Мой первый чат
-Введите системный промпт (Enter для пропуска): Ты полезный ассистент
-
---- НАСТРОЙКИ АГЕНТА ---
-Выберите модель:
-  1. GPT OSS 120B (gpt-oss-120b/latest)
-  2. Qwen3.6-35B (qwen3.6-35b-a3b/latest)
-  3. Alice AI LLM Flash (aliceai-llm-flash/latest)
-
-Ваш выбор (1-3): 1
-Температура (0.0 - 2.0, Enter для отключения): 0.7
-Top P (0.0 - 1.0, Enter для отключения):
-Top K (0 для отключения, по умолчанию 0): 40
-
-Reasoning Effort:
-  1. none
-  2. low
-  3. medium
-  4. high
-
-Ваш выбор (1-4, по умолчанию 1): 2
-
-[OK] Чат 'Мой первый чат' создан!
-  ID: a1b2c3d4-e5f6-7890-g1h2-i3j4k5l6m7n8
-
---- ЧАТ: Мой первый чат ---
-Введите сообщение и нажмите Enter для отправки.
-Команды: /menu, /stop, /settings, /help
-----------------------------------------
-
-[USER]: Привет!
-[AGENT]: Здравствуйте! Чем я могу помочь?
-
-[USER]: /settings
-
---- ТЕКУЩИЕ НАСТРОЙКИ ---
-Модель: GPT OSS 120B
-Температура: 0.7
-Top P: отключен
-Top K: 40
-Reasoning Effort: low
-----------------------------------------
-
-Изменить температуру (0.0-2.0, Enter без изменений):
-...
-
-[OK] Настройки обновлены!
-
-[USER]: /menu
-
---- МЕНЮ ---
-1. Новый чат
-2. Выбрать чат
-3. Вернуться в чат: Мой первый чат
-4. Выход
-----------------------------------------
-```
-
-### 11.2 Configuration File Example
-
-```json
-{
-  "cli": {
-    "max_preview_length": 50,
-    "max_name_length": 100,
-    "default_top_k": 0,
-    "default_reasoning_effort": "none"
-  },
-  "models": [
-    { "id": "gpt-oss-120b/latest", "name": "GPT OSS 120B" },
-    { "id": "qwen3.6-35b-a3b/latest", "name": "Qwen3.6-35B" },
-    { "id": "aliceai-llm-flash/latest", "name": "Alice AI LLM Flash" }
-  ]
-}
-```
-
-### 11.3 Glossary
-
-- **Backend**: The `agents.py` module managing chat state and LLM communication
-- **CLI**: Command Line Interface implemented in `cli.py`
-- **Chat Loop**: Interactive mode where user exchanges messages with AI
-- **Main Menu**: Top-level navigation screen
-- **Active Chat**: Currently selected chat session in CLI memory
-- **Preview**: Short excerpt of last message shown in chat list

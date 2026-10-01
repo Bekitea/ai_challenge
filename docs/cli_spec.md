@@ -32,15 +32,7 @@ This document provides a comprehensive specification for the Command Line Interf
 
 ### State Machine
 
-```
-[START] → [MAIN_MENU]
-[MAIN_MENU] → [CREATE_CHAT] → [CHAT_LOOP] → [MAIN_MENU]
-[MAIN_MENU] → [SELECT_CHAT] → [CHAT_LOOP] → [MAIN_MENU]
-[MAIN_MENU] → [RETURN_TO_CHAT] → [CHAT_LOOP] → [MAIN_MENU]
-[MAIN_MENU] → [EXIT] → [TERMINATED]
-[CHAT_LOOP] → [SETTINGS_VIEW] → [CHAT_LOOP]
-[CHAT_LOOP] → [SETTINGS_VIEW] → [SETTINGS_CHANGE] → [CHAT_LOOP]
-```
+Слой представления отделен от слоя инициализации приложения.
 
 ## 3. Data Structures
 

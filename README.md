@@ -4,8 +4,8 @@
 
 ## Documentation
 
-- **[CLI Specification](specs/cli_spec.md)** - Полная спецификация CLI: use cases, test cases, error matrix
-- **[CLI Testing Guide](cli_tests/README.md)** - Руководство по тестированию: лучшие практики, примеры тестов, troubleshooting
+- **[CLI Specification](docs/cli_spec.md)** - Полная спецификация CLI: use cases, test cases, error matrix
+- **[CLI Testing Guide](docs/cli_e2e_testing_guide.md)** - Руководство по тестированию: лучшие практики, примеры тестов, troubleshooting
 
 ## Установка
 
@@ -30,9 +30,6 @@ YANDEX_CLOUD_FOLDER=your_folder_id_here
 Для создания таблиц в SQLite используйте Alembic миграции:
 
 ```bash
-# Инициализировать Alembic (если ещё не инициализирован)
-alembic init alembic
-
 # Создать начальную миграцию (автоматически по моделям)
 alembic revision --autogenerate -m "Initial migration"
 
@@ -74,49 +71,13 @@ celery -A celery_app worker --loglevel=info --pool=solo
 celery -A celery_app beat --loglevel=info
 ```
 
-После запуска всех трёх процессов периодические задачи (например, отчёт «Локальное время») будут выполняться по расписанию, заданному в `celery_app.py`.
-
-## Работа с миграциями
-
-### Создание новой миграции
-
-При изменении моделей в `models.py`:
-
-```bash
-alembic revision --autogenerate -m "Описание изменений"
-```
-
-### Применение миграций
-
-```bash
-alembic upgrade head
-```
-
-### Откат миграций
-
-```bash
-# Откат на одну миграцию назад
-alembic downgrade -1
-
-# Откат к начальному состоянию (удаление всех таблиц)
-alembic downgrade base
-```
-
-### Проверка статуса
-
-```bash
-# Показать текущую версию и доступные миграции
-alembic current
-
-# Показать ожидающие применения миграции
-alembic heads
-```
+После запуска всех процессов периодические задачи будут выполняться по расписанию, заданному в `celery_app.py`.
 
 ## Тестирование
 
 ### Запуск E2E тестов CLI
 
-Проект включает набор End-to-End тестов, которые эмулируют поведение реального пользователя через CLI интерфейс. Все тесты соответствуют спецификации ([cli_spec.md](specs/cli_spec.md)).
+Проект включает набор End-to-End тестов, которые эмулируют поведение реального пользователя через CLI интерфейс.
 
 #### Требования
 
@@ -136,29 +97,9 @@ pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings -v
 # Запустить конкретный тесткейс
 pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings::test_tc_001_create_chat_default_settings -v
 
-# Запустить smoke тест
+# Запустить smoke тест (набор ключевых тестов)
 python cli_tests/smoke_test.py
 ```
-
-#### Принципы тестирования
-
-Сейчас в приложении есть только один вид тестирования - e2e тесты для CLI приложения. Они пишутся по следующим правилам:
-
-1. **Тестовое хранилище** — каждый e2e тест использует теестовую БД и тестовое файловое хранилище.
-2. **Subprocess interaction** — взаимодействие только через subprocess с stdin/stdout
-3. **Трассируемость** — имена тестов соответствуют номерам тесткейсов из спецификации (`test_tc_XXX_<description>`)
-4. **Test mode** — все тесты запускаются с переменной окружения `APPLICATION_MODE` в значении `TEST` (используется Mock provider)
-5. **Таймауты** — обязательные таймауты для предотвращения зависаний
-
-**Подробная документация**: см. [cli_tests/README.md](cli_tests/README.md)
-
-#### Структура тестов
-
-- **Тесткейсы** организованы по классам (по одному на Use Case)
-- Покрытие: полное покрытие (каждый use case -> один или несколько тест кейсов в спецификации, каждый тест кейс -> e2e cli тест)
-- Расположение: `cli_tests/test_cli_e2e.py`
-
-**Подробная документация**: см. [cli_tests/README.md](cli_tests/README.md)
 
 ## Руководство для новых разработчиков
 
@@ -478,21 +419,4 @@ python cli_tests/smoke_test.py
 
 ### Тестирование
 
-Все изменения должны проходить e2e тесты:
-
-```bash
-# Запустить все тесты
-pytest cli_tests/test_cli_e2e.py -v
-
-# Запустить конкретный use case
-pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings -v
-
-# Запустить smoke тест
-python cli_tests/smoke_test.py
-```
-
-Тесты используют Mock провайдер и не требуют API ключей. Тесты используют тестовую базу данных и тестовое файловое хранилище, которые очищаются между тестами.
-
-### Дополнительные ресурсы
-
-- **[CLI Specification](specs/cli_spec.md)** — полная спецификация use cases и test cases
+Все изменения должны проходить e2e тесты.

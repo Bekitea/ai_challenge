@@ -576,7 +576,8 @@ After profile selection, shows numbered invariants (`--- ИНВАРИАНТЫ П
 ```
 
 - Add: `Введите текст инварианта:`; empty → `[WARN] Инвариант не может быть пустым.`; success → `[OK] Инвариант добавлен!`; repository `ValueError` → `[ERROR] {e}`
-- Remove: `Выберите номер инварианта для удаления (1-{n}):`; unknown number → `[WARN] Некорректный номер.`; failure → `[ERROR] Не удалось удалить инвариант.`; success → `[OK] Инвариант удалён!`
+- Remove: if the list is empty → `[WARN] Нет инвариантов для удаления.`; otherwise `Выберите номер инварианта для удаления (1-{n}):`; unknown number → `[WARN] Некорректный номер.`; non-numeric → `[WARN] Введите корректное число.`; failure → `[ERROR] Не удалось удалить инвариант.`; success → `[OK] Инвариант удалён!`
+- Invalid action number (outside 1–3): `[WARN] Неверный выбор.`
 - The list is redisplayed after each action until `3. Назад`
 
 #### 4.7.5 Delete Profile (`_delete_profile`)
@@ -1302,11 +1303,19 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
   - Display `[WARN] Инвариант не может быть пустым.`; no invariant is added, the list is redisplayed
 
 - **A2: Invalid Invariant Number**
-  - Step 11: Unknown/out-of-range number → `[WARN] Некорректный номер.`; failure to remove → `[ERROR] Не удалось удалить инвариант.`
+  - Step 10: Unknown/out-of-range number → `[WARN] Некорректный номер.`; non-numeric input → `[WARN] Введите корректное число.`; repository removal returns failure → `[ERROR] Не удалось удалить инвариант.`
 
 - **A3: Repository ValueError On Add**
   - Step 7: Repository raises `ValueError` (e.g. duplicate invariant)
   - Display `[ERROR] {e}`; the list is redisplayed
+
+- **A4: Invalid Action Choice**
+  - Step 4/9: User enters an action number outside 1–3 at `Выберите действие (1-3):`
+  - Display `[WARN] Неверный выбор.`; the invariants list and action prompt are re-displayed
+
+- **A5: No Invariants To Remove**
+  - Step 9: User selects action 2 while the invariants list is empty
+  - Display `[WARN] Нет инвариантов для удаления.`; the list and action prompt are re-displayed
 
 #### 5.16.4 Postconditions
 
@@ -1317,13 +1326,13 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### UC-017: Delete Task Profile
 
-#### 5.16.1 Preconditions
+#### 5.17.1 Preconditions
 
 - Application is running
 - User is in the profiles list submenu (Task Profiles menu → option 2 → action 3)
 - At least one task profile exists
 
-#### 5.16.2 Main Success Scenario
+#### 5.17.2 Main Success Scenario
 
 1. System displays prompt: `Выберите профиль для удаления (1-{n}):`
 2. User selects profile by index
@@ -1338,7 +1347,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 8. System returns to Task Profiles menu
 9. Use case ends
 
-#### 5.16.3 Alternative Flows
+#### 5.17.3 Alternative Flows
 
 - **A1: Invalid Profile Selection**
   - Step 2: Out-of-range number → `Введите число от 1 до {n}`; non-numeric → `Введите корректное число`; re-prompt until valid
@@ -1355,11 +1364,112 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
     ```
   - Operation aborts, return to the Task Profiles menu
 
-#### 5.16.4 Postconditions
+#### 5.17.4 Postconditions
 
 - If confirmed and unlinked: TaskProfile deleted from repository
 - If declined or linked to agents: Profile remains unchanged
 - User returned to Task Profiles menu
+
+---
+
+### UC-018: Change Workflow Phase With Phase Commands
+
+#### 5.18.1 Preconditions
+
+- User is in chat interaction loop
+- Agent has a current workflow phase (new chats start in `PLAN`; a chat loaded from storage restores its saved phase)
+
+#### 5.18.2 Main Success Scenario
+
+1. User types `/execute` while the agent is in phase PLAN
+2. System transitions the phase via `Agent.handle_phase_command` (§4.5.3)
+3. System displays `[INFO] Фаза изменена: PLAN -> EXECUTE`
+4. System displays the updated header line `--- ЧАТ: {name} [Фаза: EXECUTE] ---`
+5. System returns to the chat prompt; subsequent messages are processed in the new phase
+6. Use case ends
+
+#### 5.18.3 Alternative Flows
+
+- **A1: Forward Skip Rejected**
+  - Step 1: From PLAN the user enters `/validate` or `/report` (or from EXECUTE — `/report`)
+  - The transition is rejected: `[INFO] Нельзя перескочить этап: переход из {OLD} сразу в {NEW} запрещен` followed by the unchanged header line `--- ЧАТ: {name} [Фаза: {OLD}] ---`
+  - The phase is NOT changed; the chat loop continues
+
+- **A2: Backward Transition Allowed**
+  - Step 1: From any phase the user enters a command of an earlier phase (e.g. `/plan` while in VALIDATE)
+  - Any backward transition is allowed: `[INFO] Фаза изменена: {OLD} -> PLAN`, header updated
+
+- **A3: Case-Insensitive Command**
+  - Step 1: User enters the command in uppercase/mixed case (e.g. `/EXECUTE`)
+  - Commands are matched case-insensitively; the transition succeeds exactly as in the main scenario
+
+- **A4: Phase Visible In Chat Header And /info**
+  - After any successful transition: entering the chat loop replays the header `--- ЧАТ: {name} [Фаза: {PHASE}] ---` (§4.5.1) and `/info` shows `Текущая фаза: {PHASE}` (§4.5.3 `/info`)
+
+#### 5.18.4 Postconditions
+
+- On accepted transition: `Agent.current_phase` equals the target phase; the change is persisted with the agent (auto-save)
+- On rejected transition: phase unchanged
+- No messages are added to history by phase commands
+
+---
+
+### UC-019: Manage MCP Servers Of The Current Chat (/mcp)
+
+#### 5.19.1 Preconditions
+
+- User is in chat interaction loop
+- At least one MCP server is registered in the registry (`mcp_registry`)
+
+#### 5.19.2 Main Success Scenario
+
+1. User types `/mcp`
+2. System displays the connected-servers block (§4.5.3 `/mcp`): header `--- MCP-СЕРВЕРЫ ЧАТА: {chat_name} ---`, then per server either `[OK] {title} ({name}) — инструменты: {tool1, tool2}` (connected) or `[OFFLINE] {title} ({name}) — подключение не установлено` (connection not established); if none are connected: `К этому чату ещё не подключено ни одного MCP-сервера.`
+3. System prompts: `Подключить новые MCP? (y/n):`
+4. User enters "y"
+5. System lists registry servers not yet connected to this chat under `--- ДОСТУПНЫЕ ДЛЯ ПОДКЛЮЧЕНИЯ MCP ---` as `{idx}. {title} ({name}) — {description}`
+6. System prompts: `Введите номер сервера для подключения (или название, 0 — отмена):`
+7. User enters a valid number (or a server name)
+8. System displays `[INFO] Подключаю MCP '{name}'...`
+9. System executes the `connect_mcp` use case and displays `[OK] {message}` on success
+10. The server list is persisted on the agent; tools become available to the LLM in subsequent messages (tool-calling loop inside `continue_dialog`)
+11. Control returns to the chat prompt; use case ends
+
+#### 5.19.3 Alternative Flows
+
+- **A1: Decline Connecting New Servers**
+  - Step 4: User enters anything other than `y` (including empty input)
+  - The flow ends immediately after the connected-servers block; control returns to the chat prompt with no changes
+
+- **A2: All Servers Already Connected**
+  - Step 5: `list_available_mcp` returns an empty list
+  - System displays `[INFO] Все доступные MCP-серверы уже подключены к этому чату.` and returns to the chat prompt
+
+- **A3: Cancel Connection**
+  - Step 7: User presses Enter (empty input) or enters `0`
+  - System displays `[INFO] Подключение отменено.` and returns to the chat prompt
+
+- **A4: Numeric Selection Out Of Range**
+  - Step 7: User enters a digit outside 1…n
+  - System displays `[ERROR] Неверный номер сервера.` and ends the flow (no re-prompt)
+
+- **A5: Connection Fails**
+  - Step 9: `connect_mcp` returns failure (unknown server name or unreachable server)
+  - System displays `[ERROR] {message}` from the use case; the chat's server list is unchanged; control returns to the chat prompt
+
+- **A6: EOFError / KeyboardInterrupt During /mcp Prompts**
+  - Step 4/7: End of input or Ctrl+C at a `/mcp` prompt
+  - The exception is handled locally inside the `/mcp` flow: the chat loop is NOT exited, control returns to the chat prompt
+
+- **A7: Offline Server Display**
+  - Step 2: A connected-to-chat server cannot be reached
+  - It is listed with the `[OFFLINE]` line instead of `[OK]` (see §4.5.3)
+
+#### 5.19.4 Postconditions
+
+- On success: the server is appended to the chat's MCP list and persisted; its tools are available in subsequent exchanges
+- On cancel/decline/failure: no state changes
+- User remains in the chat interaction loop
 
 ---
 
@@ -1372,7 +1482,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | Step | Action                                       | Expected Result                                                                                                   |
 | ---- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | 1    | Select option 1 (New Chat)                   | Header `--- СОЗДАНИЕ НОВОГО ЧАТА ---` and prompt `Хотите настроить чат? (y/n, по умолчанию n):` displayed        |
-| 2    | Press Enter (empty input → default "n")      | `Используются настройки по умолчанию.` printed; steps 1–10 of the creation workflow skipped entirely               |
+| 2    | Press Enter (empty input → default "n")      | `Используются настройки по умолчанию.` printed; steps 4–20 of UC-001 skipped entirely               |
 | 3    | Verify completion message                    | `[OK] Чат 'Чат {N}' создан!` (auto-generated name), then chat loop entered                                        |
 | 4    | Verify chat settings                         | Model = `aliceai-llm-flash/latest`, temperature/top_p/top_k disabled (None), reasoning_effort "none", context window 200000 |
 | 5    | Verify strategy and profile                  | DefaultStrategy, task_profile_id = null                                                                            |
@@ -1381,7 +1491,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-002: Create Chat with Custom Settings
 
-**Related UC**: UC-001 (main success scenario, steps 1–24)
+**Related UC**: UC-001 (main success scenario, steps 1–23)
 
 | Step | Action                             | Expected Result                                          |
 | ---- | ---------------------------------- | -------------------------------------------------------- |
@@ -1686,7 +1796,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-078: Token Statistics Lines After Response
 
-**Related UC**: UC-004 (steps 9–12)
+**Related UC**: UC-004 (steps 4–11)
 
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -1775,7 +1885,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-017: Change Settings With Empty Inputs Disables Parameters
 
-**Related UC**: UC-005 (§4.6.2)
+**Related UC**: UC-005 (steps 6–9, §4.6.2)
 
 | Step | Action                                                  | Expected Result                                             |
 | ---- | ------------------------------------------------------- | ------------------------------------------------------------- |
@@ -1865,7 +1975,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-024: Long Chat Name Handling
 
-**Related UC**: UC-001 (§4.4.1)
+**Related UC**: UC-001 (step 5, §4.4.1)
 
 | Step | Action              | Expected Result       |
 | ---- | ------------------- | --------------------- |
@@ -2079,7 +2189,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-036: SlidingWindowStrategy Creation
 
-**Related UC**: UC-001 (step 19), §4.4.9
+**Related UC**: UC-001 (step 19, §4.4.9)
 
 | Step | Action                          | Expected Result                         |
 | ---- | ------------------------------- | --------------------------------------- |
@@ -2093,7 +2203,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-037: SlidingWindowStrategy With Custom Window
 
-**Related UC**: UC-001 (step 19), §4.4.9
+**Related UC**: UC-001 (step 19, §4.4.9)
 
 | Step | Action                          | Expected Result                         |
 | ---- | ------------------------------- | --------------------------------------- |
@@ -2107,7 +2217,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-038: SummarizationStrategy Creation
 
-**Related UC**: UC-001 (step 19), §4.4.9
+**Related UC**: UC-001 (step 19, §4.4.9)
 
 | Step | Action                          | Expected Result                              |
 | ---- | ------------------------------- | -------------------------------------------- |
@@ -2122,7 +2232,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-039: SummarizationStrategy With Custom Parameters
 
-**Related UC**: UC-001 (step 19), §4.4.9
+**Related UC**: UC-001 (step 19, §4.4.9)
 
 | Step | Action                          | Expected Result                             |
 | ---- | ------------------------------- | ------------------------------------------- |
@@ -2137,7 +2247,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-040: KeyValueMemoryStrategy Creation
 
-**Related UC**: UC-001 (step 19), §4.4.9
+**Related UC**: UC-001 (step 19, §4.4.9)
 
 | Step | Action                           | Expected Result                              |
 | ---- | -------------------------------- | -------------------------------------------- |
@@ -2152,7 +2262,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-041: KeyValueMemoryStrategy With Custom Parameters
 
-**Related UC**: UC-001 (step 19), §4.4.9
+**Related UC**: UC-001 (step 19, §4.4.9)
 
 | Step | Action                           | Expected Result                             |
 | ---- | -------------------------------- | ------------------------------------------- |
@@ -2167,7 +2277,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-042: DefaultStrategy Creation
 
-**Related UC**: UC-001 (step 19), §4.4.9
+**Related UC**: UC-001 (step 19, §4.4.9)
 
 | Step | Action                     | Expected Result                                                       |
 | ---- | -------------------------- | --------------------------------------------------------------------- |
@@ -2387,14 +2497,14 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-056: View Task Profile Memory - Empty State
 
-**Related UC**: UC-015 (steps 5–7, empty state)
+**Related UC**: UC-015 A2
 
 **Precondition**: Task profile exists with empty facts list
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | From profiles list submenu, select action 1   | Select profile                               |
-| 2    | Verify memory display                         | `(память пуста)` shown instead of facts; `(инварианты не заданы)` if no invariants |
+| 2    | Verify memory display                         | `(память пуста)` shown instead of facts (UC-015 A2); `(инварианты не заданы)` if no invariants |
 | 3    | Verify return                                 | Return to the Task Profiles menu             |
 
 ---
@@ -2454,10 +2564,9 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | 1    | From profiles list submenu, select action 2 (Manage invariants) | Profile selection prompt `Выберите профиль (1-{n}):` displayed |
 | 2    | Select profile by index                       | Header `--- ИНВАРИАНТЫ ПРОФИЛЯ: {name} ---` with numbered invariants (`(инварианты не заданы)` if empty) and actions `1. Добавить инвариант / 2. Удалить инвариант / 3. Назад` |
 | 3    | Select action 1, enter invariant text         | `[OK] Инвариант добавлен!`, invariants list redisplayed with the new entry |
-| 4    | Select action 1, press Enter (empty text)     | `[WARN] Инвариант не может быть пустым.`; nothing added, list redisplayed (UC-016 A1) |
-| 5    | Select action 2, enter a valid number         | `[OK] Инвариант удалён!`, list redisplayed   |
-| 6    | Select action 2, enter an unknown number      | `[WARN] Некорректный номер.` (UC-016 A2)     |
-| 7    | Select action 3 (Назад)                       | Control returns to the Task Profiles menu    |
+| 4    | Select action 2, enter a valid number         | `[OK] Инвариант удалён!`, list redisplayed   |
+| 5    | Select action 2, enter an unknown number      | `[WARN] Некорректный номер.` (UC-016 A2)     |
+| 6    | Select action 3 (Назад)                       | Control returns to the Task Profiles menu    |
 
 ---
 
@@ -2471,6 +2580,51 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | Open invariants submenu for the profile       | Invariant list displayed                     |
 | 2    | Select action 1, enter duplicate/invalid text causing repository `ValueError` | `[ERROR] {e}` displayed; nothing added, list redisplayed (UC-016 A3) |
+
+---
+
+### TC-112: Manage Invariants - Empty Invariant Text
+
+**Related UC**: UC-016 A1
+
+**Precondition**: At least one task profile exists
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Open invariants management submenu for the profile | Header `--- ИНВАРИАНТЫ ПРОФИЛЯ: {name} ---` with actions displayed |
+| 2    | Select action 1, press Enter without entering text | `[WARN] Инвариант не может быть пустым.` displayed (UC-016 A1) |
+| 3    | Verify the invariants list                    | Nothing added; list redisplayed unchanged (invariant count unchanged in storage) |
+| 4    | Select action 1 again, enter valid text       | `[OK] Инвариант добавлен!`; list redisplayed with the new entry |
+
+---
+
+### TC-113: Manage Invariants - Invalid Action Choice Re-Prompts
+
+**Related UC**: UC-016 A4
+
+**Precondition**: At least one task profile exists
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Open invariants management submenu for the profile | Invariants list and prompt `Выберите действие (1-3):` displayed |
+| 2    | Enter "9" (outside 1–3)                       | `[WARN] Неверный выбор.`; invariants list and action prompt re-displayed (UC-016 A4) |
+| 3    | Enter non-numeric input (e.g. "abc")          | Same warning; list and action prompt re-displayed (UC-016 A4) |
+| 4    | Enter a valid action ("3" — Назад)            | Control returns to the Task Profiles menu    |
+
+---
+
+### TC-114: Manage Invariants - Remove With Empty List
+
+**Related UC**: UC-016 A5
+
+**Precondition**: At least one task profile with no invariants (`(инварианты не заданы)`)
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Open invariants management submenu for the empty profile | `(инварианты не заданы)` and actions displayed |
+| 2    | Select action 2 (Удалить инвариант)           | `[WARN] Нет инвариантов для удаления.` displayed; removal number prompt NOT shown (UC-016 A5) |
+| 3    | Verify the display                            | Invariants list and action prompt re-displayed |
+| 4    | Select action 1, add an invariant, then select action 2 | Removal prompt `Выберите номер инварианта для удаления (1-{n}):` is now displayed |
 
 ---
 
@@ -2510,6 +2664,233 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | 2    | Enter out-of-range number                     | `Введите число от 1 до {n}`; selection re-prompted (UC-017 A1) |
 | 3    | Enter "abc"                                   | `Введите корректное число`; selection re-prompted |
 | 4    | Enter a valid index                           | Confirmation prompt displayed for the chosen profile |
+
+---
+
+### TC-094: View Task Profile Memory - Invalid Selection Re-Prompts
+
+**Related UC**: UC-015 A1
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | From profiles list submenu, select action 1 (View memory) | Prompt `Выберите профиль (1-{n}):` displayed |
+| 2    | Enter out-of-range number                     | `Введите число от 1 до {n}`; selection re-prompted (UC-015 A1) |
+| 3    | Enter "abc"                                   | `Введите корректное число`; selection re-prompted (UC-015 A1) |
+| 4    | Enter a valid index                           | Profile information and memory are displayed  |
+
+---
+
+### TC-095: Return To Active Chat - Ctrl+C At Menu Prompt
+
+**Related UC**: UC-003 A2
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | In Main Menu press Ctrl+C at `Ваш выбор (1-6):` (or feed end of input — EOFError) | System handles the exception at the menu prompt (UC-003 A2) |
+| 2    | Verify exit message                           | `До свидания!` printed                        |
+| 3    | Verify termination                            | Application terminates cleanly, no traceback  |
+
+---
+
+### TC-096: Phase Command - Forward Transition PLAN to EXECUTE
+
+**Related UC**: UC-018 (main success scenario)
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Open a newly created chat                     | Header shows `--- ЧАТ: {name} [Фаза: PLAN] ---` (new chats start in PLAN) |
+| 2    | Enter `/execute`                              | `[INFO] Фаза изменена: PLAN -> EXECUTE` displayed |
+| 3    | Verify header                                 | Updated line `--- ЧАТ: {name} [Фаза: EXECUTE] ---` shown |
+| 4    | Enter `/validate`                             | `[INFO] Фаза изменена: EXECUTE -> VALIDATE` (sequential forward transition allowed) |
+| 5    | Send a regular message                        | Message processed normally in the new phase; chat loop continues |
+
+---
+
+### TC-097: Phase Command - Forward Skip Rejected
+
+**Related UC**: UC-018 A1
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | In a chat in phase PLAN enter `/validate`     | `[INFO] Нельзя перескочить этап: переход из PLAN сразу в VALIDATE запрещен` (UC-018 A1) |
+| 2    | Verify header unchanged                       | `--- ЧАТ: {name} [Фаза: PLAN] ---` displayed after the rejection |
+| 3    | From PLAN enter `/report`                     | Same rejection message; phase remains PLAN   |
+| 4    | Advance to EXECUTE (`/execute`), then enter `/report` | Rejection message `из EXECUTE сразу в REPORT`; phase remains EXECUTE |
+
+---
+
+### TC-098: Phase Command - Backward Transition Allowed
+
+**Related UC**: UC-018 A2
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Advance the chat phase through `/execute`, `/validate` | Phase is VALIDATE                          |
+| 2    | Enter `/plan`                                 | `[INFO] Фаза изменена: VALIDATE -> PLAN` (any backward transition allowed, UC-018 A2) |
+| 3    | Verify header                                 | `--- ЧАТ: {name} [Фаза: PLAN] ---`           |
+| 4    | From PLAN enter `/execute`, then `/plan` again | Backward transition EXECUTE -> PLAN succeeds |
+
+---
+
+### TC-099: Phase Command - Case Insensitive Matching
+
+**Related UC**: UC-018 A3
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | In phase PLAN enter `/EXECUTE`                | `[INFO] Фаза изменена: PLAN -> EXECUTE` (commands matched case-insensitively, UC-018 A3) |
+| 2    | In phase EXECUTE enter `/Validate`            | `[INFO] Фаза изменена: EXECUTE -> VALIDATE`  |
+| 3    | Verify header after each step                 | Header reflects the new phase                |
+
+---
+
+### TC-100: Phase Visible In Header And /info
+
+**Related UC**: UC-018 A4
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter `/execute`, then return to menu via `/menu` | Phase changed to EXECUTE before exiting the loop |
+| 2    | Return to the chat (option 5)                 | Header replayed as `--- ЧАТ: {name} [Фаза: EXECUTE] ---` (UC-018 A4, §4.5.1) |
+| 3    | Enter `/info`                                 | Line `Текущая фаза: EXECUTE` displayed        |
+
+---
+
+### TC-101: MCP Menu - No Servers Connected Yet
+
+**Related UC**: UC-019 (steps 1–2)
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | In a chat with no MCP servers enter `/mcp`    | Header `--- MCP-СЕРВЕРЫ ЧАТА: {chat_name} ---` displayed |
+| 2    | Verify empty state                            | `К этому чату ещё не подключено ни одного MCP-сервера.` shown |
+| 3    | Verify prompt                                 | `Подключить новые MCP? (y/n):` displayed      |
+
+---
+
+### TC-102: MCP Menu - Decline Connecting New Servers
+
+**Related UC**: UC-019 A1
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter `/mcp`                                  | Connected-servers block displayed            |
+| 2    | Enter "n" (or any text other than `y`, or press Enter) at `Подключить новые MCP? (y/n):` | Flow ends immediately after the block (UC-019 A1) |
+| 3    | Verify return                                 | Control returns to the chat prompt; no state changes |
+
+---
+
+### TC-103: MCP Menu - Connect Server By Number
+
+**Related UC**: UC-019 (main success scenario, steps 4–11)
+
+**Precondition**: At least one registered MCP server not yet connected to the chat
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter `/mcp`, answer `y`                      | `--- ДОСТУПНЫЕ ДЛЯ ПОДКЛЮЧЕНИЯ MCP ---` lists registry servers not connected to this chat as `{idx}. {title} ({name}) — {description}` |
+| 2    | Verify prompt                                 | `Введите номер сервера для подключения (или название, 0 — отмена):` displayed |
+| 3    | Enter a valid number                          | `[INFO] Подключаю MCP '{name}'...` displayed  |
+| 4    | Wait for connection result                    | `[OK] {message}` from the `connect_mcp` use case (UC-019 step 9) |
+| 5    | Enter `/mcp` again                            | The server now listed as `[OK] {title} ({name}) — инструменты: {tool1, tool2}` |
+
+---
+
+### TC-104: MCP Menu - Connect Server By Name
+
+**Related UC**: UC-019 (steps 7–9)
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter `/mcp`, answer `y`                      | Available servers listed                     |
+| 2    | Enter a non-numeric server name at the selection prompt | Text treated as a server name (UC-019 step 7); `[INFO] Подключаю MCP '{name}'...` |
+| 3    | Wait for connection result                    | `[OK] {message}` on success                   |
+
+---
+
+### TC-105: MCP Menu - All Servers Already Connected
+
+**Related UC**: UC-019 A2
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Connect all registry servers to the chat       | —                                            |
+| 2    | Enter `/mcp`, answer `y`                      | `[INFO] Все доступные MCP-серверы уже подключены к этому чату.` displayed (UC-019 A2) |
+| 3    | Verify return                                 | Control returns to the chat prompt            |
+
+---
+
+### TC-106: MCP Menu - Cancel Connection
+
+**Related UC**: UC-019 A3
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter `/mcp`, answer `y`                      | Available servers listed                     |
+| 2    | Press Enter (empty input) at the selection prompt | `[INFO] Подключение отменено.` displayed (UC-019 A3) |
+| 3    | Repeat: reach the server-selection prompt, enter `0` | `[INFO] Подключение отменено.` displayed      |
+| 4    | Verify return                                 | Control returns to the chat prompt; server list unchanged |
+
+---
+
+### TC-107: MCP Menu - Numeric Selection Out Of Range
+
+**Related UC**: UC-019 A4
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter `/mcp`, answer `y`                      | Available servers listed (n servers)         |
+| 2    | Enter a number outside 1…n (e.g. `99`)        | `[ERROR] Неверный номер сервера.` displayed; flow ends without re-prompt (UC-019 A4) |
+| 3    | Verify return                                 | Control returns to the chat prompt; no server connected |
+
+---
+
+### TC-108: MCP Menu - Connection Fails
+
+**Related UC**: UC-019 A5
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter `/mcp`, answer `y`                      | Available servers listed                     |
+| 2    | Enter an unknown server name                  | `[INFO] Подключаю MCP '{name}'...` then `[ERROR] {message}` from the failed `connect_mcp` use case (UC-019 A5) |
+| 3    | Verify state                                  | The chat's MCP server list is unchanged       |
+| 4    | Verify return                                 | Control returns to the chat prompt            |
+
+---
+
+### TC-109: MCP Menu - Offline Server Display
+
+**Related UC**: UC-019 A7
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Arrange a chat-connected MCP server to be unreachable | —                                       |
+| 2    | Enter `/mcp`                                  | The server listed as `[OFFLINE] {title} ({name}) — подключение не установлено` instead of `[OK]` (UC-019 A7) |
+
+---
+
+### TC-110: MCP Menu - Ctrl+C During Prompts Does Not Exit Chat
+
+**Related UC**: UC-019 A6
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Enter `/mcp`, press Ctrl+C (or EOF) at `Подключить новые MCP? (y/n):` | Exception handled locally inside the `/mcp` flow (UC-019 A6) |
+| 2    | Verify chat loop                              | Chat loop is NOT exited; control returns to the chat prompt |
+| 3    | Repeat: reach the server-selection prompt, press Ctrl+C there | Same behavior — back at the chat prompt |
+| 4    | Send a regular message                        | Normal exchange continues                     |
+
+---
+
+### TC-111: Manage Invariants - Removal Failure Message
+
+**Related UC**: UC-016 A2
+
+| Step | Action                                        | Expected Result                              |
+| ---- | --------------------------------------------- | -------------------------------------------- |
+| 1    | Open invariants management with existing invariants, choose action "remove" (UC-016 step 9) | Removal prompt `Выберите номер инварианта для удаления (1-{n}):` displayed |
+| 2    | Arrange the repository removal to fail for a syntactically valid number | `[ERROR] Не удалось удалить инвариант.` displayed; the invariant remains in the list (UC-016 A2) |
+| 3    | Enter a valid number for a removable invariant | `[OK] Инвариант удалён!`; updated list shown |
 
 ---
 

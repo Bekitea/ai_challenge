@@ -323,7 +323,7 @@ Then the chat loop starts immediately (history is displayed in its header). The 
      ```
    - If the response contains reasoning, ask `Показать рассуждения модели? (y/n):`; on `y` print indented `[Reasoning]:` block
    - Save to history (automatic per-message save), repeat
-5. On `ContextWindowExceededError`: print `[ERROR] {message}` plus `Необходимо очистить историю сообщений или создать новый чат.` and exit the chat loop back to the menu
+5. On chat loop exit (any path: `/menu`, `ContextWindowExceededError`, backend exception, KeyboardInterrupt): the system MUST save the agent memory via the `save_agent_memory` use case before returning to the Main Menu — unsaved memory must never be lost when leaving a chat
 
 #### 4.5.3 Commands Specification
 
@@ -334,6 +334,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
 - **Action**: Transition the agent workflow phase via `Agent.handle_phase_command`
 - **Rules**: Forward transition allowed only to the next phase in order PLAN → EXECUTE → VALIDATE → REPORT; any backward transition is allowed; forward skips are rejected
 - **Output**: `[INFO] {message}` where message is either `Фаза изменена: {OLD} -> {NEW}` or `Нельзя перескочить этап: переход из {OLD} сразу в {NEW} запрещен`, followed by updated header line `--- ЧАТ: {name} [Фаза: {PHASE}] ---`
+- **Phase casing**: the header line and both `[INFO]` messages use the phase's UPPERCASE name (`PLAN`/`EXECUTE`/`VALIDATE`/`REPORT`); `/info` displays the lowercase phase value (`plan`/`execute`/`validate`/`report`) — see §4.5.3 `/info`
 
 ##### `/menu`
 
@@ -386,7 +387,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   ID: {agent_id}
   Стратегия: {strategy_type}
   Профиль задачи: {profile_name}|(не привязан)
-  Текущая фаза: {phase}|(не установлена)
+  Текущая фаза: {phase}|(не установлена)     # lowercase phase value: plan|execute|validate|report
   Сообщений: {message_count}
   Prompt токены: {total_prompt_tokens}
   Completion токены: {total_completion_tokens}
@@ -402,7 +403,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
 
 - **Action**: Execute `print_settings()`, then prompt `Изменить настройки? (y/n):`
 - **Flow**:
-  1. Display current settings (format in 4.6.1)
+  1. Display current settings (format in 3.6.1)
   2. Prompt: `Изменить настройки? (y/n):`
   3. If 'y': Execute `change_settings()` which re-prompts all `AgentSettings` values (same prompts as creation workflow steps 3–8) and applies them via `change_settings` use case
   4. If 'n' or other: Return to chat loop without changes
@@ -452,15 +453,15 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
 
 Error handling in the chat loop is not centralized in a separate matrix: every error case is specified as an alternative flow of the corresponding use case (§5):
 
-- **Context window exceeded** — UC-004 A3 (`[ERROR] {message}` + hint, exit to Main Menu)
-- **Backend exception during message send** — UC-004 A4 (`[ERROR] Ошибка: {message}`, exit to Main Menu)
-- **KeyboardInterrupt / EOFError** — UC-003 A2 (menu prompt) and UC-004 A5 / UC-005 A3 (chat loop: `Прервано пользователем.`)
+- **Context window exceeded** — UC-004 A3 (`[ERROR] {message}` + hint, memory saved, exit to Main Menu)
+- **Backend exception during message send** — UC-004 A4 (`[ERROR] Ошибка: {message}`, memory saved, exit to Main Menu)
+- **KeyboardInterrupt / EOFError** — UC-003 A2 (menu prompt) and UC-004 A5 / UC-005 A3 (chat loop: `Прервано пользователем.`, memory saved before exit)
 - **Errors while applying settings** — UC-005 A4
 - **Unknown slash-command** — not an error: treated as a regular message (UC-004 A2)
 
-### 4.6 Settings Management
+### 3.6 Settings Management
 
-#### 4.6.1 Print Settings (`_print_current_settings`)
+#### 3.6.1 Print Settings (`_print_current_settings`)
 
 ```
 --- ТЕКУЩИЕ НАСТРОЙКИ ---
@@ -473,13 +474,13 @@ Error handling in the chat loop is not centralized in a separate matrix: every e
 ----------------------------------------
 ```
 
-Model is shown by its identifier (not display name). Missing `context_window_size` is displayed as 200000.
+Model is shown by its identifier (not display name). Missing `context_window_size` is displayed as 200000. Unlike temperature/top_p/top_k, `Reasoning Effort` has no disable placeholder: the raw value is printed as-is, so when the effort is `None` the line reads `Reasoning Effort: None` (default effort values such as `low`/`medium`/`high` are printed verbatim).
 
-#### 4.6.2 Change Settings (`change_settings`)
+#### 3.6.2 Change Settings (`change_settings`)
 
-Same prompts as creation workflow (Section 4.4.3–4.4.8) applied sequentially; each answer fully replaces the previous value (empty input disables the parameter — there is no "keep current value" semantics). Strategy, task profile and phase cannot be changed for existing chats. Confirmation: `[OK] Настройки обновлены!` followed by the refreshed settings block.
+Same prompts as creation workflow (Section 3.4.3–3.4.8) applied sequentially; each answer fully replaces the previous value (empty input disables the parameter — there is no "keep current value" semantics). Strategy, task profile and phase cannot be changed for existing chats. Confirmation: `[OK] Настройки обновлены!` followed by the refreshed settings block.
 
-### 4.7 Task Profiles Menu
+### 3.7 Task Profiles Menu
 
 Entered from Main Menu option 3 (`task_profiles_menu`).
 
@@ -493,7 +494,7 @@ Entered from Main Menu option 3 (`task_profiles_menu`).
 ----------------------------------------
 ```
 
-Prompt: `Ваш выбор (1-3):`. Invalid choice: `[WARN] Неверный выбор, попробуйте снова.` Option 3 returns to the Main Menu.
+Prompt: `Ваш выбор (1-3):`. Invalid choice: `[WARN] Неверный выбор, попробуйте снова.` and the menu is re-displayed. Option 3 returns to the Main Menu.
 
 #### 4.7.1.1 Profiles List (`_view_task_profiles_list`)
 
@@ -516,7 +517,7 @@ Empty list: prints `Нет доступных профилей задач.` and 
 4. Назад к списку
 ```
 
-Prompt: `Выберите действие (1-4):`. Invalid action: `[WARN] Неверный выбор, попробуйте снова.` Actions 1–3 first require profile selection by index (`Выберите профиль (1-{n}):` / `Выберите профиль для удаления (1-{n}):`; out-of-range → `Введите число от 1 до {n}`, non-numeric → `Введите корректное число`). After an action completes, control returns to the Task Profiles menu.
+Prompt: `Выберите действие (1-4):`. Invalid action: `[WARN] Неверный выбор, попробуйте снова.` and the action prompt is re-displayed. Actions 1–3 first require profile selection by index (`Выберите профиль (1-{n}):` / `Выберите профиль для удаления (1-{n}):`; out-of-range → `Введите число от 1 до {n}`, non-numeric → `Введите корректное число`). After an action completes, control returns to the Task Profiles menu.
 
 #### 4.7.2 Create Profile (`_create_task_profile`)
 
@@ -577,7 +578,7 @@ After profile selection, shows numbered invariants (`--- ИНВАРИАНТЫ П
 
 - Add: `Введите текст инварианта:`; empty → `[WARN] Инвариант не может быть пустым.`; success → `[OK] Инвариант добавлен!`; repository `ValueError` → `[ERROR] {e}`
 - Remove: if the list is empty → `[WARN] Нет инвариантов для удаления.`; otherwise `Выберите номер инварианта для удаления (1-{n}):`; unknown number → `[WARN] Некорректный номер.`; non-numeric → `[WARN] Введите корректное число.`; failure → `[ERROR] Не удалось удалить инвариант.`; success → `[OK] Инвариант удалён!`
-- Invalid action number (outside 1–3): `[WARN] Неверный выбор.`
+- Invalid action number (outside 1–3): `[WARN] Неверный выбор.` (no `попробуйте снова` tail in this submenu)
 - The list is redisplayed after each action until `3. Назад`
 
 #### 4.7.5 Delete Profile (`_delete_profile`)
@@ -821,16 +822,17 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 - **A3: Context Window Exceeded**
   - Step 6: Backend raises `ContextWindowExceededError`
   - System clears the "печатает..." line, displays `[ERROR] {message}` followed by `Необходимо очистить историю сообщений или создать новый чат.`
+  - System saves the agent memory via the `save_agent_memory` use case (memory must not be lost on abnormal exit)
   - System exits the chat loop and returns to Main Menu (the chat remains active for option 5)
 
 - **A4: Any Other Backend Error**
   - Step 6: Any other exception is raised while sending/processing
   - System displays `[ERROR] Ошибка: {message}`
-  - System exits the chat loop and returns to Main Menu
+  - System saves the agent memory via the `save_agent_memory` use case, then exits the chat loop and returns to Main Menu
 
 - **A5: KeyboardInterrupt During Exchange**
   - Any step: User presses Ctrl+C at the input prompt or during processing
-  - System displays `Прервано пользователем.` and exits the chat loop back to Main Menu
+  - System displays `Прервано пользователем.`, saves the agent memory via the `save_agent_memory` use case and exits the chat loop back to Main Menu
 
 - **A6: Long Response**
   - Step 8: Response exceeds terminal width
@@ -844,6 +846,7 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 
 - Two new messages in history (user + assistant)
 - Chat preview updated with last message
+- On any exit from the chat loop (`/menu`, A3, A4, A5) the agent memory is saved before returning to the Main Menu
 
 ---
 
@@ -879,11 +882,11 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 
 - **A3: KeyboardInterrupt / EOFError During Settings Flow**
   - Any step: Ctrl+C or end of input propagates to the chat loop handler
-  - System displays `Прервано пользователем.` and exits the chat loop back to Main Menu
+  - System displays `Прервано пользователем.`, saves the agent memory (UC-004 exit rule) and exits the chat loop back to Main Menu
 
 - **A4: Backend Error While Applying Settings**
   - Step 8: `change_settings` use case raises an exception
-  - System displays `[ERROR] Ошибка: {message}` and exits the chat loop back to Main Menu
+  - System displays `[ERROR] Ошибка: {message}`, saves the agent memory (UC-004 exit rule) and exits the chat loop back to Main Menu
 
 #### 5.5.4 Postconditions
 
@@ -1137,6 +1140,10 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 - **A3: Invalid Profile Index**
   - Step 8: Out-of-range number → `Введите число от 1 до {n}`; non-numeric → `Введите корректное число`; re-prompt until valid
 
+- **A4: Invalid Action In Profiles List Submenu**
+  - Step 9: User enters an action number outside 1–4 at `Выберите действие (1-4):`
+  - Display `[WARN] Неверный выбор, попробуйте снова.` and re-prompt the action
+
 #### 5.13.4 Postconditions
 
 - User viewed task profiles list (or empty state)
@@ -1311,7 +1318,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 - **A4: Invalid Action Choice**
   - Step 4/9: User enters an action number outside 1–3 at `Выберите действие (1-3):`
-  - Display `[WARN] Неверный выбор.`; the invariants list and action prompt are re-displayed
+  - Display `[WARN] Неверный выбор.` (without the `попробуйте снова` tail); the invariants list and action prompt are re-displayed
 
 - **A5: No Invariants To Remove**
   - Step 9: User selects action 2 while the invariants list is empty
@@ -2630,7 +2637,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-091: Profiles Menu And Submenu Invalid Choices Re-Prompt
 
-**Related UC**: UC-013 A2, UC-013 A3
+**Related UC**: UC-013 A2, UC-013 A3, UC-013 A4
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |

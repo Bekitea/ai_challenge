@@ -1874,7 +1874,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-081: Keyboard Interrupt During Exchange
 
-**Related UC**: UC-004 A5
+**Related UC**: UC-004 A6
 
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -1886,7 +1886,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-082: Long Response Wrapping
 
-**Related UC**: UC-004 A7
+**Related UC**: UC-004 A8
 
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -1897,7 +1897,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-083: Reasoning Display Prompt
 
-**Related UC**: UC-004 A8
+**Related UC**: UC-004 A9
 
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -3067,13 +3067,13 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-115: Chat Loop Graceful Exit On End Of Input
 
-**Related UC**: UC-004 A6
+**Related UC**: UC-004 A7
 
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | 1    | Start the application, create a chat (quick path), feed input that ends right after one message exchange (no `/menu`, no option 6) | The message is sent and answered; then the input stream ends                            |
 | 2    | Verify termination                                              | The chat loop terminates gracefully: no traceback in stderr, process exits cleanly      |
-| 3    | Verify memory save                                              | Agent memory is saved before exit (UC-004 A6, exit rule in 5.4.4); restart shows the exchange intact |
+| 3    | Verify memory save                                              | Agent memory is saved before exit (UC-004 A7, exit rule in 5.4.4); restart shows the exchange intact |
 
 ---
 

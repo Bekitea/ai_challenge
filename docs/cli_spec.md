@@ -477,7 +477,7 @@ Error handling in the chat loop is not centralized in a separate matrix: every e
 
 - **Context window exceeded** — UC-004 A4 (`[ERROR] {message}` + hint, memory saved, exit to Main Menu)
 - **Backend exception during message send** — UC-004 A5 (`[ERROR] Ошибка: {message}`, memory saved, exit to Main Menu)
-- **KeyboardInterrupt / EOFError** — UC-003 A2 (menu prompt) and UC-004 A5–A6 / UC-005 A3 (chat loop: `Прервано пользователем.`, memory saved before exit)
+- **KeyboardInterrupt / EOFError** — UC-003 A2 (menu prompt) and UC-004 A6–A7 / UC-005 A3 (chat loop: `Прервано пользователем.`, memory saved before exit)
 - **Errors while applying settings** — UC-005 A4
 - **Unknown slash-command** — not an error: treated as a regular message (UC-004 A2)
 
@@ -851,24 +851,24 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
   - System saves the agent memory via the `save_agent_memory` use case (memory must not be lost on abnormal exit)
   - System exits the chat loop and returns to Main Menu (the chat remains active for option 5)
 
-- **A4: Any Other Backend Error**
+- **A5: Any Other Backend Error**
   - Step 6: Any other exception is raised while sending/processing
   - System displays `[ERROR] Ошибка: {message}`
   - System saves the agent memory via the `save_agent_memory` use case, then exits the chat loop and returns to Main Menu
 
-- **A5: KeyboardInterrupt During Exchange**
+- **A6: KeyboardInterrupt During Exchange**
   - Any step: User presses Ctrl+C at the input prompt or during processing
   - System displays `Прервано пользователем.`, saves the agent memory via the `save_agent_memory` use case and exits the chat loop back to Main Menu
 
-- **A6: EOFError (End Of Input)**
+- **A7: EOFError (End Of Input)**
   - Step 1/2: The input stream ends (piped input exhausted or Ctrl+D)
-  - The chat loop terminates gracefully without a traceback; the agent memory is saved before exit (same rule as A5)
+  - The chat loop terminates gracefully without a traceback; the agent memory is saved before exit (same rule as A6)
 
-- **A7: Long Response**
+- **A8: Long Response**
   - Step 8: Response exceeds terminal width
   - System wraps text appropriately
 
-- **A8: Reasoning In Response**
+- **A9: Reasoning In Response**
   - After step 9: response carries reasoning content
   - System asks `Показать рассуждения модели? (y/n):`; on `y` it prints the indented `[Reasoning]:` block, otherwise nothing extra
 
@@ -876,7 +876,7 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 
 - Two new messages in history (user + assistant)
 - Chat preview updated with last message
-- On any exit from the chat loop (`/menu`, A4, A5, A6) the agent memory is saved before returning to the Main Menu
+- On any exit from the chat loop (`/menu`, A4, A5, A6, A7) the agent memory is saved before returning to the Main Menu
 
 ---
 
@@ -964,6 +964,7 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 
 - Chat remains the active chat (option 5 can return to it)
 - User is in Main Menu
+- Per the UC-004 exit rule, the agent memory is saved on exiting the chat loop via `/stop`
 
 ---
 
@@ -1519,7 +1520,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | Step | Action                                       | Expected Result                                                                                                   |
 | ---- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | 1    | Select option 1 (New Chat)                   | Header `--- СОЗДАНИЕ НОВОГО ЧАТА ---` and prompt `Хотите настроить чат? (y/n, по умолчанию n):` displayed        |
-| 2    | Press Enter (empty input → default "n")      | `Используются настройки по умолчанию.` printed; steps 4–20 of UC-001 skipped entirely               |
+| 2    | Press Enter (empty input → default "n")      | `Используются настройки по умолчанию.` printed; steps 4–20 of UC-001 skipped entirely; creation continues from UC-001 step 21 |
 | 3    | Verify completion message                    | `[OK] Чат 'Чат {N}' создан!` (auto-generated name), then chat loop entered                                        |
 | 4    | Verify chat settings                         | Model = `aliceai-llm-flash/latest`, temperature/top_p/top_k disabled (None), reasoning_effort "none", context window 200000 |
 | 5    | Verify strategy and profile                  | DefaultStrategy, task_profile_id = null                                                                            |
@@ -1960,7 +1961,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-020: Help Command
+### TC-121: Help Command
 
 **Related UC**: UC-008
 
@@ -2023,7 +2024,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-025: Concurrent Chat Operations
+### TC-122: Concurrent Chat Operations
 
 **Related UC**: UC-002 (main success scenario), UC-003 (main success scenario)
 
@@ -2934,7 +2935,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-061: Create Chat with Task Profile Attachment
 
-**Related UC**: UC-001 (steps 22–24), §4.4.10
+**Related UC**: UC-001 (steps 20–23), §4.4.10
 
 **Precondition**: At least one task profile exists
 
@@ -2951,7 +2952,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-062: Create Chat Without Task Profile
 
-**Related UC**: UC-001 (step 22), §4.4.10
+**Related UC**: UC-001 (steps 20–23), §4.4.10
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |

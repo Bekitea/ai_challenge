@@ -31,51 +31,45 @@ This guide documents the experience and best practices for testing CLI applicati
 - ✅ Tests can run in parallel without conflicts
 - ✅ Failed tests leave artifacts for debugging (until next test run)
 
-### Test Setup and Teardown Pattern
+### Test Setup And Teardown: The Module-Level autouse Fixture
 
-All E2E tests inherit from `BaseCLITest`, which provides automatic isolation:
+Isolation is provided by a single module-level `@pytest.fixture(autouse=True)`:
 
 ```python
-class BaseCLITest:
-    """Base class providing test isolation."""
+@pytest.fixture(autouse=True)
+def setup_clean_test_environment():
+    """Automatically clean test data and initialize DB before each test in this module."""
+    clean_test_data()  # remove + recreate ./test-data/
 
-    def setUp(self):
-        """Called before each test."""
-        # 1. Remove old test-data directory
-        if os.path.exists(TEST_DATA_DIR):
-            shutil.rmtree(TEST_DATA_DIR)
+    db = DatabaseConnection(connect_args={"check_same_thread": False, "timeout": 30})
+    db.init_tables(Base.metadata)   # create schema in the isolated test DB
+    db.close()                      # release the file handle for the subprocess (Windows)
 
-        # 2. Create fresh test-data directory
-        os.makedirs(TEST_DATA_DIR, exist_ok=True)
-
-        # 3. Initialize database tables
-        init_db()
-
-    def tearDown(self):
-        """Called after each test."""
-        # Optional: Clean up test-data immediately
-        if os.path.exists(TEST_DATA_DIR):
-            shutil.rmtree(TEST_DATA_DIR)
+    yield
 ```
+
+What this fixture does NOT do — and what the "No Fixtures Policy" section below is actually about:
+
+- It does not inject any state into tests as a parameter; no test signature depends on it.
+- It does not create chats, profiles or messages — every test builds its own state through CLI stdin interaction inside a subprocess.
+- It does not mock anything at the Python level; it only prepares the empty isolated `./test-data/` storage.
+
+In other words, the ban applies to **business-state fixtures** (fixtures that seed application data or are passed as test arguments).
 
 **Example Test:**
 
 ```python
-class TestUC001_CreateChatWithAllSettings(BaseCLITest):
+class TestUC001_CreateChatWithAllSettings:
 
-    def test_tc_001_create_chat_default_values(self):
-        # setUp() already ran - test-data is clean and DB initialized
+    def test_tc_001_quick_chat_creation_with_defaults(self):
+        # The autouse fixture already ran: test-data is clean and DB initialized
 
-        test_input = "1\n\n\n1\n\n\n\n\n\n1\n4\n"
-        env = os.environ.copy()
-        env["APPLICATION_MODE"] = "TEST"  # Critical!
+        test_input = "1\n\n4\n"  # New Chat -> quick path (Enter = default "n") -> Exit
 
-        stdout, stderr, returncode = run_cli_command(test_input, env=env)
+        stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0
-        assert "Чат создан" in stdout
-
-        # tearDown() will run after - cleans up test-data
+        assert "[OK] Чат 'Чат" in stdout
 ```
 
 ### Manual Testing with Different Modes

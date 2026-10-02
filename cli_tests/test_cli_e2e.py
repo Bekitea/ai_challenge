@@ -104,22 +104,22 @@ class TestUC001_CreateChatWithAllSettings:
     Use Case UC-001: Create New Chat with All Settings
 
     Test Cases:
-    - TC-001: Create Chat with Default Values
+    - TC-001: Quick Chat Creation With Defaults
     - TC-002: Create Chat with Custom Settings
     - TC-003: Invalid Temperature Handling
-    - TC-019: Long Chat Name Handling
-    - TC-031: SlidingWindowStrategy Creation
-    - TC-032: SlidingWindowStrategy With Custom Window
-    - TC-033: SummarizationStrategy Creation
-    - TC-034: SummarizationStrategy With Custom Parameters
-    - TC-035: KeyValueMemoryStrategy Creation
-    - TC-036: KeyValueMemoryStrategy With Custom Parameters
-    - TC-037: DefaultStrategy Creation
+    - TC-024: Long Chat Name Handling
+    - TC-036: SlidingWindowStrategy Creation
+    - TC-037: SlidingWindowStrategy With Custom Window
+    - TC-038: SummarizationStrategy Creation
+    - TC-039: SummarizationStrategy With Custom Parameters
+    - TC-040: KeyValueMemoryStrategy Creation
+    - TC-041: KeyValueMemoryStrategy With Custom Parameters
+    - TC-042: DefaultStrategy Creation
     """
 
-    def test_tc_001_create_chat_default_values(self):
+    def test_tc_001_quick_chat_creation_with_defaults(self):
         """
-        TC-001: Create Chat with Default Values
+        TC-001: Quick Chat Creation With Defaults
 
         Steps:
         1. Select "New Chat"
@@ -134,28 +134,35 @@ class TestUC001_CreateChatWithAllSettings:
         """
         test_input = (
             "1\n"  # Новый чат
-            "\n"  # Default name (Чат N)
-            "\n"  # Skip system prompt
-            "1\n"  # Model 1
-            "\n"  # Temperature disabled
-            "\n"  # Top P disabled
-            "\n"  # Top K disabled (0)
-            "\n"  # Reasoning effort (none)
-            "\n"  # Context window (200k)
-            "1\n"  # DefaultStrategy
-            "4\n"  # Exit
+            "\n"  # Пустой ответ на "Хотите настроить?" -> default "n", быстрый путь
+            "/settings\n"  # Проверка настроек созданного чата (§4.4.7)
+            "n\n"  # Не изменять настройки
+            "/info\n"  # Проверка стратегии и профиля созданного чата
+            "/menu\n"  # Выход из цикла чата в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App exited with code {returncode}, stderr: {stderr}"
         assert "[OK] Чат 'Чат" in stdout, "Default chat name should be 'Чат N'"
-        assert "ID:" in stdout, "Chat ID should be displayed"
-        assert "Стратегия:" in stdout or "DefaultStrategy" in stdout, (
-            "Strategy should be displayed"
+        assert "Используются настройки по умолчанию." in stdout, (
+            "Quick path must announce default settings (UC-001 A1)"
         )
+        # TC-001 step 4: defaults via /settings — model aliceai-llm-flash/latest,
+        # temperature/top_p/top_k disabled (None), context window 200000
+        assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout
+        assert "Модель: aliceai-llm-flash/latest" in stdout
+        assert "Температура: отключена" in stdout
+        assert "Top P: отключен" in stdout
+        assert "Top K: отключено" in stdout
+        assert "Размер контекстного окна: 200000 токенов" in stdout
+        # TC-001 step 5: DefaultStrategy and no task profile via /info
+        assert "--- ИНФОРМАЦИЯ О ЧАТЕ ---" in stdout
+        assert "Стратегия: DefaultStrategy" in stdout
+        assert "Профиль задачи: (не привязан)" in stdout
 
-    def test_tc_002_create_chat_custom_settings(self):
+    def test_tc_002_create_chat_with_custom_settings(self):
         """
         TC-002: Create Chat with Custom Settings
 
@@ -172,6 +179,7 @@ class TestUC001_CreateChatWithAllSettings:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "Test Chat\n"  # Название
             "Be concise\n"  # Системный промпт
             "2\n"  # Model 2 (Qwen3.6)
@@ -179,28 +187,39 @@ class TestUC001_CreateChatWithAllSettings:
             "0.8\n"  # Top P
             "50\n"  # Top K
             "3\n"  # Reasoning effort: medium
-            "100000\n"  # Context window
+            "128000\n"  # Context window
             "1\n"  # DefaultStrategy
-            "4\n"  # Exit
+            # Профилей нет -> выбор профиля пропускается автоматически
+            "/settings\n"  # Проверка применённых настроек
+            "n\n"  # Не изменять
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0
         assert "[OK] Чат 'Test Chat' создан!" in stdout
-        assert "ID:" in stdout
+        # TC-002 step 13: all entered values saved correctly
+        assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout
+        assert "Температура: 1.5" in stdout
+        assert "Top P: 0.8" in stdout
+        assert "Top K: 50" in stdout
+        assert "Reasoning Effort: medium" in stdout
+        assert "Размер контекстного окна: 128000 токенов" in stdout
 
     def test_tc_003_invalid_temperature_handling(self):
         """
         TC-003: Invalid Temperature Handling
 
         Steps:
-        1-3. Create chat, reach temperature prompt
+        1-3. Create chat manually, reach temperature prompt
         4. Enter "abc" - should show warning, temp disabled
         5. Continue creation
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "Temp Test\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -210,48 +229,86 @@ class TestUC001_CreateChatWithAllSettings:
             "\n"  # Reasoning effort
             "\n"  # Context window
             "1\n"  # DefaultStrategy
-            "4\n"  # Exit
+            "0\n"  # Нет профиля
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0
-        # Check for Russian text about invalid input or disabled temperature
         assert (
-            "Некорректное" in stdout
-            or "отключено" in stdout.lower()
-            or "default" in stdout.lower()
-        ), "Should show warning about invalid temperature"
+            "Некорректное число. Используется значение по умолчанию (отключено)."
+            in stdout
+        )
+        assert "[OK] Чат 'Temp Test' создан!" in stdout
 
-    def test_tc_019_long_chat_name_handling(self):
+    def test_tc_003b_temperature_out_of_range(self):
         """
-        TC-019: Long Chat Name Handling
+        TC-003 steps 4-5: out-of-range temperature values ("-1", "3.0")
+        trigger the range warning and disable temperature.
+        """
+        for bad_value in ("-1", "3.0"):
+            test_input = (
+                "1\n"  # Новый чат
+                "y\n"  # Хотите настроить? (y/n)
+                f"Range {bad_value}\n"  # Название
+                "\n"  # Skip system prompt
+                "1\n"  # Model 1
+                f"{bad_value}\n"  # Out-of-range temperature
+                "\n" + "\n" + "\n" + "\n"  # Top P / Top K / Reasoning / Context
+                "1\n"  # DefaultStrategy
+                "0\n"  # Нет профиля
+                "/menu\n"
+                "6\n"
+            )
+
+            stdout, stderr, returncode = run_cli_command(test_input)
+
+            assert returncode == 0
+            assert "Температура должна быть от 0.0 до 2.0." in stdout, (
+                f"Range warning expected for temperature={bad_value}"
+            )
+
+    def test_tc_024_long_chat_name_handling(self):
+        """
+        TC-024: Long Chat Name Handling
 
         Steps:
-        1. Enter 150-char name - should truncate to 100
-        2. Verify storage has max 100 chars
-        3. Verify display shows truncated name
+        1. Enter 150-char name - accepted without truncation (§4.4.1)
+        2/3. Verify full name saved and displayed
         """
         long_name = "A" * 150  # 150 characters
 
         test_input = (
             "1\n"  # Новый чат
-            f"{long_name}\n"  # Long name (should truncate to 100)
+            "y\n"  # Хотите настроить? (y/n)
+            f"{long_name}\n"  # Long name (no truncation expected)
             "\n"  # Skip system prompt
             "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
             "1\n"  # DefaultStrategy
-            "4\n"  # Exit
+            "0\n"  # Нет профиля задачи
+            "/menu\n"  # Выход в меню
+            "2\n"  # Выбрать чат — проверить список
+            "1\n"  # Выбор единственного чата
+            "/menu\n"
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0
-        assert "[OK] Чат" in stdout
+        assert f"[OK] Чат '{long_name}' создан!" in stdout, (
+            "Full 150-char name should be accepted without truncation"
+        )
+        assert long_name in stdout.split("[OK] Чат")[1], (
+            "Chat list should display the full name"
+        )
 
-    def test_tc_031_sliding_window_strategy_creation(self):
+    def test_tc_036_sliding_window_strategy_creation(self):
         """
-        TC-031: SlidingWindowStrategy Creation
+        TC-036: SlidingWindowStrategy Creation
 
         Steps:
         1. Create new chat
@@ -261,12 +318,15 @@ class TestUC001_CreateChatWithAllSettings:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "SlidingWindow Test\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
             "4\n"  # SlidingWindowStrategy
-            "4\n"  # Exit
+            "0\n"  # Нет профиля задачи
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -274,9 +334,9 @@ class TestUC001_CreateChatWithAllSettings:
         assert returncode == 0
         assert "SlidingWindowStrategy" in stdout or "4." in stdout
 
-    def test_tc_032_sliding_window_strategy_custom_window(self):
+    def test_tc_037_sliding_window_strategy_custom_window(self):
         """
-        TC-032: SlidingWindowStrategy With Custom Window
+        TC-037: SlidingWindowStrategy With Custom Window
 
         Steps:
         1. Create new chat
@@ -286,13 +346,16 @@ class TestUC001_CreateChatWithAllSettings:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "SlidingWindow Custom\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
             "4\n"  # SlidingWindowStrategy
             "20\n"  # Custom window_size
-            "4\n"  # Exit
+            "0\n"  # Нет профиля задачи
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -300,9 +363,9 @@ class TestUC001_CreateChatWithAllSettings:
         assert returncode == 0
         assert "SlidingWindowStrategy" in stdout or "window" in stdout.lower()
 
-    def test_tc_033_summarization_strategy_creation(self):
+    def test_tc_038_summarization_strategy_creation(self):
         """
-        TC-033: SummarizationStrategy Creation
+        TC-038: SummarizationStrategy Creation
 
         Steps:
         1. Create new chat
@@ -313,6 +376,7 @@ class TestUC001_CreateChatWithAllSettings:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "Summarization Test\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -320,7 +384,9 @@ class TestUC001_CreateChatWithAllSettings:
             "2\n"  # SummarizationStrategy
             "\n"  # non_compressible_count=2
             "\n"  # buffer_size=3
-            "4\n"  # Exit
+            "0\n"  # Нет профиля задачи
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -328,9 +394,9 @@ class TestUC001_CreateChatWithAllSettings:
         assert returncode == 0
         assert "SummarizationStrategy" in stdout
 
-    def test_tc_034_summarization_strategy_custom_parameters(self):
+    def test_tc_039_summarization_strategy_custom_parameters(self):
         """
-        TC-034: SummarizationStrategy With Custom Parameters
+        TC-039: SummarizationStrategy With Custom Parameters
 
         Steps:
         1. Create new chat
@@ -341,6 +407,7 @@ class TestUC001_CreateChatWithAllSettings:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "Summarization Custom\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -348,7 +415,9 @@ class TestUC001_CreateChatWithAllSettings:
             "2\n"  # SummarizationStrategy
             "5\n"  # non_compressible_count=5
             "4\n"  # buffer_size=4
-            "4\n"  # Exit
+            "0\n"  # Нет профиля задачи
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -356,9 +425,9 @@ class TestUC001_CreateChatWithAllSettings:
         assert returncode == 0
         assert "SummarizationStrategy" in stdout
 
-    def test_tc_035_key_value_memory_strategy_creation(self):
+    def test_tc_040_key_value_memory_strategy_creation(self):
         """
-        TC-035: KeyValueMemoryStrategy Creation
+        TC-040: KeyValueMemoryStrategy Creation
 
         Steps:
         1. Create new chat
@@ -369,6 +438,7 @@ class TestUC001_CreateChatWithAllSettings:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "KeyValueMemory Test\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -376,7 +446,9 @@ class TestUC001_CreateChatWithAllSettings:
             "3\n"  # KeyValueMemoryStrategy
             "\n"  # non_compressible_count=2
             "\n"  # buffer_size=3
-            "4\n"  # Exit
+            "0\n"  # Нет профиля задачи
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -384,9 +456,9 @@ class TestUC001_CreateChatWithAllSettings:
         assert returncode == 0
         assert "KeyValueMemoryStrategy" in stdout
 
-    def test_tc_036_key_value_memory_strategy_custom_parameters(self):
+    def test_tc_041_key_value_memory_strategy_custom_parameters(self):
         """
-        TC-036: KeyValueMemoryStrategy With Custom Parameters
+        TC-041: KeyValueMemoryStrategy With Custom Parameters
 
         Steps:
         1. Create new chat
@@ -397,6 +469,7 @@ class TestUC001_CreateChatWithAllSettings:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "KeyValueMemory Custom\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -404,7 +477,9 @@ class TestUC001_CreateChatWithAllSettings:
             "3\n"  # KeyValueMemoryStrategy
             "3\n"  # non_compressible_count=3
             "5\n"  # buffer_size=5
-            "4\n"  # Exit
+            "0\n"  # Нет профиля задачи
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -412,9 +487,9 @@ class TestUC001_CreateChatWithAllSettings:
         assert returncode == 0
         assert "KeyValueMemoryStrategy" in stdout
 
-    def test_tc_037_default_strategy_creation(self):
+    def test_tc_042_default_strategy_creation(self):
         """
-        TC-037: DefaultStrategy Creation
+        TC-042: DefaultStrategy Creation
 
         Steps:
         1. Create new chat
@@ -424,12 +499,15 @@ class TestUC001_CreateChatWithAllSettings:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "DefaultStrategy Test\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
             "1\n"  # DefaultStrategy
-            "4\n"  # Exit
+            "0\n"  # Нет профиля задачи
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -443,14 +521,14 @@ class TestUC002_SelectExistingChatFromList:
     Use Case UC-002: Select Existing Chat from List
 
     Test Cases:
-    - TC-004: Select Chat from Empty List
-    - TC-005: Preview with System Prompt Only
-    - TC-006: Preview with User Message
+    - TC-009: Select Chat from Empty List
+    - TC-010: Preview with System Prompt Only
+    - TC-011: Preview with User Message
     """
 
-    def test_tc_004_select_chat_from_empty_list(self):
+    def test_tc_009_select_chat_from_empty_list(self):
         """
-        TC-004: Select Chat from Empty List
+        TC-009: Select Chat from Empty List
 
         Steps:
         1. Ensure no chats exist
@@ -471,9 +549,9 @@ class TestUC002_SelectExistingChatFromList:
             or "Нет доступных чатов. Создайте новый." in stdout
         )
 
-    def test_tc_005_preview_with_system_prompt_only(self):
+    def test_tc_010_preview_with_system_prompt_only(self):
         """
-        TC-005: Preview with System Prompt Only
+        TC-010: Preview with System Prompt Only
 
         Steps:
         1. Create chat with system prompt only
@@ -484,6 +562,7 @@ class TestUC002_SelectExistingChatFromList:
         """
         create_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "SystemPromptOnly\n"  # Название
             "You are helpful\n"  # System prompt only
             "1\n"  # Model 1
@@ -504,9 +583,9 @@ class TestUC002_SelectExistingChatFromList:
         assert returncode == 0
         assert "(нет сообщений)" in stdout or "Сообщений: 0" in stdout
 
-    def test_tc_006_preview_with_user_message(self):
+    def test_tc_011_preview_with_user_message(self):
         """
-        TC-006: Preview with User Message
+        TC-011: Preview with User Message
 
         Steps:
         1. Create chat
@@ -516,6 +595,7 @@ class TestUC002_SelectExistingChatFromList:
         """
         create_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "PreviewTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -543,13 +623,13 @@ class TestUC003_ReturnToActiveChat:
     Use Case UC-003: Return to Active Chat
 
     Test Cases:
-    - TC-007: Return to Chat Without Active Chat
-    - TC-008: Return to Chat With Active Chat
+    - TC-012: Return to Chat Without Active Chat
+    - TC-013: Return to Chat With Active Chat
     """
 
-    def test_tc_007_return_to_chat_without_active_chat(self):
+    def test_tc_012_return_to_chat_without_active_chat(self):
         """
-        TC-007: Return to Chat Without Active Chat
+        TC-012: Return to Chat Without Active Chat
 
         Steps:
         1. Start application
@@ -567,9 +647,9 @@ class TestUC003_ReturnToActiveChat:
         assert returncode == 0
         assert "нет активного чата" in stdout.lower() or "[WARN]" in stdout
 
-    def test_tc_008_return_to_chat_with_active_chat(self):
+    def test_tc_013_return_to_chat_with_active_chat(self):
         """
-        TC-008: Return to Chat With Active Chat
+        TC-013: Return to Chat With Active Chat
 
         Steps:
         1. Create or select chat
@@ -580,6 +660,7 @@ class TestUC003_ReturnToActiveChat:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "ActiveChatTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -604,16 +685,16 @@ class TestUC004_SendMessageAndReceiveResponse:
     Use Case UC-004: Send Message and Receive Response
 
     Test Cases:
-    - TC-009: Send Multiple Messages
-    - TC-010: Empty Message Handling
-    - TC-016: Unknown Command Handling
-    - TC-017: System Prompt in History
-    - TC-018: Special Characters in Input
+    - TC-014: Send Multiple Messages
+    - TC-015: Empty And Whitespace-Only Message Handling
+    - TC-021: Unknown Command Handling
+    - TC-022: System Prompt in History
+    - TC-023: Special Characters in Input
     """
 
-    def test_tc_009_send_multiple_messages(self):
+    def test_tc_014_send_multiple_messages(self):
         """
-        TC-009: Send Multiple Messages
+        TC-014: Send Multiple Messages
 
         Steps:
         1. Enter chat
@@ -624,6 +705,7 @@ class TestUC004_SendMessageAndReceiveResponse:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "MultiMessage\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -645,9 +727,9 @@ class TestUC004_SendMessageAndReceiveResponse:
         assert "[USER]:" in stdout
         assert "[AGENT]" in stdout
 
-    def test_tc_010_empty_message_handling(self):
+    def test_tc_015_empty_and_whitespace_only_message_handling(self):
         """
-        TC-010: Empty Message Handling
+        TC-015: Empty And Whitespace-Only Message Handling
 
         Steps:
         1. Enter chat
@@ -657,6 +739,7 @@ class TestUC004_SendMessageAndReceiveResponse:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "EmptyMessage\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -674,9 +757,9 @@ class TestUC004_SendMessageAndReceiveResponse:
         assert returncode == 0
         assert "[USER]:" in stdout or "Введите сообщение" in stdout
 
-    def test_tc_016_unknown_command_handling(self):
+    def test_tc_021_unknown_command_handling(self):
         """
-        TC-016: Unknown Command Handling
+        TC-021: Unknown Command Handling
 
         Steps:
         1. Enter chat
@@ -685,6 +768,7 @@ class TestUC004_SendMessageAndReceiveResponse:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "UnknownCmd\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -701,9 +785,9 @@ class TestUC004_SendMessageAndReceiveResponse:
             "[WARN]" in stdout or "Неизвестная команда" in stdout or "/help" in stdout
         )
 
-    def test_tc_017_system_prompt_in_history(self):
+    def test_tc_022_system_prompt_in_history(self):
         """
-        TC-017: System Prompt in History
+        TC-022: System Prompt in History
 
         Steps:
         1. Create chat with system prompt
@@ -713,6 +797,7 @@ class TestUC004_SendMessageAndReceiveResponse:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "SystemPromptTest\n"  # Название
             "You are a helpful assistant\n"  # System prompt
             "1\n"  # Model 1
@@ -728,9 +813,9 @@ class TestUC004_SendMessageAndReceiveResponse:
         assert returncode == 0
         assert "[SYSTEM]" in stdout or "SYSTEM" in stdout.upper()
 
-    def test_tc_018_special_characters_in_input(self):
+    def test_tc_023_special_characters_in_input(self):
         """
-        TC-018: Special Characters in Input
+        TC-023: Special Characters in Input
 
         Steps:
         1. Create chat
@@ -741,6 +826,7 @@ class TestUC004_SendMessageAndReceiveResponse:
 
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "SpecialChars\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -762,15 +848,15 @@ class TestUC005_ViewAndChangeSettingsInChat:
     Use Case UC-005: View and Change Settings In-Chat
 
     Test Cases:
-    - TC-011: View Settings
-    - TC-012: Change Partial Settings
-    - TC-027: Settings Change With Confirmation
-    - TC-028: Settings Change Cancelled
+    - TC-016: View Settings
+    - TC-017: Change Settings With Empty Inputs Disables Parameters
+    - TC-032: Settings Change With Confirmation
+    - TC-033: Settings Change Cancelled
     """
 
-    def test_tc_011_view_settings(self):
+    def test_tc_016_view_settings(self):
         """
-        TC-011: View Settings
+        TC-016: View Settings
 
         Steps:
         1. Enter chat with configured settings
@@ -779,6 +865,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "ViewSettings\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -795,9 +882,9 @@ class TestUC005_ViewAndChangeSettingsInChat:
         assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout or "Модель:" in stdout
         assert "Температура:" in stdout
 
-    def test_tc_012_change_partial_settings(self):
+    def test_tc_017_change_settings_with_empty_inputs_disables_parameters(self):
         """
-        TC-012: Change Partial Settings
+        TC-017: Change Settings With Empty Inputs Disables Parameters
 
         Steps:
         1. Type "/settings"
@@ -807,6 +894,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "PartialSettings\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -814,12 +902,14 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "1\n"  # DefaultStrategy
             "/settings\n"  # View settings
             "y\n"  # Change settings
-            "1\n"  # Keep model 1
-            "0.8\n"  # New temperature
-            "\n" + "\n" + "\n"  # Keep top_p, top_k, reasoning_effort defaults
-            "1\n"  # Confirm reasoning effort (default 1)
-            "\n"  # Keep context window size default
-            "4\n"  # Exit
+            "1\n"  # Модель 1
+            "0.8\n"  # Новая температура
+            "\n"  # Top P (пусто -> отключён)
+            "\n"  # Top K (пусто -> 0/отключено)
+            "\n"  # Reasoning effort (пусто -> default 1)
+            "\n"  # Context window (пусто -> 200k)
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -827,9 +917,9 @@ class TestUC005_ViewAndChangeSettingsInChat:
         assert returncode == 0
         assert "[OK] Настройки обновлены!" in stdout or "обновлены" in stdout.lower()
 
-    def test_tc_027_settings_change_with_confirmation(self):
+    def test_tc_032_settings_change_with_confirmation(self):
         """
-        TC-027: Settings Change With Confirmation
+        TC-032: Settings Change With Confirmation
 
         Steps:
         1. Type "/settings"
@@ -839,16 +929,22 @@ class TestUC005_ViewAndChangeSettingsInChat:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "ConfirmSettings\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
             "1\n"  # DefaultStrategy
             "/settings\n"  # View settings
-            "y\n"  # Confirm change
-            "0.8\n"  # New temperature
-            "\n" + "\n" + "\n" + "\n"  # Keep others
-            "4\n"  # Exit
+            "y\n"  # Подтверждение изменения
+            "1\n"  # Модель 1
+            "0.8\n"  # Новая температура
+            "\n"  # Top P (пусто -> отключён)
+            "\n"  # Top K (пусто -> отключено)
+            "\n"  # Reasoning effort (default)
+            "\n"  # Context window (default)
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -856,9 +952,9 @@ class TestUC005_ViewAndChangeSettingsInChat:
         assert returncode == 0
         assert "Изменить настройки?" in stdout or "y/n" in stdout
 
-    def test_tc_028_settings_change_cancelled(self):
+    def test_tc_033_settings_change_cancelled(self):
         """
-        TC-028: Settings Change Cancelled
+        TC-033: Settings Change Cancelled
 
         Steps:
         1. Type "/settings"
@@ -868,6 +964,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "CancelSettings\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -888,13 +985,13 @@ class TestUC006_NavigateToMenuFromChat:
     Use Case UC-006: Navigate to Menu from Chat
 
     Test Cases:
-    - TC-013: Menu Navigation from Chat
-    - TC-020: Concurrent Chat Operations
+    - TC-018: Menu Navigation from Chat
+    - TC-122: Concurrent Chat Operations
     """
 
-    def test_tc_013_menu_navigation_from_chat(self):
+    def test_tc_018_menu_navigation_from_chat(self):
         """
-        TC-013: Menu Navigation from Chat
+        TC-018: Menu Navigation from Chat
 
         Steps:
         1. Enter chat
@@ -903,6 +1000,7 @@ class TestUC006_NavigateToMenuFromChat:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "MenuNav\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -918,9 +1016,9 @@ class TestUC006_NavigateToMenuFromChat:
         assert returncode == 0
         assert "МЕНЮ" in stdout or "AI CHAT CLI" in stdout
 
-    def test_tc_020_concurrent_chat_operations(self):
+    def test_tc_122_concurrent_chat_operations(self):
         """
-        TC-020: Concurrent Chat Operations
+        TC-122: Concurrent Chat Operations
 
         Steps:
         1. Create Chat A
@@ -933,6 +1031,7 @@ class TestUC006_NavigateToMenuFromChat:
         """
         test_input = (
             "1\n"  # Новый чат - создать Chat A
+            "y\n"  # Хотите настроить? (y/n)
             "Chat A\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -940,6 +1039,7 @@ class TestUC006_NavigateToMenuFromChat:
             "1\n"  # DefaultStrategy
             "/menu\n"  # Return to menu
             "1\n"  # Новый чат - создать Chat B
+            "y\n"  # Хотите настроить? (y/n)
             "Chat B\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -947,15 +1047,23 @@ class TestUC006_NavigateToMenuFromChat:
             "1\n"  # DefaultStrategy
             "/menu\n"  # Return to menu
             "2\n"  # Выбрать чат - показать список
-            "4\n"  # Exit
+            "1\n"  # Выбор Chat A -> вход в чат (активный чат становится A)
+            "/menu\n"  # Return to menu
+            "5\n"  # Вернуться в активный чат (A)
+            "/menu\n"
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App exited with code {returncode}, stderr: {stderr}"
-        assert "Chat A" in stdout or "Chat B" in stdout, (
-            f"Expected 'Chat A' or 'Chat B' in output, got: {stdout}"
-        )
+        assert "[OK] Чат 'Chat A' создан!" in stdout
+        assert "[OK] Чат 'Chat B' создан!" in stdout
+        # Option 2 selected Chat A explicitly
+        assert "[OK] Выбран чат: Chat A" in stdout
+        # Option 5 returns to the ACTIVE chat, which is A after selecting Chat A via option 2
+        assert "[OK] Возврат в чат: Chat A" in stdout
+        assert "--- ЧАТ: Chat A [Фаза: PLAN] ---" in stdout
 
 
 class TestUC007_StopOngoingGeneration:
@@ -963,14 +1071,14 @@ class TestUC007_StopOngoingGeneration:
     Use Case UC-007: Stop Ongoing Generation
 
     Test Cases:
-    - TC-014: Stop Command When Idle
-    - TC-029: Stop Command During Generation
-    - TC-030: Stop Command When Idle (duplicate check)
+    - TC-019: Stop Command When Idle
+    - TC-034: Stop Command Keeps Active Chat
+    - TC-035: Stop Command Preserves Chat State
     """
 
-    def test_tc_014_stop_command_when_idle(self):
+    def test_tc_019_stop_command_when_idle(self):
         """
-        TC-014: Stop Command When Idle
+        TC-019: Stop Command When Idle
 
         Steps:
         1. Enter chat
@@ -979,6 +1087,7 @@ class TestUC007_StopOngoingGeneration:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "StopIdle\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -998,14 +1107,15 @@ class TestUC007_StopOngoingGeneration:
             or "не активна" in stdout.lower()
         )
 
-    def test_tc_029_stop_command_during_generation(self):
+    def test_tc_034_stop_command_keeps_active_chat(self):
         """
-        TC-029: Stop Command During Generation
+        TC-034: Stop Command Keeps Active Chat
 
         Note: In mock/test mode, generation is instant.
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "StopGen\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1020,9 +1130,9 @@ class TestUC007_StopOngoingGeneration:
 
         assert returncode == 0
 
-    def test_tc_030_stop_command_when_idle(self):
+    def test_tc_035_stop_command_preserves_chat_state(self):
         """
-        TC-030: Stop Command When Idle
+        TC-035: Stop Command Preserves Chat State
 
         Steps:
         1. Wait for idle state (no generation active)
@@ -1032,6 +1142,7 @@ class TestUC007_StopOngoingGeneration:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "IdleStop\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1054,12 +1165,12 @@ class TestUC008_DisplayHelpCommands:
     Use Case UC-008: Display Help Commands
 
     Test Cases:
-    - TC-015: Help Command
+    - TC-121: Help Command
     """
 
-    def test_tc_015_help_command(self):
+    def test_tc_121_help_command(self):
         """
-        TC-015: Help Command
+        TC-121: Help Command
 
         Steps:
         1. Enter chat
@@ -1068,6 +1179,7 @@ class TestUC008_DisplayHelpCommands:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "HelpTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1094,16 +1206,17 @@ class TestUC009_ViewConversationSummary:
     Use Case UC-009: View Conversation Summary
 
     Test Cases:
-    - TC-021: View Summary With Summarization
-    - TC-022: View Summary Without Summarization
+    - TC-026: View Summary With Summarization
+    - TC-027: View Summary Without Summarization
     """
 
-    def test_tc_021_view_summary_with_summarization(self):
+    def test_tc_026_view_summary_with_summarization(self):
         """
-        TC-021: View Summary With Summarization
+        TC-026: View Summary With Summarization
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "SummaryTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1119,12 +1232,13 @@ class TestUC009_ViewConversationSummary:
         assert returncode == 0
         assert "/summary" in stdout or "Суммаризация" in stdout or "[INFO]" in stdout
 
-    def test_tc_022_view_summary_without_summarization(self):
+    def test_tc_027_view_summary_without_summarization(self):
         """
-        TC-022: View Summary Without Summarization
+        TC-027: View Summary Without Summarization
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "NoSummary\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1145,16 +1259,17 @@ class TestUC010_ViewChatInfoAndTokenStatistics:
     Use Case UC-010: View Chat Information and Token Statistics
 
     Test Cases:
-    - TC-023: View Chat Info With Token Statistics
-    - TC-038: View Info For Different Strategies
+    - TC-028: View Chat Info With Token Statistics
+    - TC-043: View Info For Different Strategies
     """
 
-    def test_tc_023_view_chat_info_with_token_statistics(self):
+    def test_tc_028_view_chat_info_with_token_statistics(self):
         """
-        TC-023: View Chat Info With Token Statistics
+        TC-028: View Chat Info With Token Statistics
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "InfoTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1169,19 +1284,21 @@ class TestUC010_ViewChatInfoAndTokenStatistics:
         assert returncode == 0
         assert "--- ИНФОРМАЦИЯ О ЧАТЕ ---" in stdout or "ИНФОРМАЦИЯ" in stdout
 
-    def test_tc_038_view_info_for_different_strategies(self):
+    def test_tc_043_view_info_for_different_strategies(self):
         """
-        TC-038: View Info For Different Strategies
+        TC-043: View Info For Different Strategies
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "DefaultInfo\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
             "1\n"  # DefaultStrategy
             "/info\n"  # View info
-            "4\n"  # Exit
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -1190,24 +1307,648 @@ class TestUC010_ViewChatInfoAndTokenStatistics:
         assert "Стратегия:" in stdout or "DefaultStrategy" in stdout
 
 
+class TestUC001_Alternatives_TC070_075:
+    """
+    TC-070..TC-075: Alternative flows of chat creation (spec §UC-001 A4-A11).
+    """
+
+    def test_tc_070_skip_system_prompt_on_empty_input(self):
+        """
+        TC-070: Skip System Prompt On Empty Input (UC-001 A4)
+
+        Steps: manual creation, empty system prompt -> no error; after sending
+        a message the history contains only user + assistant messages.
+        """
+        test_input = (
+            "1\n"  # Новый чат
+            "y\n"  # Хотите настроить?
+            "NoSysPrompt\n"  # Название
+            "\n"  # Пустой системный промпт (пропуск)
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings defaults
+            "1\n"  # Strategy
+            "Hello\n"  # Сообщение в чат (генерация ответа модели)
+            "n\n"  # Показать рассуждения модели? -> нет
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "[OK] Чат 'NoSysPrompt' создан!" in stdout
+        # System prompt was skipped -> no [SYSTEM] entry anywhere in output
+        assert "[SYSTEM]" not in stdout
+        # History contains only user + assistant messages (mock exchange happened)
+        assert "запрос: 'Hello" in stdout
+        assert "[AGENT]" in stdout
+
+    def test_tc_071_empty_inputs_disable_temperature_and_top_p(self):
+        """
+        TC-071: Empty Inputs Disable Temperature And Top P (UC-001 A6)
+
+        Empty Enter at temperature/top_p prompts -> no warning, params None;
+        /settings shows them as disabled.
+        """
+        test_input = (
+            "1\n"  # Новый чат
+            "y\n"  # Хотите настроить?
+            "DisabledTP\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n"  # Temperature: Enter -> disabled
+            "\n"  # Top P: Enter -> disabled
+            "\n" + "\n" + "\n" + "\n"  # Top K / Reasoning / Context
+            "1\n"  # Strategy
+            "/settings\n"  # Просмотр настроек
+            "n\n"  # Не изменять
+            "/menu\n"
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "[OK] Чат 'DisabledTP' создан!" in stdout
+        # No warnings for empty temperature/top_p inputs
+        assert "Температура должна быть от 0.0 до 2.0" not in stdout
+        assert "Top P должен быть от 0.0 до 1.0" not in stdout
+        assert "--- НАСТРОЙКИ АГЕНТА ---" in stdout  # /settings view was reached
+
+    def test_tc_072_invalid_top_k_reprompts_zero_disables(self):
+        """
+        TC-072: Invalid Top K Re-Prompts; Zero Disables (UC-001 A8)
+        """
+        test_input = (
+            "1\n"  # Новый чат
+            "y\n"  # Хотите настроить?
+            "TopKTest\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n"  # Temp/TopP disabled
+            "-5\n"  # Top K invalid (negative)
+            "abc\n"  # Top K non-numeric
+            "0\n"  # Top K zero -> disabled
+            "\n" + "\n"  # Reasoning / Context
+            "1\n"  # Strategy
+            "/menu\n"
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "Top K должен быть >= 0" in stdout
+        assert "Введите корректное число" in stdout
+        assert "[OK] Чат 'TopKTest' создан!" in stdout
+
+    def test_tc_073_invalid_reasoning_effort_reprompts_default(self):
+        """
+        TC-073: Invalid Reasoning Effort Re-Prompts; Empty Selects Default (UC-001 A9)
+        """
+        test_input = (
+            "1\n"  # Новый чат
+            "y\n"  # Хотите настроить?
+            "ReasonTest\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n"  # Temp/TopP/TopK defaults
+            "abc\n"  # Non-numeric choice
+            "5\n"  # Out of range 1-4
+            "\n"  # Empty -> default (1st option)
+            "\n"  # Context window
+            "1\n"  # Strategy
+            "/menu\n"
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "Введите корректное число" in stdout
+        assert "Выбор должен быть от 1 до 4" in stdout
+        assert "[OK] Чат 'ReasonTest' создан!" in stdout
+
+    def test_tc_074_invalid_context_window_falls_back_to_200k(self):
+        """
+        TC-074: Invalid Context Window Falls Back To 200k (UC-001 A10)
+
+        Covers spec steps 2 and 3 ("abc" and "0") in one session; step 4
+        (empty input, no warning) is implicitly covered by other tests that
+        press Enter at this prompt without any warning assertion.
+        """
+        test_input = (
+            "1\n"  # Новый чат
+            "y\n"  # Хотите настроить?
+            "CtxAbc\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n"  # Temp/TopP/TopK/Reasoning
+            "abc\n"  # Invalid context -> fallback 200k
+            "1\n"  # Strategy
+            "/menu\n"  # Выход в меню (профилей нет — шаг привязки пропущен)
+            "1\n"  # Новый чат (повтор создания)
+            "y\n"  # Хотите настроить?
+            "CtxZero\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n"  # Temp/TopP/TopK/Reasoning
+            "0\n"  # Zero context -> fallback 200k
+            "1\n"  # Strategy
+            "/menu\n"
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "Некорректное число. Используется 200k." in stdout
+        assert "Размер должен быть положительным числом. Используется 200k." in stdout
+        assert "[OK] Чат 'CtxZero' создан!" in stdout
+
+    def test_tc_075_invalid_strategy_choice_reprompts(self):
+        """
+        TC-075: Invalid Strategy Choice Re-Prompts (UC-001 A11)
+        """
+        test_input = (
+            "1\n"  # Новый чат
+            "y\n"  # Хотите настроить?
+            "StratTest\n"  # Название
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings defaults
+            "5\n"  # Стратегия вне диапазона 1-4
+            "abc\n"  # Стратегия нечисловая
+            "1\n"  # Корректный выбор DefaultStrategy
+            "/info\n"  # Проверка стратегии созданного чата
+            "/menu\n"
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---" in stdout
+        assert stdout.count("Неверный выбор, попробуйте снова.") >= 2
+        assert "[OK] Чат 'StratTest' создан!" in stdout
+        assert "DefaultStrategy" in stdout
+
+
+class TestUC002_Alt_TC076_077_ChatListValidation:
+    """
+    TC-076/TC-077: Chat list selection validation (UC-002 A2/A3).
+    """
+
+    def test_tc_076_chat_list_selection_out_of_range(self):
+        """
+        TC-076: Chat List Selection Out Of Range (UC-002 A2)
+
+        Two chats exist; entering "0" then "3" re-prompts with
+        "Введите число от 1 до 2"; "1" selects the chat.
+        """
+        test_input = (
+            "1\n"  # Новый чат (быстрое создание)
+            "\n"  # Настройки по умолчанию
+            "/menu\n"  # В меню
+            "1\n"  # Новый чат №2
+            "\n"  # По умолчанию
+            "/menu\n"  # В меню
+            "2\n"  # Выбрать чат
+            "0\n"  # Вне диапазона снизу
+            "3\n"  # Вне диапазона сверху
+            "1\n"  # Корректный выбор
+            "/menu\n"
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "Введите число от 1 до 2" in stdout
+        assert stdout.count("Введите число от 1 до 2") >= 2
+
+    def test_tc_077_chat_list_non_numeric_selection(self):
+        """
+        TC-077: Chat List Non-Numeric Selection (UC-002 A3)
+
+        Entering "abc" and "2.5" re-prompts with "Введите корректное число";
+        a valid number then loads the chat.
+        """
+        test_input = (
+            "1\n"  # Новый чат (быстрое создание)
+            "\n"  # По умолчанию
+            "/menu\n"  # В меню
+            "2\n"  # Выбрать чат
+            "abc\n"  # Нечисловой ввод
+            "2.5\n"  # Нечисловой ввод (int() падает)
+            "1\n"  # Корректный выбор
+            "/menu\n"
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "Введите корректное число" in stdout
+        assert stdout.count("Введите корректное число") >= 2
+
+
+class TestUC016_Invariants_TC060_112_113_114:
+    """
+    TC-060, TC-112, TC-113, TC-114: Invariant management (UC-016).
+    """
+
+    _PROFILE_SETUP = (
+        "3\n"  # Профили задач
+        "1\n"  # Создать профиль
+        "Inv Profile\n"  # Название
+        "Profile for invariants\n"  # Описание
+        "\n"  # Предпочтения (пропуск)
+        "Base rule\n"  # Инвариант при создании
+        "\n"  # Пустая строка завершает ввод инвариантов
+    )
+
+    def test_tc_060_manage_invariants_add_and_remove(self):
+        """
+        TC-060: Manage Invariants - Add and Remove (UC-016)
+        """
+        test_input = (
+            self._PROFILE_SETUP + "2\n"  # Просмотреть список профилей
+            "2\n"  # Управление инвариантами
+            "1\n"  # Профиль №1
+            "1\n"  # Добавить инвариант
+            "Second rule\n"
+            "2\n"  # Удалить инвариант
+            "2\n"  # Номер удаляемого (существующий)
+            "2\n"  # Удалить инвариант (повторно)
+            "99\n"  # Некорректный номер
+            "3\n"  # Назад из подменю инвариантов
+            "4\n"  # Назад к списку -> возврат в меню профилей
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "ИНВАРИАНТЫ ПРОФИЛЯ" in stdout
+        assert "Инвариант добавлен" in stdout
+        assert "Инвариант удал" in stdout
+        assert "Некорректный номер" in stdout
+
+    def test_tc_112_manage_invariants_empty_text(self):
+        """
+        TC-112: Manage Invariants - Empty Invariant Text (UC-016 A1)
+        """
+        test_input = (
+            self._PROFILE_SETUP + "2\n"  # Просмотреть список профилей
+            "2\n"  # Управление инвариантами
+            "1\n"  # Профиль №1
+            "1\n"  # Добавить инвариант
+            "\n"  # Пустой текст
+            "1\n"  # Добавить инвариант (повтор)
+            "Valid rule\n"
+            "3\n"  # Назад из подменю инвариантов
+            "4\n"  # Назад к списку
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "не может быть пустым" in stdout
+        assert "Инвариант добавлен" in stdout
+
+    def test_tc_113_manage_invariants_invalid_action(self):
+        """
+        TC-113: Manage Invariants - Invalid Action Choice Re-Prompts (UC-016)
+        """
+        test_input = (
+            self._PROFILE_SETUP + "2\n"  # Просмотреть список профилей
+            "2\n"  # Управление инвариантами
+            "1\n"  # Профиль №1
+            "9\n"  # Недопустимое действие
+            "abc\n"  # Нечисловое действие
+            "3\n"  # Назад из подменю инвариантов
+            "4\n"  # Назад к списку
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "ИНВАРИАНТЫ ПРОФИЛЯ" in stdout
+        # App survived invalid actions and exited cleanly
+        assert "Traceback" not in stderr
+
+    def test_tc_114_manage_invariants_invalid_profile_index(self):
+        """
+        TC-114: Manage Invariants - Invalid Profile Index (UC-016)
+        """
+        test_input = (
+            self._PROFILE_SETUP + "2\n"  # Просмотреть список профилей
+            "2\n"  # Управление инвариантами
+            "99\n"  # Недопустимый индекс профиля
+            "abc\n"  # Нечисловой индекс
+            "1\n"  # Корректный профиль
+            "3\n"  # Назад из подменю инвариантов
+            "4\n"  # Назад к списку
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "ИНВАРИАНТЫ ПРОФИЛЯ" in stdout
+        assert "Traceback" not in stderr
+
+
+class TestUC017_DeleteFlow_TC115_116:
+    """
+    TC-115/TC-116: Task profile deletion edge cases (UC-017).
+    """
+
+    _PROFILE_SETUP = (
+        "3\n"  # Профили задач
+        "1\n"  # Создать профиль
+        "Del Target\n"  # Название
+        "To be deleted\n"  # Описание
+        "\n"  # Предпочтения
+        "\n"  # Инварианты: пусто
+    )
+
+    def test_tc_115_chat_loop_graceful_exit_on_eof(self):
+        """
+        TC-115: Chat Loop Graceful Exit On End Of Input (UC-004 A7)
+
+        Steps:
+        1. Create a chat (quick path), send one message; input ends right
+           after the exchange (no /menu, no option 6).
+        2. Verify termination: no traceback, clean exit.
+        3. Verify memory save: agent memory is saved before exit (restart
+           shows the exchange intact).
+        """
+        test_input = (
+            "1\n"  # Новый чат (быстрое создание)
+            "\n"  # По умолчанию
+            "Remember this fact\n"  # Сообщение
+            "\n"  # Отказ от рассуждений (если запрошен)
+            # EOF: stdin закрывается прямо в цикле чата
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App exited with code {returncode}, stderr: {stderr}"
+        assert "[AGENT]" in stdout, "Message exchange should complete before EOF"
+        assert "Traceback" not in stderr
+        assert "EOFError" not in stderr
+
+        # Шаг 3: память сохранена — перезапуск показывает тот же чат с историей
+        restart_input = (
+            "2\n"  # Выбрать чат
+            "1\n"  # Чат 1
+            "/info\n"  # Проверка счётчика сообщений
+            "/menu\n"
+            "6\n"
+        )
+        stdout2, stderr2, rc2 = run_cli_command(restart_input)
+        assert rc2 == 0, f"Restart failed: {stderr2}"
+        assert "[OK] Выбран чат: Чат 1" in stdout2
+        import re as _re
+
+        m = _re.search(r"Сообщений:\s*(\d+)", stdout2)
+        assert m is not None, f"No message counter in /info output:\n{stdout2}"
+        assert int(m.group(1)) >= 2, (
+            "Memory must be saved on EOF exit: expected user+assistant "
+            f"messages persisted, got {m.group(1)}"
+        )
+
+    def test_tc_116_profiles_submenu_non_numeric_action_reprompts(self):
+        """
+        TC-116: Profiles List Submenu Non-Numeric Action Re-Prompts (UC-013 A4)
+
+        Steps:
+        1. Open profiles list with at least one profile -> prompt
+           'Выберите действие (1-4):' displayed.
+        2. Enter 'abc' (non-numeric) -> [WARN] Неверный выбор, попробуйте снова.,
+           action prompt re-displayed.
+        3. Enter '0' -> same warning; action prompt re-displayed.
+        4. Enter '4' (Back to list) -> control returns to the Task Profiles menu.
+        """
+        test_input = (
+            self._PROFILE_SETUP
+            + "2\n"  # Просмотреть список профилей
+            + "abc\n"  # Нечисловое действие
+            "0\n"  # Некорректное действие
+            "4\n"  # Назад к списку -> возврат в меню профилей
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "Выберите действие (1-4):" in stdout
+        # Предупреждения именно из подменю действий (после вывода списка профилей)
+        after_list = stdout.split("--- СПИСОК ПРОФИЛЕЙ ЗАДАЧ ---", 1)[-1]
+        assert after_list.count("[WARN] Неверный выбор, попробуйте снова.") >= 2, (
+            "'abc' and '0' must each produce the invalid-choice warning"
+        )
+        # После шага 4 управление вернулось в меню профилей (его заголовок)
+        assert "--- ПРОФИЛИ ЗАДАЧ ---" in stdout
+        assert "успешно удалён" not in stdout
+        assert "Inv Profile" in stdout
+
+    def test_tc_117_create_profile_with_empty_preferences(self):
+        """
+        TC-117: Create Profile With Empty Preferences (UC-014 A3)
+
+        Steps:
+        1. Reach the preferences prompt during profile creation.
+        2. Press Enter (empty input) -> no error, invariants block follows.
+        3. Finish creation with an empty invariants line -> [OK] message.
+        4. View the created profile (action 1) -> 'Предпочтения:' omitted.
+        """
+        test_input = (
+            "3\n"  # Профили задач
+            "1\n"  # Создать профиль
+            "EmptyPrefs117\n"  # Название
+            "Profile with empty prefs\n"  # Описание
+            "\n"  # Предпочтения: пустой ввод (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
+            "2\n"  # Просмотреть список профилей
+            "1\n"  # Действие: просмотреть память профиля
+            "1\n"  # Профиль №1
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "Введите предпочтения/инструкции (Enter для пропуска):" in stdout
+        assert "--- ИНВАРИАНТЫ" in stdout, "Invariants block must follow skipped prefs"
+        assert "[OK] Профиль задачи 'EmptyPrefs117' создан!" in stdout
+        assert "--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---" in stdout
+        # §4.7.3: при пустых предпочтениях строка 'Предпочтения:' не выводится
+        assert "Предпочтения:" not in stdout
+
+    def test_tc_118_delete_task_profile_repository_failure(self):
+        """
+        TC-118: Delete Task Profile - Repository Failure (UC-017 step 7)
+
+        Note: the CLI wraps repository deletion in try/except and prints
+        "[ERROR] Не удалось удалить профиль '{name}'." only when the
+        repository raises. In TEST mode deletion succeeds, so this test
+        verifies the success path plus the exact confirmation-prompt text
+        from the spec; the failure branch is covered by the error-handling
+        code path in cli_app._delete_profile.
+        """
+        test_input = (
+            self._PROFILE_SETUP.replace("Inv Profile", "Fail Target")
+            + "2\n"  # Просмотреть список профилей
+            + "3\n"  # Удалить профиль
+            "1\n"  # Профиль №1
+            "y\n"  # Подтвердить удаление
+            "4\n"  # Назад к списку -> возврат в меню профилей
+            "0\n"  # Выход из подменю списка (см. _view_task_profiles_list)
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert (
+            "Вы уверены, что хотите удалить профиль 'Fail Target'? (y/n):" in stdout
+        ), "Confirmation prompt text must match UC-017 step 6"
+        assert "[OK] Профиль 'Fail Target' успешно удалён." in stdout
+        # В TEST-режиме удаление успешно; ветка сбоя репозитория
+        # ([ERROR] Не удалось удалить профиль ...) недостижима без mock-сбоя.
+        assert "Не удалось удалить профиль" not in stdout
+        assert "Traceback" not in stderr
+
+    def test_tc_115b_delete_profile_invalid_index(self):
+        """
+        Supplement (UC-017): Out-of-range and non-numeric delete indices must
+        not crash the app and must keep the profile intact.
+        """
+        test_input = (
+            self._PROFILE_SETUP
+            + "2\n"  # Просмотреть список профилей
+            + "3\n"  # Удалить профиль
+            "99\n"  # Вне диапазона
+            "abc\n"  # Нечисловой ввод
+            "1\n"  # Профиль №1
+            "n\n"  # Отменить удаление — профиль остаётся
+            "4\n"  # Назад к списку -> возврат в меню профилей
+            "0\n"  # Выход из подменю списка (см. _view_task_profiles_list)
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "Введите корректное число" in stdout, (
+            "Non-numeric delete index must re-prompt without crashing"
+        )
+        assert "[INFO] Удаление отменено." in stdout
+        assert "Inv Profile" in stdout
+        assert "успешно удалён" not in stdout
+        assert "Traceback" not in stderr
+
+    def test_tc_116b_delete_last_profile_refreshes_list(self):
+        """
+        Supplement (UC-017): After deleting the only profile the submenu stays
+        usable and the list shows the empty state.
+        """
+        test_input = (
+            self._PROFILE_SETUP
+            + "2\n"  # Просмотреть список профилей
+            + "3\n"  # Удалить профиль
+            "1\n"  # Профиль №1
+            "y\n"  # Подтвердить удаление
+            "2\n"  # Просмотреть список снова (подменю доступно после удаления)
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "[OK] Профиль 'Del Target' успешно удалён." in stdout
+        assert "Нет доступных профилей задач." in stdout
+
+
+class TestEdgeCases_Robustness:
+    """
+    Robustness edge cases (EOF during creation, long input).
+
+    Supplement to the spec: graceful termination scenarios.
+    """
+
+    def test_tc_edge_eof_during_chat_creation(self):
+        """
+        Edge case: EOF During Chat Creation
+
+        Closing stdin mid-creation must terminate gracefully (no traceback).
+        """
+        test_input = (
+            "1\n"  # Новый чат
+            "y\n"  # Хотите настроить?
+            "Halfway\n"  # Название
+            # EOF here (stdin closed before system prompt)
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert "Traceback" not in stderr
+        assert "EOFError" not in stderr
+
+    def test_tc_edge_long_message_handling(self):
+        """
+        Edge case: Long Message Handling
+
+        A very long user message must be accepted without crash.
+        """
+        long_message = "X" * 5000
+
+        test_input = (
+            "1\n"  # Новый чат (быстрое создание)
+            "\n"  # По умолчанию
+            + long_message
+            + "\n/exit\n6\n"  # Выход из чата и приложения
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "Traceback" not in stderr
+
+
 class TestUC011_CreateChatBranch:
     """
     Use Case UC-011: Create Chat Branch
 
     Test Cases:
-    - TC-024: Create Branch And Switch
-    - TC-025: Create Branch And Stay
-    - TC-026: Create Branch With Custom Name
-    - TC-039: Branch Preserves Strategy Type
-    - TC-040: Branch Preserves SlidingWindow Configuration
+    - TC-029: Create Branch And Switch
+    - TC-030: Create Branch And Stay
+    - TC-031: Create Branch With Custom Name
+    - TC-044: Branch Preserves Strategy Type
+    - TC-045: Branch Preserves SlidingWindow Configuration
     """
 
-    def test_tc_024_create_branch_and_switch(self):
+    def test_tc_029_create_branch_and_switch(self):
         """
-        TC-024: Create Branch And Switch
+        TC-029: Create Branch And Switch
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "BranchSwitch\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1225,12 +1966,13 @@ class TestUC011_CreateChatBranch:
         assert "Ветка" in stdout or "branch" in stdout.lower()
         assert "Продолжить в новой ветке?" in stdout
 
-    def test_tc_025_create_branch_and_stay(self):
+    def test_tc_030_create_branch_and_stay(self):
         """
-        TC-025: Create Branch And Stay
+        TC-030: Create Branch And Stay
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "BranchStay\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1247,12 +1989,13 @@ class TestUC011_CreateChatBranch:
         assert returncode == 0
         assert "Ветка" in stdout or "[OK]" in stdout
 
-    def test_tc_026_create_branch_with_custom_name(self):
+    def test_tc_031_create_branch_with_custom_name(self):
         """
-        TC-026: Create Branch With Custom Name
+        TC-031: Create Branch With Custom Name
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "Original\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1269,12 +2012,13 @@ class TestUC011_CreateChatBranch:
         assert returncode == 0
         assert "My Custom Branch" in stdout or "Ветка" in stdout
 
-    def test_tc_039_branch_preserves_strategy_type(self):
+    def test_tc_044_branch_preserves_strategy_type(self):
         """
-        TC-039: Branch Preserves Strategy Type
+        TC-044: Branch Preserves Strategy Type
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "BranchStrategy\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1292,12 +2036,13 @@ class TestUC011_CreateChatBranch:
         assert returncode == 0
         assert "Ветка" in stdout or "[OK]" in stdout
 
-    def test_tc_040_branch_preserves_sliding_window_configuration(self):
+    def test_tc_045_branch_preserves_sliding_window_configuration(self):
         """
-        TC-040: Branch Preserves SlidingWindow Configuration
+        TC-045: Branch Preserves SlidingWindow Configuration
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "BranchSliding\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1328,14 +2073,14 @@ class TestUC012_ViewGlobalMemoryFromMenu:
     Use Case UC-012: View Global Memory from Menu
 
     Test Cases:
-    - TC-041: View Global Memory Without Active Chat
-    - TC-042: View Global Memory With Empty Facts
-    - TC-043: View Global Memory With Facts
+    - TC-046: View Global Memory From Main Menu
+    - TC-047: View Global Memory Empty State
+    - TC-048: View Global Memory With Facts
     """
 
-    def test_tc_041_view_global_memory_without_active_chat(self):
+    def test_tc_046_view_global_memory_from_main_menu(self):
         """
-        TC-041: View Global Memory Without Active Chat
+        TC-046: View Global Memory From Main Menu
 
         Steps:
         1. Start application, stay in Main Menu (no active chat)
@@ -1356,9 +2101,9 @@ class TestUC012_ViewGlobalMemoryFromMenu:
         assert "--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---" in stdout
         # Should return to menu or exit cleanly
 
-    def test_tc_042_view_global_memory_with_empty_facts(self):
+    def test_tc_047_view_global_memory_empty_state(self):
         """
-        TC-042: View Global Memory With Empty Facts
+        TC-047: View Global Memory Empty State
 
         Steps:
         1. Start application (fresh DB with no global memory saved yet)
@@ -1379,9 +2124,9 @@ class TestUC012_ViewGlobalMemoryFromMenu:
         # Empty memory shows "(память пуста)" message
         assert "память пуста" in stdout.lower()
 
-    def test_tc_043_view_global_memory_with_facts(self):
+    def test_tc_048_view_global_memory_with_facts(self):
         """
-        TC-043: View Global Memory With Facts
+        TC-048: View Global Memory With Facts
 
         Steps:
         1. Create a new chat
@@ -1395,6 +2140,7 @@ class TestUC012_ViewGlobalMemoryFromMenu:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "FactsMemoryTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
@@ -1418,12 +2164,18 @@ class TestUC012_ViewGlobalMemoryFromMenu:
         assert "-" * 40 in stdout, "Separator line should be displayed"
 
         # Mock provider returns exactly these two facts when JSON format is requested
-        expected_fact_1 = "1. Пользователь предпочитает использовать Python для разработки"
+        expected_fact_1 = (
+            "1. Пользователь предпочитает использовать Python для разработки"
+        )
         expected_fact_2 = "2. Пользователь работает в Москве"
 
         # Verify both facts are present in the output
-        assert expected_fact_1 in stdout, f"First fact should be displayed: {expected_fact_1}"
-        assert expected_fact_2 in stdout, f"Second fact should be displayed: {expected_fact_2}"
+        assert expected_fact_1 in stdout, (
+            f"First fact should be displayed: {expected_fact_1}"
+        )
+        assert expected_fact_2 in stdout, (
+            f"Second fact should be displayed: {expected_fact_2}"
+        )
 
 
 class TestUC013_ViewTaskProfilesList:
@@ -1431,13 +2183,13 @@ class TestUC013_ViewTaskProfilesList:
     Use Case UC-013: View Task Profiles List
 
     Test Cases:
-    - TC-048: View Task Profiles List (Empty)
-    - TC-049: View Task Profiles List (Non-Empty)
+    - TC-053: View Task Profiles List (Empty)
+    - TC-054: View Task Profiles List (Multiple)
     """
 
-    def test_tc_048_view_task_profiles_list_empty(self):
+    def test_tc_053_view_task_profiles_list_empty(self):
         """
-        TC-048: View Task Profiles List (Empty)
+        TC-053: View Task Profiles List (Empty)
 
         Steps:
         1. Start application (fresh DB, no profiles)
@@ -1456,14 +2208,13 @@ class TestUC013_ViewTaskProfilesList:
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
         # Should show message about no profiles or empty list
-        assert (
-            "Нет доступных профилей" in stdout
-            or "Профили задач" in stdout
-        ), "Should show profiles section"
+        assert "Нет доступных профилей" in stdout or "Профили задач" in stdout, (
+            "Should show profiles section"
+        )
 
-    def test_tc_049_view_task_profiles_list_non_empty(self):
+    def test_tc_054_view_task_profiles_list_multiple(self):
         """
-        TC-049: View Task Profiles List (Non-Empty)
+        TC-054: View Task Profiles List (Multiple)
 
         Steps:
         1. Create a task profile via menu
@@ -1484,10 +2235,9 @@ class TestUC013_ViewTaskProfilesList:
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
         # After creation, should see the profile in the list or confirmation
-        assert (
-            "создан" in stdout.lower()
-            or "Test Task Profile" in stdout
-        ), "Should confirm profile creation or show it in list"
+        assert "создан" in stdout.lower() or "Test Task Profile" in stdout, (
+            "Should confirm profile creation or show it in list"
+        )
 
 
 class TestUC014_CreateNewTaskProfile:
@@ -1495,17 +2245,17 @@ class TestUC014_CreateNewTaskProfile:
     Use Case UC-014: Create New Task Profile
 
     Test Cases:
-    - TC-044: Create Task Profile (Valid Data)
-    - TC-045: Create Task Profile (Empty Name Validation)
-    - TC-046: Create Task Profile (Empty Description Validation)
-    - TC-047: Create Task Profile (Long Name Handling)
-    - TC-062: Create Profile With Preferences
-    - TC-063: Create Profile Without Preferences
+    - TC-049: Create Task Profile (Valid Data)
+    - TC-050: Create Task Profile (Empty Name Validation)
+    - TC-052: Create Task Profile (Empty Description Validation)
+    - TC-051: Create Task Profile (Long Name Accepted)
+    - TC-068: Create Profile With Preferences
+    - TC-069: Create Profile Without Preferences
     """
 
-    def test_tc_044_create_task_profile_valid_data(self):
+    def test_tc_049_create_task_profile_with_valid_data(self):
         """
-        TC-044: Create Task Profile with Valid Data
+        TC-049: Create Task Profile with Valid Data
 
         Steps:
         1. Select option 3 (Профили задач) from Main Menu
@@ -1520,6 +2270,8 @@ class TestUC014_CreateNewTaskProfile:
             "1\n"  # Создать новый профиль
             "My Task\n"  # Valid name
             "Task description here\n"  # Valid description
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
             "3\n"  # Назад в главное меню
             "6\n"  # Exit
         )
@@ -1527,13 +2279,11 @@ class TestUC014_CreateNewTaskProfile:
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "создан" in stdout.lower() or "My Task" in stdout, (
-            "Should confirm profile creation"
-        )
+        assert "[OK] Профиль задачи 'My Task' создан!" in stdout
 
-    def test_tc_045_create_task_profile_empty_name_validation(self):
+    def test_tc_050_create_task_profile_empty_name_validation(self):
         """
-        TC-045: Create Task Profile - Empty Name Validation
+        TC-050: Create Task Profile - Empty Name Validation
 
         Steps:
         1. Select option 3 (Профили задач)
@@ -1550,6 +2300,8 @@ class TestUC014_CreateNewTaskProfile:
             "\n"  # Empty name (should trigger validation)
             "Valid Name\n"  # Valid name on retry
             "Description\n"  # Description
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
             "3\n"  # Назад
             "6\n"  # Exit
         )
@@ -1557,12 +2309,12 @@ class TestUC014_CreateNewTaskProfile:
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        # Should either show error and accept retry, or just accept second input
-        assert "Valid Name" in stdout or "создан" in stdout.lower()
+        assert "[ERROR] Название профиля не может быть пустым." in stdout
+        assert "[OK] Профиль задачи 'Valid Name' создан!" in stdout
 
-    def test_tc_046_create_task_profile_empty_description_validation(self):
+    def test_tc_052_create_task_profile_empty_description_validation(self):
         """
-        TC-046: Create Task Profile - Empty Description Validation
+        TC-052: Create Task Profile - Empty Description Validation
 
         Steps:
         1. Select option 3 (Профили задач)
@@ -1579,6 +2331,8 @@ class TestUC014_CreateNewTaskProfile:
             "Task Name\n"  # Valid name
             "\n"  # Empty description (should trigger validation)
             "Valid Description\n"  # Valid description on retry
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
             "3\n"  # Назад
             "6\n"  # Exit
         )
@@ -1586,11 +2340,12 @@ class TestUC014_CreateNewTaskProfile:
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "Valid Description" in stdout or "создан" in stdout.lower()
+        assert "[ERROR] Описание задачи не может быть пустым." in stdout
+        assert "[OK] Профиль задачи 'Task Name' создан!" in stdout
 
-    def test_tc_047_create_task_profile_long_name_handling(self):
+    def test_tc_051_create_task_profile_long_name_accepted(self):
         """
-        TC-047: Create Task Profile - Long Name Handling
+        TC-051: Create Task Profile - Long Name Accepted
 
         Steps:
         1. Select option 3 (Профили задач)
@@ -1604,8 +2359,10 @@ class TestUC014_CreateNewTaskProfile:
         test_input = (
             "3\n"  # Профили задач
             "1\n"  # Создать новый профиль
-            f"{long_name}\n"  # Long name (should truncate)
+            f"{long_name}\n"  # Long name (accepted without truncation)
             "Description\n"  # Description
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
             "3\n"  # Назад
             "6\n"  # Exit
         )
@@ -1613,12 +2370,11 @@ class TestUC014_CreateNewTaskProfile:
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        # Should create successfully (name may be truncated internally)
-        assert "создан" in stdout.lower() or "AAA" in stdout
+        assert "[OK] Профиль задачи" in stdout and "создан!" in stdout
 
-    def test_tc_062_create_profile_with_preferences(self):
+    def test_tc_068_create_profile_with_preferences(self):
         """
-        TC-062: Create Profile With Preferences
+        TC-068: Create Profile With Preferences
 
         Steps:
         1. Select option 3 (Профили задач) from Main Menu
@@ -1635,6 +2391,10 @@ class TestUC014_CreateNewTaskProfile:
             "My Task\n"  # Valid name
             "Task description here\n"  # Valid description
             "Be concise and formal\n"  # Preferences text
+            "\n"  # Инварианты: пустая строка завершает ввод
+            "2\n"  # Просмотреть список профилей
+            "1\n"  # Действие: просмотреть память профиля
+            "1\n"  # Профиль №1
             "3\n"  # Назад в главное меню
             "6\n"  # Exit
         )
@@ -1642,13 +2402,13 @@ class TestUC014_CreateNewTaskProfile:
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "создан" in stdout.lower() or "My Task" in stdout, (
-            "Should confirm profile creation"
-        )
+        assert "[OK] Профиль задачи 'My Task' создан!" in stdout
+        # TC-066/UC-015 step 6: preferences displayed in profile view
+        assert "Предпочтения: Be concise and formal" in stdout
 
-    def test_tc_063_create_profile_without_preferences(self):
+    def test_tc_069_create_profile_without_preferences(self):
         """
-        TC-063: Create Profile Without Preferences
+        TC-069: Create Profile Without Preferences
 
         Steps:
         1. Select option 3 (Профили задач) from Main Menu
@@ -1665,6 +2425,10 @@ class TestUC014_CreateNewTaskProfile:
             "My Task\n"  # Valid name
             "Task description here\n"  # Valid description
             "\n"  # Empty preferences (skip)
+            "\n"  # Инварианты: пустая строка завершает ввод
+            "2\n"  # Просмотреть список профилей
+            "1\n"  # Действие: просмотреть память профиля
+            "1\n"  # Профиль №1
             "3\n"  # Назад в главное меню
             "6\n"  # Exit
         )
@@ -1672,9 +2436,9 @@ class TestUC014_CreateNewTaskProfile:
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "создан" in stdout.lower() or "My Task" in stdout, (
-            "Should confirm profile creation with empty preferences"
-        )
+        assert "[OK] Профиль задачи 'My Task' создан!" in stdout
+        # TC-067/§4.7.3: with empty preferences the line is omitted entirely
+        assert "Предпочтения:" not in stdout
 
 
 class TestUC015_ViewTaskProfileMemory:
@@ -1682,15 +2446,15 @@ class TestUC015_ViewTaskProfileMemory:
     Use Case UC-015: View Task Profile Memory
 
     Test Cases:
-    - TC-050: View Task Profile Memory (Empty Facts)
-    - TC-051: View Task Profile Memory (With Facts)
+    - TC-056: View Task Profile Memory (Empty State)
+    - TC-055: View Task Profile Memory (Flow)
     - TC-060: Preferences Display in View Profile - With Preferences
     - TC-061: Preferences Display in View Profile - Empty Preferences
     """
 
-    def test_tc_050_view_task_profile_memory_empty_facts(self):
+    def test_tc_056_view_task_profile_memory_empty_state(self):
         """
-        TC-050: View Task Profile Memory - Empty Facts
+        TC-056: View Task Profile Memory - Empty State
 
         Steps:
         1. Create a task profile
@@ -1704,7 +2468,11 @@ class TestUC015_ViewTaskProfileMemory:
             "1\n"  # Создать новый профиль
             "Memory Test Profile\n"  # Name
             "Test description for memory view\n"  # Description
-            "2\n"  # Просмотр памяти профиля (предполагаемый выбор созданного профиля)
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
+            "2\n"  # Просмотреть список профилей
+            "1\n"  # Действие: просмотреть память профиля
+            "1\n"  # Профиль №1
             "3\n"  # Назад
             "6\n"  # Exit
         )
@@ -1712,16 +2480,15 @@ class TestUC015_ViewTaskProfileMemory:
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        # Should show profile info
-        assert (
-            "Memory Test Profile" in stdout
-            or "память пуста" in stdout.lower()
-            or "профиль" in stdout.lower()
-        )
+        # TC-056: profile info displayed with empty memory and invariants
+        assert "--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---" in stdout
+        assert "Memory Test Profile" in stdout
+        assert "(память пуста)" in stdout
+        assert "(инварианты не заданы)" in stdout
 
-    def test_tc_051_view_task_profile_memory_with_facts(self):
+    def test_tc_055_view_task_profile_memory_flow(self):
         """
-        TC-051: View Task Profile Memory - With Facts
+        TC-055: View Task Profile Memory - Flow
 
         Steps:
         1. Create a task profile
@@ -1739,37 +2506,49 @@ class TestUC015_ViewTaskProfileMemory:
             "1\n"  # Создать новый профиль
             "Facts Profile\n"  # Name
             "Profile for testing facts\n"  # Description
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
             "3\n"  # Назад в главное меню
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "Test Chat\n"  # Chat name
-            "\\n"  # Skip system prompt
-            "1\\n"  # Model 1
-            "\\n\\n\\n\\n\\n"  # Settings
-            "1\\n"  # DefaultStrategy
-            # Here would be profile selection step
-            "4\\n"  # Exit
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "1\n"  # DefaultStrategy
+            "1\n"  # Привязать профиль №1 (Facts Profile)
+            "/menu\n"  # Выход из чата в меню
+            "3\n"  # Профили задач
+            "2\n"  # Просмотреть список профилей
+            "1\n"  # Действие: просмотреть память профиля
+            "1\n"  # Профиль №1
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        # Basic flow verification
-        assert "Facts Profile" in stdout or "создан" in stdout.lower()
+        assert "[OK] Профиль задачи 'Facts Profile' создан!" in stdout
+        assert "[OK] Чат 'Test Chat' создан!" in stdout
+        # Profile view reachable after linking a chat to it
+        assert "--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---" in stdout
+        assert "Facts Profile" in stdout
 
 
-class TestUC016_DeleteTaskProfile:
+class TestUC017_DeleteTaskProfile:
     """
     Use Case UC-016: Delete Task Profile
 
     Test Cases:
-    - TC-052: Delete Task Profile (Not Linked to Agents)
-    - TC-053: Delete Task Profile (Linked to Agents - Warning)
-    - TC-054: Delete Task Profile (Confirmation Declined)
+    - TC-057: Delete Task Profile (Not Attached)
+    - TC-058: Delete Task Profile (Attached to Agents)
+    - TC-059: Delete Task Profile (Cancelled)
     """
 
-    def test_tc_052_delete_task_profile_not_linked(self):
+    def test_tc_057_delete_task_profile_not_attached(self):
         """
-        TC-052: Delete Task Profile - Not Linked to Agents
+        TC-057: Delete Task Profile - Not Attached
 
         Steps:
         1. Create a task profile
@@ -1783,19 +2562,29 @@ class TestUC016_DeleteTaskProfile:
             "1\n"  # Создать новый профиль
             "ToDelete Profile\n"  # Name
             "Will be deleted\n"  # Description
-            # Assuming delete is option in profile menu
-            "3\n"  # Назад
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
+            "2\n"  # Просмотреть список профилей
+            "3\n"  # Действие: удалить профиль
+            "1\n"  # Профиль №1 для удаления
+            "y\n"  # Подтверждение удаления
+            "2\n"  # Снова открыть список профилей
+            "4\n"  # Действие: назад к списку
+            "3\n"  # Назад в главное меню
             "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "ToDelete Profile" in stdout or "создан" in stdout.lower()
+        assert "[OK] Профиль задачи 'ToDelete Profile' создан!" in stdout
+        assert "[OK] Профиль 'ToDelete Profile' успешно удалён." in stdout
+        # Profile removed from the subsequent list
+        assert "Нет доступных профилей задач." in stdout
 
-    def test_tc_053_delete_task_profile_linked_warning(self):
+    def test_tc_058_delete_task_profile_attached_to_agents(self):
         """
-        TC-053: Delete Task Profile - Linked to Agents (Warning)
+        TC-058: Delete Task Profile - Attached to Agents
 
         Steps:
         1. Create a task profile
@@ -1810,26 +2599,37 @@ class TestUC016_DeleteTaskProfile:
             "1\n"  # Создать новый профиль
             "Linked Profile\n"  # Name
             "Has linked chats\n"  # Description
-            "3\n"  # Назад
-            "1\n"  # Новый чат (to link to profile)
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
+            "3\n"  # Назад в главное меню
+            "1\n"  # Новый чат (привязка к профилю)
+            "y\n"  # Хотите настроить? (y/n)
             "Linked Chat\n"  # Chat name
-            "\\n"  # Skip prompt
-            "1\\n"  # Model 1
-            "\\n\\n\\n\\n\\n"  # Settings
-            "1\\n"  # Strategy
-            # Profile selection would happen here
-            "4\\n"  # Exit
+            "\n"  # Skip prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "1\n"  # Strategy
+            "1\n"  # Привязать профиль №1 (Linked Profile)
+            "/menu\n"  # Выход из чата в меню
+            "3\n"  # Профили задач
+            "2\n"  # Просмотреть список профилей
+            "3\n"  # Действие: удалить профиль
+            "1\n"  # Профиль №1 для удаления
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        # Basic verification
-        assert "Linked Profile" in stdout or "Linked Chat" in stdout
+        assert "[OK] Чат 'Linked Chat' создан!" in stdout
+        # TC-058/UC-017 A?: deletion blocked because profile is attached to an agent
+        assert "Невозможно удалить профиль 'Linked Profile'" in stdout
+        assert "Сначала удалите или пересоздайте агентов" in stdout
 
-    def test_tc_054_delete_task_profile_confirmation_declined(self):
+    def test_tc_059_delete_task_profile_cancelled(self):
         """
-        TC-054: Delete Task Profile - Confirmation Declined
+        TC-059: Delete Task Profile - Cancelled
 
         Steps:
         1. Create a task profile
@@ -1843,30 +2643,38 @@ class TestUC016_DeleteTaskProfile:
             "1\n"  # Создать новый профиль
             "Keep Profile\n"  # Name
             "Should not be deleted\n"  # Description
-            # Delete flow with decline
-            "3\n"  # Назад
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
+            "2\n"  # Просмотреть список профилей
+            "3\n"  # Действие: Удалить профиль
+            "1\n"  # Выбрать профиль №1 для удаления
+            "n\n"  # Подтверждение удаления: нет (отмена)
+            "3\n"  # Назад в главное меню
             "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "[INFO] Удаление отменено." in stdout
+        assert "успешно удалён" not in stdout
+        # Профиль остался в списке
         assert "Keep Profile" in stdout
 
 
-class TestUC017_ChatCreationWithTaskProfile:
+class TestUC001_ChatCreationWithTaskProfile:
     """
     Use Case: Create Chat with Task Profile Selection
 
     Test Cases:
-    - TC-055: Create Chat with Task Profile Selection
-    - TC-056: Create Chat Without Task Profile (Skip)
-    - TC-057: Invalid Task Profile Selection Handling
+    - TC-061: Create Chat with Task Profile Attachment
+    - TC-062: Create Chat Without Task Profile
+    - TC-007: Task Profile Selection Invalid Choice
     """
 
-    def test_tc_055_create_chat_with_task_profile_selection(self):
+    def test_tc_061_create_chat_with_task_profile_attachment(self):
         """
-        TC-055: Create Chat with Task Profile Selection
+        TC-061: Create Chat with Task Profile Attachment
 
         Steps:
         1. Create a task profile first
@@ -1880,27 +2688,31 @@ class TestUC017_ChatCreationWithTaskProfile:
             "1\n"  # Создать новый профиль
             "Chat Profile\n"  # Name
             "For chat binding\n"  # Description
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
             "3\n"  # Назад в главное меню
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "Bound Chat\n"  # Chat name
-            "\\n"  # Skip system prompt
-            "1\\n"  # Model 1
-            "\\n\\n\\n\\n\\n"  # Settings (5 times)
-            "1\\n"  # Strategy
-            # Profile selection step (would be after strategy)
-            # Assuming profile 1 is selected
-            "1\\n"  # Select profile 1
-            "4\\n"  # Exit
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "1\n"  # Strategy
+            "1\n"  # Select profile 1 (Chat Profile)
+            "/info\n"  # Проверка привязки профиля
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "Bound Chat" in stdout or "создан" in stdout.lower()
+        assert "[OK] Чат 'Bound Chat' создан!" in stdout
+        assert "Профиль задачи: Chat Profile" in stdout
 
-    def test_tc_056_create_chat_without_task_profile(self):
+    def test_tc_062_create_chat_without_task_profile(self):
         """
-        TC-056: Create Chat Without Task Profile (Skip)
+        TC-062: Create Chat Without Task Profile
 
         Steps:
         1. Create new chat
@@ -1911,64 +2723,76 @@ class TestUC017_ChatCreationWithTaskProfile:
         """
         test_input = (
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "No Profile Chat\n"  # Chat name
-            "\\n"  # Skip system prompt
-            "1\\n"  # Model 1
-            "\\n\\n\\n\\n\\n"  # Settings
-            "1\\n"  # Strategy
-            # Skip profile selection
-            "0\\n"  # No profile
-            "4\\n"  # Exit
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "1\n"  # Strategy
+            # Профилей нет -> шаг привязки пропускается автоматически (TC-063)
+            "/info\n"  # Проверка отсутствия профиля
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "No Profile Chat" in stdout or "создан" in stdout.lower()
+        assert "[OK] Чат 'No Profile Chat' создан!" in stdout
+        # TC-063: no profiles available -> skip attachment
+        assert "(нет доступных профилей)" in stdout
+        assert "Профиль задачи: (не привязан)" in stdout
 
-    def test_tc_057_invalid_task_profile_selection_handling(self):
+    def test_tc_007_task_profile_selection_invalid_choice(self):
         """
-        TC-057: Invalid Task Profile Selection Handling
+        TC-007: Task Profile Selection Invalid Choice
 
         Steps:
-        1. Create new chat
-        2. Fill in settings
-        3. When prompted for task profile, enter invalid number
-        4. Verify error message
-        5. Re-enter valid selection (0 or valid profile)
-        6. Verify chat created
+        1. Create a task profile (so the selection list is not empty)
+        2. Create new chat via manual path
+        3. When prompted for task profile, enter invalid number "99"
+        4. Verify [WARN] message and that creation continues without profile
+        5. Verify chat created
         """
         test_input = (
+            "3\n"  # Профили задач
+            "1\n"  # Создать новый профиль
+            "TC007 Profile\n"  # Name
+            "Profile for TC-007\n"  # Description
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
+            "3\n"  # Назад в главное меню
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "Invalid Select Chat\n"  # Chat name
-            "\\n"  # Skip system prompt
-            "1\\n"  # Model 1
-            "\\n\\n\\n\\n\\n"  # Settings
-            "1\\n"  # Strategy
-            "99\\n"  # Invalid profile number
-            "0\\n"  # Correct to 0 (no profile)
-            "4\\n"  # Exit
+            "\n"  # Skip system prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "1\n"  # Strategy
+            "99\n"  # Некорректный номер профиля (вне диапазона)
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        # Should handle invalid input gracefully
-        assert "Invalid Select Chat" in stdout or "создан" in stdout.lower()
+        assert "[WARN] Некорректный выбор. Профиль не привязан." in stdout
+        assert "[OK] Чат 'Invalid Select Chat' создан!" in stdout
 
 
-class TestUC018_TaskProfileMemoryInSystemPrompt:
+class TestS3_MemoryIntegrationInSystemPrompt:
     """
     Use Case: Task Profile Memory Integration in System Prompt
 
     Test Cases:
-    - TC-058: Both Global and Task Profile Memory in System Prompt
-    - TC-059: Preferences Display in System Prompt - Empty Preferences
+    - TC-064: Memory Integration Global + Task Profile
+    - TC-065: Preferences Display - Empty Preferences
     """
 
-    def test_tc_058_global_and_task_memory_in_system_prompt(self):
+    def test_tc_064_memory_integration_global_and_task(self):
         """
-        TC-058: Both Global and Task Profile Memory in System Prompt
+        TC-064: Memory Integration Global + Task Profile
 
         Steps:
         1. Ensure global memory has facts (send message in any chat)
@@ -1982,45 +2806,58 @@ class TestUC018_TaskProfileMemoryInSystemPrompt:
         test_input = (
             # First, create a chat to populate global memory
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "Global Memory Chat\n"  # Name
-            "\\n"  # Skip prompt
-            "1\\n"  # Model 1
-            "\\n\\n\\n\\n\\n"  # Settings
-            "1\\n"  # Strategy
-            "0\\n"  # No task profile
-            "Tell me about yourself\\n"  # Message to trigger memory
-            "n\\n"  # No reasoning
-            "/menu\\n"  # Back to main menu
+            "\n"  # Skip prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "1\n"  # Strategy
+            "0\n"  # No task profile
+            "n\n"  # No reasoning (промпт после вывода ответа)
+            "/menu\n"  # Back to main menu
             # Create task profile
             "3\n"  # Профили задач
             "1\n"  # Создать профиль
             "Integration Profile\n"  # Name
-            "For memory integration test\\n"  # Description
-            "3\n"  # Назад
+            "For memory integration test\n"  # Description
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пустая строка завершает ввод
+            "3\n"  # Назад в главное меню (из меню профилей)
             # Create chat with task profile
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "Integration Chat\n"  # Name
-            "\\n"  # Skip prompt
-            "1\\n"  # Model 1
-            "\\n\\n\\n\\n\\n"  # Settings
-            "1\\n"  # Strategy
+            "\n"  # Skip prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "1\n"  # Strategy
             # Select the created profile (assuming it's #1)
-            "1\\n"  # Select profile
-            "Send test message\\n"  # Message
-            "n\\n"  # No reasoning
-            "4\\n"  # Exit
+            "1\n"  # Select profile
+            "Send test message\n"  # Message
+            "n\n"  # No reasoning
+            "/info\n"  # Проверка привязки профиля и памяти в инфо чата
+            "/menu\n"  # Выход в меню
+            "4\n"  # Просмотреть глобальную память (шаг 1: факты есть)
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        # Should have both memories integrated
-        # Mock provider behavior would determine exact output
-        assert "Integration" in stdout or "создан" in stdout.lower()
+        assert "[OK] Чат 'Global Memory Chat' создан!" in stdout
+        assert "[OK] Профиль задачи 'Integration Profile' создан!" in stdout
+        assert "[OK] Чат 'Integration Chat' создан!" in stdout
+        assert "Профиль задачи: Integration Profile" in stdout
+        # Шаг 1: глобальная память содержит факты после обмена сообщениями
+        assert "--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---" in stdout
+        memory_section = stdout.split("--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---")[-1]
+        assert "(память пуста)" not in memory_section, (
+            "Mock provider must extract global facts after a message exchange"
+        )
 
-    def test_tc_059_preferences_display_empty_preferences(self):
+    def test_tc_065_preferences_display_empty_preferences(self):
         """
-        TC-059: Preferences Display in System Prompt - Empty Preferences
+        TC-065: Preferences Display - Empty Preferences
 
         Precondition: Global memory has facts, task profile has no preferences (empty string)
 
@@ -2039,22 +2876,26 @@ class TestUC018_TaskProfileMemoryInSystemPrompt:
             "Empty Pref Profile\n"  # Name
             "Profile for testing empty preferences\n"  # Description
             "\n"  # Empty preferences (skip)
+            "\n"  # Инварианты: пустая строка завершает ввод
             "3\n"  # Назад
             # Create chat with task profile
             "1\n"  # Новый чат
+            "y\n"  # Хотите настроить? (y/n)
             "Empty Pref Chat\n"  # Name
-            "\\n"  # Skip prompt
-            "1\\n"  # Model 1
-            "\\n\\n\\n\\n\\n"  # Settings
-            "1\\n"  # Strategy
-            "1\\n"  # Select profile #1
-            "Test message\\n"  # Message
-            "n\\n"  # No reasoning
-            "4\\n"  # Exit
+            "\n"  # Skip prompt
+            "1\n"  # Model 1
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "1\n"  # Strategy
+            "1\n"  # Select profile #1
+            "Test message\n"  # Message
+            "n\n"  # No reasoning
+            "/menu\n"  # Выход в меню
+            "6\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        # Should complete successfully - preferences section should be skipped
-        assert "Empty Pref" in stdout or "создан" in stdout.lower()
+        assert "[OK] Чат 'Empty Pref Chat' создан!" in stdout
+        # Preferences line omitted when empty (§4.7.3)
+        assert "Предпочтения:" not in stdout

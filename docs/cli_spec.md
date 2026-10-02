@@ -39,6 +39,18 @@ State model: the CLI keeps a single piece of state — `current_agent: Agent | N
 
 ---
 
+## 3. Memory Integration
+
+Memory facts are injected into the system prompt constructed for every message exchange (see UC-004) in the following fixed order:
+
+1. Global memory facts — section header `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---` (omitted when global memory is empty);
+2. Task profile memory facts — section header `--- ПАМЯТЬ ЗАДАЧИ: {profile_name} ---` (only when the chat has a task profile attached and the profile has facts);
+3. User preferences — section header `--- ПРЕДПОЧТЕНИЯ ПОЛЬЗОВАТЕЛЯ ---` (only when the attached profile has non-empty preferences).
+
+Facts are extracted into global and task-profile memory by the `save_agent_memory` use case whenever the chat loop exits (via `/menu`, `/stop`, an error or Ctrl+C — see UC-004 exit rule), and on application start by the `save_unsaved_memories` use case (§4.2.3).
+
+---
+
 ## 4. Interface Specification
 
 ### 4.1 Visual Style Guidelines
@@ -93,6 +105,16 @@ Prompt line: `Ваш выбор (1-6):`
 - Any other input: `[WARN] Неверный выбор, попробуйте снова.` and re-prompt
 - `KeyboardInterrupt` / `EOFError` at the menu prompt: print `До свидания!` and exit cleanly
 - On application start (before the menu loop) the system executes `save_unsaved_memories` use case: for every agent with unremembered prompts it extracts facts into global/task memory (technical token counters).
+
+#### 4.2.4 State Model Overview
+
+The CLI is a single-user, session-scoped console application. Its entire state is held in the `CLIChat` instance:
+
+- `current_agent: Agent | None` — the active chat (see §2); it survives exits to the Main Menu and is replaced on chat creation or selection.
+- Per-chat runtime data (settings, phase, connected MCP servers) lives on the `Agent` object and in storage; the CLI never caches message history beyond what the current loop needs.
+- All persistent state (agents, messages, task profiles, global/task memories) is owned by repositories accessed exclusively through use cases (§2).
+
+There is no cross-session UI state: restarting the application re-reads everything from storage.
 
 ### 4.3 Chat List Display (Select Chat Option)
 
@@ -403,7 +425,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
 
 - **Action**: Execute `print_settings()`, then prompt `Изменить настройки? (y/n):`
 - **Flow**:
-  1. Display current settings (format in 3.6.1)
+  1. Display current settings (format in §4.6.1)
   2. Prompt: `Изменить настройки? (y/n):`
   3. If 'y': Execute `change_settings()` which re-prompts all `AgentSettings` values (same prompts as creation workflow steps 3–8) and applies them via `change_settings` use case
   4. If 'n' or other: Return to chat loop without changes
@@ -453,15 +475,15 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
 
 Error handling in the chat loop is not centralized in a separate matrix: every error case is specified as an alternative flow of the corresponding use case (§5):
 
-- **Context window exceeded** — UC-004 A3 (`[ERROR] {message}` + hint, memory saved, exit to Main Menu)
-- **Backend exception during message send** — UC-004 A4 (`[ERROR] Ошибка: {message}`, memory saved, exit to Main Menu)
-- **KeyboardInterrupt / EOFError** — UC-003 A2 (menu prompt) and UC-004 A5 / UC-005 A3 (chat loop: `Прервано пользователем.`, memory saved before exit)
+- **Context window exceeded** — UC-004 A4 (`[ERROR] {message}` + hint, memory saved, exit to Main Menu)
+- **Backend exception during message send** — UC-004 A5 (`[ERROR] Ошибка: {message}`, memory saved, exit to Main Menu)
+- **KeyboardInterrupt / EOFError** — UC-003 A2 (menu prompt) and UC-004 A5–A6 / UC-005 A3 (chat loop: `Прервано пользователем.`, memory saved before exit)
 - **Errors while applying settings** — UC-005 A4
 - **Unknown slash-command** — not an error: treated as a regular message (UC-004 A2)
 
-### 3.6 Settings Management
+### 4.6 Settings Management
 
-#### 3.6.1 Print Settings (`_print_current_settings`)
+#### 4.6.1 Print Settings (`_print_current_settings`)
 
 ```
 --- ТЕКУЩИЕ НАСТРОЙКИ ---
@@ -476,11 +498,11 @@ Error handling in the chat loop is not centralized in a separate matrix: every e
 
 Model is shown by its identifier (not display name). Missing `context_window_size` is displayed as 200000. Unlike temperature/top_p/top_k, `Reasoning Effort` has no disable placeholder: the raw value is printed as-is, so when the effort is `None` the line reads `Reasoning Effort: None` (default effort values such as `low`/`medium`/`high` are printed verbatim).
 
-#### 3.6.2 Change Settings (`change_settings`)
+#### 4.6.2 Change Settings (`change_settings`)
 
-Same prompts as creation workflow (Section 3.4.3–3.4.8) applied sequentially; each answer fully replaces the previous value (empty input disables the parameter — there is no "keep current value" semantics). Strategy, task profile and phase cannot be changed for existing chats. Confirmation: `[OK] Настройки обновлены!` followed by the refreshed settings block.
+Same prompts as creation workflow (§4.4.3–§4.4.8) applied sequentially; each answer fully replaces the previous value (empty input disables the parameter — there is no "keep current value" semantics). Strategy, task profile and phase cannot be changed for existing chats. Confirmation: `[OK] Настройки обновлены!` followed by the refreshed settings block.
 
-### 3.7 Task Profiles Menu
+### 4.7 Task Profiles Menu
 
 Entered from Main Menu option 3 (`task_profiles_menu`).
 
@@ -819,7 +841,11 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
   - Step 2: User enters an unrecognized slash-command (e.g. "/xyz")
   - It is not intercepted as a command; it is sent to the agent as a regular message (main flow continues from step 4)
 
-- **A3: Context Window Exceeded**
+- **A3: Whitespace-Only Input**
+  - Step 2: User enters only spaces/tabs
+  - System re-displays the prompt without sending anything to the backend (same handling as A1)
+
+- **A4: Context Window Exceeded**
   - Step 6: Backend raises `ContextWindowExceededError`
   - System clears the "печатает..." line, displays `[ERROR] {message}` followed by `Необходимо очистить историю сообщений или создать новый чат.`
   - System saves the agent memory via the `save_agent_memory` use case (memory must not be lost on abnormal exit)
@@ -834,11 +860,15 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
   - Any step: User presses Ctrl+C at the input prompt or during processing
   - System displays `Прервано пользователем.`, saves the agent memory via the `save_agent_memory` use case and exits the chat loop back to Main Menu
 
-- **A6: Long Response**
+- **A6: EOFError (End Of Input)**
+  - Step 1/2: The input stream ends (piped input exhausted or Ctrl+D)
+  - The chat loop terminates gracefully without a traceback; the agent memory is saved before exit (same rule as A5)
+
+- **A7: Long Response**
   - Step 8: Response exceeds terminal width
   - System wraps text appropriately
 
-- **A7: Reasoning In Response**
+- **A8: Reasoning In Response**
   - After step 9: response carries reasoning content
   - System asks `Показать рассуждения модели? (y/n):`; on `y` it prints the indented `[Reasoning]:` block, otherwise nothing extra
 
@@ -846,7 +876,7 @@ Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation
 
 - Two new messages in history (user + assistant)
 - Chat preview updated with last message
-- On any exit from the chat loop (`/menu`, A3, A4, A5) the agent memory is saved before returning to the Main Menu
+- On any exit from the chat loop (`/menu`, A4, A5, A6) the agent memory is saved before returning to the Main Menu
 
 ---
 
@@ -1788,16 +1818,17 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ---
 
-### TC-015: Empty Message Handling
+### TC-015: Empty And Whitespace-Only Message Handling
 
-**Related UC**: UC-004 A1
+**Related UC**: UC-004 A1, UC-004 A3
 
-| Step | Action              | Expected Result     |
-| ---- | ------------------- | ------------------- |
-| 1    | Enter chat          | Prompt displayed    |
-| 2    | Press Enter (empty) | No send, re-prompt  |
-| 3    | Press Enter again   | No send, re-prompt  |
-| 4    | Send valid message  | Normal flow resumes |
+| Step | Action                          | Expected Result                              |
+| ---- | ------------------------------- | -------------------------------------------- |
+| 1    | Enter chat                      | Prompt displayed                             |
+| 2    | Press Enter (empty)             | No send, re-prompt (UC-004 A1)               |
+| 3    | Press Enter again               | No send, re-prompt                           |
+| 4    | Enter "   " (spaces only)       | No send, re-prompt (UC-004 A3)               |
+| 5    | Send valid message              | Normal flow resumes                          |
 
 ---
 
@@ -1817,7 +1848,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-079: Context Window Exceeded Error
 
-**Related UC**: UC-004 A3
+**Related UC**: UC-004 A4
 
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -1830,7 +1861,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-080: Backend Error During Message Exchange
 
-**Related UC**: UC-004 A4
+**Related UC**: UC-004 A5
 
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -1854,7 +1885,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-082: Long Response Wrapping
 
-**Related UC**: UC-004 A6
+**Related UC**: UC-004 A7
 
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -1865,7 +1896,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-083: Reasoning Display Prompt
 
-**Related UC**: UC-004 A7
+**Related UC**: UC-004 A8
 
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -1878,7 +1909,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-016: View Settings
 
-**Related UC**: UC-005 (steps 1–4, 11)
+**Related UC**: UC-005 (steps 1–4, 11), UC-005 A1
 
 | Step | Action                              | Expected Result                   |
 | ---- | ----------------------------------- | --------------------------------- |
@@ -2642,7 +2673,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | From Main Menu select option 3, enter "9" at the Task Profiles menu prompt | `[WARN] Неверный выбор, попробуйте снова.`; menu re-displayed (UC-013 A2) |
-| 2    | Open profiles list, enter "99" at `Выберите действие (1-4):` | Same warning; action prompt re-displayed      |
+| 2    | Open profiles list, enter "99" at `Выберите действие (1-4):` | Same warning; action prompt re-displayed (UC-013 A4) |
 | 3    | Choose action 1, enter out-of-range index     | `Введите число от 1 до {n}`; profile selection re-prompted (UC-013 A3) |
 | 4    | Enter "abc" as profile index                  | `Введите корректное число`; re-prompted (UC-013 A3) |
 | 5    | Enter valid index                             | Requested action proceeds                     |
@@ -2946,7 +2977,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-064: Memory Integration - Global + Task Profile in System Prompt
 
-**Related UC**: UC-004 (§3 Memory integration)
+**Related UC**: §3 Memory Integration, UC-004
 
 **Precondition**: Global memory has facts, task profile has facts and preferences, agent attached to task profile
 
@@ -2962,7 +2993,7 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 
 ### TC-065: Preferences Display in System Prompt - Empty Preferences
 
-**Related UC**: UC-004 (§3 Memory integration)
+**Related UC**: §3 Memory Integration, UC-004
 
 **Precondition**: Global memory has facts, task profile has no preferences (empty string), agent attached to task profile
 
@@ -3030,3 +3061,81 @@ This section covers invariants management (UC-016) and profile deletion (UC-017)
 | 2    | Press Enter without entering preferences      | Empty preferences accepted (no error)        |
 | 3    | Complete profile creation                     | Profile saved with empty preferences         |
 | 4    | View created profile                          | The `Предпочтения:` line is omitted entirely |
+
+---
+
+### TC-115: Chat Loop Graceful Exit On End Of Input
+
+**Related UC**: UC-004 A6
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Start the application, create a chat (quick path), feed input that ends right after one message exchange (no `/menu`, no option 6) | The message is sent and answered; then the input stream ends                            |
+| 2    | Verify termination                                              | The chat loop terminates gracefully: no traceback in stderr, process exits cleanly      |
+| 3    | Verify memory save                                              | Agent memory is saved before exit (UC-004 A6, exit rule in 5.4.4); restart shows the exchange intact |
+
+---
+
+### TC-116: Profiles List Submenu Non-Numeric Action Re-Prompts
+
+**Related UC**: UC-013 A4
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Open profiles list with at least one profile                     | Actions block and prompt `Выберите действие (1-4):` displayed                            |
+| 2    | Enter "abc" (non-numeric)                                       | `[WARN] Неверный выбор, попробуйте снова.` displayed; action prompt re-displayed (UC-013 A4) |
+| 3    | Enter "0"                                                       | Same warning; action prompt re-displayed                                                |
+| 4    | Enter "4" (Back to list)                                        | Control returns to the Task Profiles menu                                               |
+
+---
+
+### TC-117: Create Profile With Empty Preferences
+
+**Related UC**: UC-014 A3
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Reach the preferences prompt during profile creation             | Prompt `Введите предпочтения/инструкции (Enter для пропуска):` displayed                 |
+| 2    | Press Enter (empty input)                                       | No error; the invariants block follows (UC-014 A3)                                      |
+| 3    | Finish creation with an empty invariants line                    | `[OK] Профиль задачи '{name}' создан!`                                                  |
+| 4    | View the created profile (action 1 in the profiles list)         | The `Предпочтения:` line is omitted entirely (cross-check with UC-015 step 6)           |
+
+---
+
+### TC-118: Delete Task Profile - Repository Failure
+
+**Related UC**: UC-017 (step 7)
+
+**Precondition**: Unlinked task profile exists; repository deletion is arranged to fail
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | From profiles list submenu, select action 3 (Delete), choose the profile | Confirmation prompt `Вы уверены, что хотите удалить профиль '{name}'? (y/n):` displayed     |
+| 2    | Enter 'y'                                                       | `[ERROR] Не удалось удалить профиль '{name}'.` displayed (UC-017 step 7)                 |
+| 3    | Verify state                                                    | Profile still exists in repository                                                      |
+| 4    | Verify navigation                                               | Control returns to the Task Profiles menu                                               |
+
+---
+
+### TC-119: Return To Active Chat After EOF At Menu Prompt
+
+**Related UC**: UC-003 A2
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Create a chat, return to Main Menu via `/menu`                   | Option 5 shows `Вернуться в чат: {name}`                                                 |
+| 2    | Feed end of input (EOF) at `Ваш выбор (1-6):` without selecting an option | `До свидания!` printed; application terminates cleanly (UC-003 A2)                        |
+| 3    | Restart the application                                         | The chat from step 1 is still present and selectable via option 2                       |
+
+---
+
+### TC-120: Quick Creation Default Name Counter
+
+**Related UC**: UC-001 A1, UC-001 A3
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Ensure exactly 2 chats exist in storage                          | Main Menu displayed                                                                    |
+| 2    | Select option 1 (New Chat), press Enter at the configure prompt (default "n") | `Используются настройки по умолчанию.` printed (UC-001 A1)                  |
+| 3    | Verify completion message                                       | `[OK] Чат 'Чат 3' создан!` — auto-generated name uses N = existing chats + 1 (UC-001 A3) |
+| 4    | Verify chat settings                                            | Defaults applied (`aliceai-llm-flash/latest`, disabled temperature/top_p/top_k, DefaultStrategy, no profile) |

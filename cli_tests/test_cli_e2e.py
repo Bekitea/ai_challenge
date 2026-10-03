@@ -2437,8 +2437,8 @@ class TestUC014_CreateNewTaskProfile:
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "[OK] Профиль задачи 'My Task' создан!" in stdout
-        # TC-066/UC-015 step 6: preferences displayed in profile view
-        assert "Предпочтения: Be concise and formal" in stdout
+        # Просмотр профиля после создания (шаг 4 TC-068);
+        # детальная проверка отображения предпочтений — в TC-066
 
     def test_tc_069_create_profile_without_preferences(self):
         """
@@ -2471,8 +2471,8 @@ class TestUC014_CreateNewTaskProfile:
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "[OK] Профиль задачи 'My Task' создан!" in stdout
-        # TC-067/§4.7.3: with empty preferences the line is omitted entirely
-        assert "Предпочтения:" not in stdout
+        # Просмотр профиля после создания (шаг 4 TC-069);
+        # детальная проверка отсутствия строки предпочтений — в TC-067
 
 
 class TestUC015_ViewTaskProfileMemory:
@@ -2482,8 +2482,8 @@ class TestUC015_ViewTaskProfileMemory:
     Test Cases:
     - TC-056: View Task Profile Memory (Empty State)
     - TC-055: View Task Profile Memory (Flow)
-    - TC-060: Preferences Display in View Profile - With Preferences
-    - TC-061: Preferences Display in View Profile - Empty Preferences
+    - TC-066: Preferences Display in View Profile - With Preferences
+    - TC-067: Preferences Display in View Profile - Empty Preferences
     """
 
     def test_tc_056_view_task_profile_memory_empty_state(self):
@@ -2568,6 +2568,87 @@ class TestUC015_ViewTaskProfileMemory:
         # Profile view reachable after linking a chat to it
         assert "--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---" in stdout
         assert "Facts Profile" in stdout
+
+    def test_tc_066_preferences_display_in_view_profile_with_preferences(self):
+        """
+        TC-066: Preferences Display in View Profile - With Preferences
+
+        Related UC: UC-015 (step 6)
+
+        Precondition: Task profile exists with non-empty preferences text
+
+        Steps:
+        1. Create a profile with non-empty preferences, navigate to
+           Task Profiles menu and select "View memory" (option 2 -> 1)
+        2. Select the profile with preferences (profile №1)
+        3. Verify profile details displayed and preferences line shown
+        """
+        test_input = (
+            "3\n"  # Профили задач
+            "1\n"  # Создать новый профиль
+            "Pref Profile\n"  # Name
+            "Profile with preferences\n"  # Description
+            "Be concise and formal\n"  # Preferences text (non-empty)
+            "\n"  # Инварианты: пустая строка завершает ввод
+            "3\n"  # Назад в главное меню
+            "3\n"  # Профили задач
+            "2\n"  # Просмотреть список профилей
+            "1\n"  # Действие: просмотреть память профиля
+            "1\n"  # Выбрать профиль с предпочтениями (№1)
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        # Шаг 2: профиль выбран, детали отображены
+        assert "--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---" in stdout
+        assert "Pref Profile" in stdout
+        # Шаг 3: строка `Предпочтения: {preferences_text}` показана
+        assert "Предпочтения: Be concise and formal" in stdout
+
+    def test_tc_067_preferences_display_in_view_profile_empty_preferences(self):
+        """
+        TC-067: Preferences Display in View Profile - Empty Preferences
+
+        Related UC: UC-015 (step 6, §4.7.3)
+
+        Precondition: Task profile exists with empty preferences
+
+        Steps:
+        1. Create a profile without preferences, navigate to
+           Task Profiles menu and select "View memory" (option 2 -> 1)
+        2. Select the profile with empty preferences (profile №1)
+        3. Verify profile details displayed and the `Предпочтения:` line
+           is omitted entirely (no placeholder like "(не указаны)")
+        """
+        test_input = (
+            "3\n"  # Профили задач
+            "1\n"  # Создать новый профиль
+            "NoPref Profile\n"  # Name
+            "Profile without preferences\n"  # Description
+            "\n"  # Предпочтения (пропуск — пустые предпочтения)
+            "\n"  # Инварианты: пустая строка завершает ввод
+            "3\n"  # Назад в главное меню
+            "3\n"  # Профили задач
+            "2\n"  # Просмотреть список профилей
+            "1\n"  # Действие: просмотреть память профиля
+            "1\n"  # Выбрать профиль с пустыми предпочтениями (№1)
+            "3\n"  # Назад в главное меню
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        # Шаг 2: профиль выбран, детали отображены
+        assert "--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---" in stdout
+        assert "NoPref Profile" in stdout
+        # Шаг 3 (§4.7.3): при пустых предпочтениях строка полностью опущена
+        assert "Предпочтения:" not in stdout
+        # ...и не заменяется заглушкой
+        assert "(не указаны)" not in stdout
 
 
 class TestUC017_DeleteTaskProfile:

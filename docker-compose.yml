@@ -1,0 +1,47 @@
+services:
+  opencode:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM ghcr.io/anomalyco/opencode:latest AS base
+        USER root
+        
+        RUN apk update && \
+            apk add --no-cache \
+            python3 \
+            python3-dev \
+            py3-pip \
+            build-base \
+            libffi-dev \
+            openssl-dev
+            
+        RUN pip install --no-cache-dir --break-system-packages poetry
+        
+        RUN poetry config virtualenvs.in-project false && \
+            poetry config virtualenvs.path /root/.cache/pypoetry/virtualenvs
+        
+        WORKDIR /workspace
+
+        RUN echo '#!/bin/sh' > /entrypoint.sh && \
+            echo 'poetry install --no-interaction --no-ansi' >> /entrypoint.sh && \
+            echo 'exec opencode' >> /entrypoint.sh && \
+            chmod +x /entrypoint.sh
+
+    container_name: opencode_agent
+    user: root
+    
+    entrypoint: ["/entrypoint.sh"]
+    
+    volumes:
+      - .:/workspace
+      - ${USERPROFILE:-~}/.gitconfig:/root/.gitconfig:ro
+      - poetry_cache:/root/.cache
+      
+    working_dir: /workspace
+    environment:
+      - OPENCODE_API_KEY
+    stdin_open: true
+    tty: true
+
+volumes:
+  poetry_cache:

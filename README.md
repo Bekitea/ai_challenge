@@ -4,7 +4,7 @@
 
 ## Documentation
 
-- **[CLI Specification](docs/cli_spec.md)** - Полная спецификация CLI: use cases, test cases, error matrix
+- **[CLI Specification](docs/cli_spec.md)** - Полная спецификация CLI: use cases, test cases
 - **[CLI Testing Guide](docs/cli_e2e_testing_guide.md)** - Руководство по тестированию: лучшие практики, примеры тестов, troubleshooting
 
 ## Установка
@@ -81,7 +81,7 @@ celery -A celery_app beat --loglevel=info
 
 #### Требования
 
-- Python 3.8+
+- Python 3.14+
 - pytest: `pip install pytest`
 - Приложение должно быть в рабочем состоянии
 
@@ -338,6 +338,7 @@ python cli_tests/smoke_test.py
        def __init__(self, db_path):
            self.engine = create_engine(f"sqlite:///{db_path}")
 
+
    # ХОРОШО: репозиторий получает фабрику сессий
    class PersistentAgentRepository:
        def __init__(self, session_factory):
@@ -351,6 +352,7 @@ python cli_tests/smoke_test.py
        def execute(self, agent, message):
            response = agent.continue_dialog(message)
            self.repository.update_agent(agent)  # ❌ Явное сохранение
+
 
    # ХОРОШО: агент самосохраняется
    class SendMessageUseCase:

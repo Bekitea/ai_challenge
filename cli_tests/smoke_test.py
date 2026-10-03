@@ -38,26 +38,26 @@ def run_smoke_test():
     print("Running smoke test in TEST MODE (APPLICATION_MODE=TEST)...")
     print("-" * 50)
     print("Testing scenarios:")
-    print("  - TC-009: Send Multiple Messages (mock provider + history)")
-    print("  - TC-027: Settings Change With Confirmation (storage R/W)")
-    print("  - TC-024: Create Branch And Switch (branching + storage)")
+    print("  - TC-014: Send Multiple Messages (mock provider + history)")
+    print("  - TC-032: Settings Change With Confirmation (storage R/W)")
+    print("  - TC-029: Create Branch And Switch (branching + storage)")
     print("-" * 50)
 
     project_root = get_project_root()
 
     try:
         # Run pytest on multiple test cases that cover different aspects:
-        # - TC-009: Tests mock provider interaction and message history
-        # - TC-027: Tests settings storage read/write operations
-        # - TC-024: Tests branching and storage operations
+        # - TC-014: Tests mock provider interaction and message history
+        # - TC-032: Tests settings storage read/write operations
+        # - TC-029: Tests branching and storage operations
         result = subprocess.run(
             [
                 sys.executable,
                 "-m",
                 "pytest",
-                "cli_tests/test_cli_e2e.py::TestUC004_SendMessageAndReceiveResponse::test_tc_009_send_multiple_messages",
-                "cli_tests/test_cli_e2e.py::TestUC005_ViewAndChangeSettingsInChat::test_tc_027_settings_change_with_confirmation",
-                "cli_tests/test_cli_e2e.py::TestUC011_CreateChatBranch::test_tc_024_create_branch_and_switch",
+                "cli_tests/test_cli_e2e.py::TestUC004_SendMessageAndReceiveResponse::test_tc_014_send_multiple_messages",
+                "cli_tests/test_cli_e2e.py::TestUC005_ViewAndChangeSettingsInChat::test_tc_032_settings_change_with_confirmation",
+                "cli_tests/test_cli_e2e.py::TestUC011_CreateChatBranch::test_tc_029_create_branch_and_switch",
                 "-v",
                 "--tb=short",
             ],

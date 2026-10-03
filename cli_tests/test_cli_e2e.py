@@ -1651,7 +1651,13 @@ class TestUC016_Invariants_TC060_112_113_114:
 
     def test_tc_113_manage_invariants_invalid_action(self):
         """
-        TC-113: Manage Invariants - Invalid Action Choice Re-Prompts (UC-016)
+        TC-113: Manage Invariants - Invalid Action Choice Re-Prompts (UC-016 A4)
+
+        Steps:
+        1. Open invariants submenu -> list + prompt `Выберите действие (1-3):`
+        2. Enter "9" (outside 1-3) -> `[WARN] Неверный выбор.`, re-displayed
+        3. Enter "abc" -> same warning, re-displayed
+        4. Enter "3" (Назад) -> back to Task Profiles menu
         """
         test_input = (
             self._PROFILE_SETUP + "2\n"  # Просмотреть список профилей
@@ -1669,19 +1675,46 @@ class TestUC016_Invariants_TC060_112_113_114:
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "ИНВАРИАНТЫ ПРОФИЛЯ" in stdout
-        # App survived invalid actions and exited cleanly
-        assert "Traceback" not in stderr
+        # UC-016 A4: warning shown once per invalid input...
+        assert "[WARN] Неверный выбор." in stdout
+        assert stdout.count("[WARN] Неверный выбор.") >= 2
+        # ...and the list/action prompt is re-displayed after each warning
+        assert stdout.count("Выберите действие (1-3):") >= 3
+        # Step 4: valid action returns control to the Task Profiles menu
+        assert "МЕНЮ ПРОФИЛЕЙ ЗАДАЧ" in stdout or "Действия:" in stdout
 
-    def test_tc_114_manage_invariants_invalid_profile_index(self):
+    def test_tc_114_manage_invariants_remove_with_empty_list(self):
         """
-        TC-114: Manage Invariants - Invalid Profile Index (UC-016)
+        TC-114: Manage Invariants - Remove With Empty List (UC-016 A5)
+
+        Steps:
+        1. Open invariants submenu for a profile with no invariants
+           -> `(инварианты не заданы)` and actions displayed
+        2. Select action 2 (Удалить инвариант)
+           -> `[WARN] Нет инвариантов для удаления.`; removal number
+           prompt NOT shown (UC-016 A5)
+        3. Verify display -> list and action prompt re-displayed
+        4. Add an invariant, then select action 2
+           -> removal prompt `Выберите номер инварианта для удаления` now shown
         """
+        # Профиль БЕЗ инвариантов (пустая строка сразу завершает их ввод)
+        empty_profile_setup = (
+            "3\n"  # Профили задач
+            "1\n"  # Создать профиль
+            "Empty Inv Profile\n"  # Название
+            "Profile without invariants\n"  # Описание
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пусто
+        )
         test_input = (
-            self._PROFILE_SETUP + "2\n"  # Просмотреть список профилей
+            empty_profile_setup + "2\n"  # Просмотреть список профилей
             "2\n"  # Управление инвариантами
-            "99\n"  # Недопустимый индекс профиля
-            "abc\n"  # Нечисловой индекс
-            "1\n"  # Корректный профиль
+            "1\n"  # Профиль №1
+            "2\n"  # Удалить инвариант при пустом списке
+            "1\nRule A\n"  # Добавить инвариант
+            "1\nRule B\n"  # Добавить ещё один
+            "2\n"  # Удалить инвариант (теперь промпт номера должен появиться)
+            "1\n"  # Номер удаляемого
             "3\n"  # Назад из подменю инвариантов
             "4\n"  # Назад к списку
             "3\n"  # Назад в главное меню
@@ -1691,8 +1724,22 @@ class TestUC016_Invariants_TC060_112_113_114:
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "ИНВАРИАНТЫ ПРОФИЛЯ" in stdout
-        assert "Traceback" not in stderr
+        # Step 1: empty list marker displayed
+        assert "(инварианты не заданы)" in stdout
+        # Step 2 (UC-016 A5): warning shown exactly once...
+        assert "[WARN] Нет инвариантов для удаления." in stdout
+        assert stdout.count("[WARN] Нет инвариантов для удаления.") == 1
+        # ...and BEFORE any removal-number prompt appears
+        warn_idx = stdout.find("Нет инвариантов для удаления")
+        prompt_idx = stdout.find("Выберите номер инварианта для удаления")
+        assert warn_idx != -1 and prompt_idx != -1
+        assert warn_idx < prompt_idx
+        # Step 3: submenu re-displayed after the warning (header shown again)
+        assert stdout.count("ИНВАРИАНТЫ ПРОФИЛЯ") >= 2
+        # Step 4: after adding invariants the removal prompt is shown
+        assert "Выберите номер инварианта для удаления (1-2)" in stdout
+        assert "Инвариант добавлен" in stdout
+        assert "Инвариант удал" in stdout
 
 
 class TestUC017_DeleteFlow_TC115_116:

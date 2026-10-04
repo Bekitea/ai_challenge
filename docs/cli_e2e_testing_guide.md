@@ -300,13 +300,13 @@ The project includes pytest-based E2E tests that emulate real user interaction v
 
 ```bash
 # Run all E2E tests (APPLICATION_MODE=TEST is set automatically in tests)
-pytest cli_tests/test_cli_e2e.py -v
+pytest cli_tests/ -v
 
 # Run specific test class (Use Case)
-pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings -v
+pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings -v
 
 # Run specific test
-pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings::test_tc_001_create_chat_default_values -v
+pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -v
 ```
 
 **Note for Windows Users:** If you encounter `[WinError 32] Process cannot access file` errors, see the "Windows-Specific: SQLite File Locking Issue" section below for solutions.
@@ -335,7 +335,7 @@ The existing smoke test (`smoke_test.py`) and new pytest E2E tests intentionally
 5. **Specification Traceability**: Direct mapping to `cli_spec.md` ensures complete coverage
 
 ```python
-# Example test structure (from test_cli_e2e.py)
+# Example test structure (from a per-class test file)
 class TestUC001_CreateChatWithAllSettings:
     \"\"\"Use Case UC-001: Create New Chat with All Settings\"\"\"
 
@@ -367,7 +367,7 @@ class TestUC001_CreateChatWithAllSettings:
 **Test Mode (Default for Automated Tests):**
 ```bash
 # APPLICATION_MODE=TEST is set automatically in tests
-pytest cli_tests/test_cli_e2e.py -v
+pytest cli_tests/ -v
 ```
 
 **Smoke Test (comprehensive scenario):**
@@ -747,13 +747,13 @@ This pattern is critical for tests like `test_tc_020_concurrent_chat_operations`
 ### Running Tests
 ```bash
 # All E2E tests
-pytest cli_tests/test_cli_e2e.py -v
+pytest cli_tests/ -v
 
 # Specific Use Case
-pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings -v
+pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings -v
 
 # Specific test case
-pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings::test_tc_001_create_chat_default_values -v
+pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -v
 
 # Smoke test (standalone)
 python cli_tests/smoke_test.py
@@ -770,7 +770,9 @@ python cli_tests/smoke_test.py
 |------|---------|
 | `cli_tests/README.md` | This documentation |
 | `cli_tests/smoke_test.py` | Basic smoke test (standalone script) |
-| `cli_tests/test_cli_e2e.py` | Full E2E test suite (pytest) |
+| `cli_tests/e2e_helpers.py` | Shared E2E helpers (subprocess runner, paths, cleanup) |
+| `cli_tests/conftest.py` | Shared pytest fixtures (autouse cleanup) |
+| `cli_tests/test_ucXXX_*.py` | Full E2E test suite (pytest), one file per test class |
 | `cli_spec.md` | Specification with Use Cases and Test Cases |
 
 ### Core Principles Summary
@@ -828,7 +830,7 @@ If errors persist, manually remove the test-data directory before running tests:
 Remove-Item -Recurse -Force test-data
 
 # Then run tests
-python -m pytest cli_tests/test_cli_e2e.py -v
+python -m pytest cli_tests/ -v
 ```
 
 ### Prevention

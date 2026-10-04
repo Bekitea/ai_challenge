@@ -10,8 +10,9 @@ AI Chat CLI — консольное приложение для взаимод�
 - Run app: `poetry run python main_cli.py`
 - Lint: `poetry run ruff check --fix` (only `target-version = "py313"` configured).
 - Tests (all are e2e; there is no unit test suite):
-  - `poetry run pytest cli_tests/test_cli_e2e.py -v`
-  - Single case: `poetry run pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings::test_tc_001_create_chat_default_settings -v`
+  - `poetry run pytest cli_tests/ -v`
+  - Single case: `poetry run pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -v`
+  - E2E tests are split one file per test class (`cli_tests/test_ucXXX_*.py`); shared helpers live in `cli_tests/e2e_helpers.py`, the autouse cleanup fixture in `cli_tests/conftest.py`.
   - Smoke: `poetry run python cli_tests/smoke_test.py`
 - `requirements.txt` mirrors pyproject deps as a pip fallback; Poetry + `poetry.lock` is primary.
 
@@ -31,7 +32,7 @@ Layers: `main_cli.py` (entry) → `app_factory.py` (DI: builds `UseCasesBundle`)
 - Repositories receive a session factory; never create engines/connections inside repositories — `storage/db_connection.py::DatabaseConnection` owns that.
 - Avoid N+1: construct `Agent` with everything it needs (e.g. `conversation_id`) in one query; no extra DB round-trips inside agent methods.
 
-New feature flow: add spec case in `docs/cli_spec.md` → e2e test in `cli_tests/test_cli_e2e.py` → use case class in `use_cases.py` → register field in `UseCasesBundle` in `app_factory.py` → call from `cli_app.py` → full e2e suite must pass.
+New feature flow: add spec case in `docs/cli_spec.md` → e2e test in `cli_tests/` (new file per test class) → use case class in `use_cases.py` → register field in `UseCasesBundle` in `app_factory.py` → call from `cli_app.py` → full e2e suite must pass.
 
 ## Celery (periodic agent reports)
 

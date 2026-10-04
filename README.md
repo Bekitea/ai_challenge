@@ -89,13 +89,13 @@ celery -A celery_app beat --loglevel=info
 
 ```bash
 # Запустить все E2E тесты
-pytest cli_tests/test_cli_e2e.py -v
+pytest cli_tests/ -v
 
 # Запустить тесты конкретного Use Case
-pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings -v
+pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings -v
 
 # Запустить конкретный тесткейс
-pytest cli_tests/test_cli_e2e.py::TestUC001_CreateChatWithAllSettings::test_tc_001_create_chat_default_settings -v
+pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -v
 
 # Запустить smoke тест (набор ключевых тестов)
 python cli_tests/smoke_test.py
@@ -397,8 +397,8 @@ python cli_tests/smoke_test.py
 
 2. **Напишите тесты**
    - Добавьте test case в `specs/cli_spec.md`
-   - Реализуйте e2e тест в `cli_tests/test_cli_e2e.py`
-   - Запустите тесты: `pytest cli_tests/test_cli_e2e.py -v`. Все тесты, кроме нового, должны пройти
+   - Реализуйте e2e тест в `cli_tests/` (отдельный файл на класс тестов)
+   - Запустите тесты: `pytest cli_tests/ -v`. Все тесты, кроме нового, должны пройти
 
 3. **Определите use case**
    - Создайте новый класс в `use_cases.py` или используйте существующий
@@ -417,7 +417,7 @@ python cli_tests/smoke_test.py
    - Обрабатывайте результат и отображайте пользователю
 
 7. **Проверка**
-   - Запустите тесты: `pytest cli_tests/test_cli_e2e.py -v`. Все тесты должны пройти
+   - Запустите тесты: `pytest cli_tests/ -v`. Все тесты должны пройти
 
 ### Тестирование
 

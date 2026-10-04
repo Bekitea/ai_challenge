@@ -296,7 +296,7 @@ The project includes pytest-based E2E tests that emulate real user interaction v
 - Capture stdout/stderr (simulating terminal output)
 - Set `APPLICATION_MODE=TEST` for complete isolation
 - Do NOT use pytest fixtures - each test is self-contained to maximize realism
-- Directly map to test cases from `cli_spec.md` specification
+- Directly map to test cases from the use case files under `docs/uc/`
 
 ```bash
 # Run all E2E tests (APPLICATION_MODE=TEST is set automatically in tests)
@@ -317,7 +317,7 @@ pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateCh
 
 - **Test classes** are named after Use Cases: `TestUC001_CreateChatWithAllSettings`
 - **Test methods** are named after Test Cases: `test_tc_001_create_chat_default_values`
-- Format: `test_tc_XXX_<description>` where `XXX` is the test case number from `cli_spec.md`
+- Format: `test_tc_XXX_<description>` where `XXX` is the test case number from the corresponding use case file in `docs/uc/`
 
 This ensures:
 1. Easy mapping between specification and implementation
@@ -332,7 +332,7 @@ The existing smoke test (`smoke_test.py`) and new pytest E2E tests intentionally
 2. **Cross-Platform Compatibility**: Subprocess approach works identically on Windows, Linux, and macOS
 3. **No Hidden State**: Each test is completely independent, avoiding fixture-related side effects
 4. **True Integration Testing**: Tests verify the entire stack - from CLI parsing to database operations
-5. **Specification Traceability**: Direct mapping to `cli_spec.md` ensures complete coverage
+5. **Specification Traceability**: Direct mapping to the `docs/uc/` use case files ensures complete coverage
 
 ```python
 # Example test structure (from a per-class test file)
@@ -471,7 +471,7 @@ project_root = script_dir.parent
 
 ### 4. Specification Traceability
 
-**Rule:** Test names MUST directly map to test cases in `cli_spec.md`.
+**Rule:** Test names MUST directly map to test cases in the use case files under `docs/uc/`.
 
 **Format:**
 - Class name: `TestUC<XXX>_<UseCaseName>`
@@ -488,11 +488,11 @@ class TestUC001_CreateChatWithAllSettings:
     """Covers UC-001 from specification."""
 
     def test_tc_001_create_chat_default_values(self):
-        """Directly maps to TC-001 in cli_spec.md."""
+        """Directly maps to TC-001 in docs/uc/uc-001-create-new-chat-with-all-settings.md."""
         ...
 
     def test_tc_002_create_chat_custom_settings(self):
-        """Directly maps to TC-002 in cli_spec.md."""
+        """Directly maps to TC-002 in docs/uc/uc-001-create-new-chat-with-all-settings.md."""
         ...
 ```
 
@@ -760,8 +760,8 @@ python cli_tests/smoke_test.py
 ```
 
 ### Test Coverage
-- **93 test cases** covering all requirements from `cli_spec.md`
-- **17 Use Cases** organized by user workflow
+- **120 test cases** covering all requirements from the `docs/uc/` use case files
+- **19 Use Cases** organized by user workflow
 - **100% specification traceability** via naming convention
 - **Complete data isolation** via APPLICATION_MODE and test-data directory
 
@@ -773,7 +773,8 @@ python cli_tests/smoke_test.py
 | `cli_tests/e2e_helpers.py` | Shared E2E helpers (subprocess runner, paths, cleanup) |
 | `cli_tests/conftest.py` | Shared pytest fixtures (autouse cleanup) |
 | `cli_tests/test_ucXXX_*.py` | Full E2E test suite (pytest), one file per test class |
-| `cli_spec.md` | Specification with Use Cases and Test Cases |
+| `docs/cli_spec.md` | CLI interface specification and use case index |
+| `docs/uc/` | One use case per file with alternative flows and related test cases |
 
 ### Core Principles Summary
 1. ❌ No fixtures

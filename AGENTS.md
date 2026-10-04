@@ -20,7 +20,7 @@ AI Chat CLI — консольное приложение для взаимод�
 
 - `config.py` calls `load_dotenv()` and reads `APPLICATION_MODE` **at import time**. Set `os.environ["APPLICATION_MODE"] = "TEST"` BEFORE importing any project module (test files do this at the very top).
 - `TEST` → MockLlmProvider, isolated storage under `./test-data/`. Anything else (default) → production: real Yandex API, storage under `./data/`, and startup fails with `OSError` unless `.env` defines `YANDEX_CLOUD_API_KEY` and `YANDEX_CLOUD_FOLDER`.
-- E2E tests need no API keys: they spawn real `python main_cli.py` subprocesses driven through stdin keystrokes, and an autouse fixture wipes `./test-data/` before each test. Test names `test_tc_XXX_...` map to test cases in `docs/cli_spec.md`.
+- E2E tests need no API keys: they spawn real `python main_cli.py` subprocesses driven through stdin keystrokes, and an autouse fixture wipes `./test-data/` before each test. Test names `test_tc_XXX_...` map to test cases in `docs/uc/` (one use case per file).
 - `alembic/env.py` imports `DATABASE_URL` from `config.py`, so migrations target whichever DB the current `APPLICATION_MODE` selects. Note the app also auto-creates tables on startup (`DatabaseConnection.init_tables`), so `alembic upgrade head` is not needed for dev/tests.
 
 ## Architecture rules (enforced by README, verified in code)
@@ -32,7 +32,7 @@ Layers: `main_cli.py` (entry) → `app_factory.py` (DI: builds `UseCasesBundle`)
 - Repositories receive a session factory; never create engines/connections inside repositories — `storage/db_connection.py::DatabaseConnection` owns that.
 - Avoid N+1: construct `Agent` with everything it needs (e.g. `conversation_id`) in one query; no extra DB round-trips inside agent methods.
 
-New feature flow: add spec case in `docs/cli_spec.md` → e2e test in `cli_tests/` (new file per test class) → use case class in `use_cases.py` → register field in `UseCasesBundle` in `app_factory.py` → call from `cli_app.py` → full e2e suite must pass.
+New feature flow: add use case file in `docs/uc/` and register it in the UC index table in `docs/cli_spec.md` → e2e test in `cli_tests/` (new file per test class) → use case class in `use_cases.py` → register field in `UseCasesBundle` in `app_factory.py` → call from `cli_app.py` → full e2e suite must pass.
 
 ## Celery (periodic agent reports)
 
@@ -43,5 +43,5 @@ New feature flow: add spec case in `docs/cli_spec.md` → e2e test in `cli_tests
 ## Misc
 
 - `mcp/` contains MCP servers (`time_mcp.py`, `open_alex_mcp.py`); root `*_mcp_test.py` files are manual test scripts for them, not pytest suites.
-- Deeper docs: `README.md` (full architecture DO/DON'T list), `docs/cli_spec.md` (use cases, test cases), `docs/cli_e2e_testing_guide.md` (testing practices/troubleshooting).
+- Deeper docs: `README.md` (full architecture DO/DON'T list), `docs/cli_spec.md` (interface spec + UC index), `docs/uc/` (use cases with related test cases), `docs/cli_e2e_testing_guide.md` (testing practices/troubleshooting).
 - No CI, no typecheck config, no pre-commit hooks.

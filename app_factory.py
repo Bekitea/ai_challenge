@@ -1,34 +1,66 @@
 from dataclasses import dataclass
 
 from app_mode import get_mode_config
-from config import YANDEX_API_KEY, YANDEX_FOLDER_ID
+from config import (
+    EMBEDDING_BASE_URL,
+    EMBEDDING_BATCH_SIZE,
+    EMBEDDING_DIMENSION,
+    EMBEDDING_MODEL_NAME,
+    EMBEDDING_TIMEOUT,
+    RAG_CANDIDATE_LIMIT_TOTAL,
+    RAG_FINAL_TOP_K,
+    RAG_VECTOR_TOP_K_PER_KB,
+    RERANKER_ENABLED,
+    YANDEX_API_KEY,
+    YANDEX_FOLDER_ID,
+)
+from embedding_providers import OllamaEmbeddingProvider
 from llm_providers import MockLlmProvider, YandexCloudLlmProvider
+from rag_service import RagModelService, RagService
 from storage.agent_repositories import PersistentAgentRepository
 from storage.db_connection import DatabaseConnection
 from storage.global_memory_repository import FileGlobalMemoryRepository
 from storage.orm_models import Base
+from storage.rag_repositories import (
+    AgentKnowledgeBaseRepository,
+    DocumentRepository,
+    KnowledgeBaseRepository,
+)
 from storage.task_profile_repository import (
     DatabaseTaskProfileRepository,
 )
+from storage.vector_store import SqliteVecVectorStore
 from use_cases import (
+    AddDocumentToKnowledgeBaseUseCase,
     AddInvariantUseCase,
+    AttachKnowledgeBaseToAgentUseCase,
     ChangeSettingsUseCase,
     ConnectMcpUseCase,
     CreateBranchUseCase,
     CreateChatUseCase,
+    CreateKnowledgeBaseUseCase,
     CreateTaskProfileUseCase,
+    DeleteDocumentUseCase,
+    DeleteKnowledgeBaseUseCase,
     DeleteTaskProfileUseCase,
+    DetachKnowledgeBaseFromAgentUseCase,
     DisconnectMcpUseCase,
     GetTaskProfileMemoryUseCase,
+    ListAgentKnowledgeBasesUseCase,
     ListAvailableMcpUseCase,
     ListConnectedMcpUseCase,
+    ListDocumentChunksUseCase,
+    ListDocumentsUseCase,
     ListInvariantsUseCase,
+    ListKnowledgeBasesUseCase,
     ListTaskProfilesUseCase,
     RefreshAgentMemoryUseCase,
     RemoveInvariantUseCase,
+    RetrieveRagContextUseCase,
     RunScheduledAgentTaskUseCase,
     SaveAgentMemoryUseCase,
     SaveUnsavedMemoriesUseCase,
+    SearchKnowledgeBaseUseCase,
     SelectChatUseCase,
     SelectContextStrategyUseCase,
     SendMessageUseCase,
@@ -70,6 +102,18 @@ class UseCasesBundle:
     list_connected_mcp: ListConnectedMcpUseCase
     list_available_mcp: ListAvailableMcpUseCase
     run_scheduled_agent_task: RunScheduledAgentTaskUseCase
+    create_knowledge_base: CreateKnowledgeBaseUseCase
+    delete_knowledge_base: DeleteKnowledgeBaseUseCase
+    list_knowledge_bases: ListKnowledgeBasesUseCase
+    add_document: AddDocumentToKnowledgeBaseUseCase
+    list_documents: ListDocumentsUseCase
+    list_document_chunks: ListDocumentChunksUseCase
+    delete_document: DeleteDocumentUseCase
+    attach_knowledge_base: AttachKnowledgeBaseToAgentUseCase
+    detach_knowledge_base: DetachKnowledgeBaseFromAgentUseCase
+    list_agent_knowledge_bases: ListAgentKnowledgeBasesUseCase
+    retrieve_rag_context: RetrieveRagContextUseCase
+    search_knowledge_base: SearchKnowledgeBaseUseCase
 
 
 def initialize_application() -> UseCasesBundle:
@@ -125,12 +169,46 @@ def initialize_application() -> UseCasesBundle:
         FILE_STORAGE_DIR, db_connection.get_session
     )
 
+    # Инициализация RAG-подсистемы (эмбеддер, векторное хранилище, репозитории)
+    vector_store = SqliteVecVectorStore(db_connection.get_session)
+    embedder = OllamaEmbeddingProvider(
+        base_url=EMBEDDING_BASE_URL,
+        model_name=EMBEDDING_MODEL_NAME,
+        dimension=EMBEDDING_DIMENSION,
+        batch_size=EMBEDDING_BATCH_SIZE,
+        timeout=EMBEDDING_TIMEOUT,
+    )
+    # Реранкер выключен по умолчанию (RERANKER_ENABLED=false).
+    rag_model_service = RagModelService(embedder=embedder, reranker=None)
+
+    knowledge_base_repository = KnowledgeBaseRepository(
+        db_connection.get_session, vector_store
+    )
+    document_repository = DocumentRepository(
+        db_connection.get_session, vector_store
+    )
+    agent_knowledge_base_repository = AgentKnowledgeBaseRepository(
+        db_connection.get_session
+    )
+    rag_service = RagService(
+        model_service=rag_model_service,
+        knowledge_base_repository=knowledge_base_repository,
+        document_repository=document_repository,
+        agent_knowledge_base_repository=agent_knowledge_base_repository,
+        vector_store=vector_store,
+        vector_top_k_per_kb=RAG_VECTOR_TOP_K_PER_KB,
+        candidate_limit_total=RAG_CANDIDATE_LIMIT_TOTAL,
+        final_top_k=RAG_FINAL_TOP_K,
+        reranker_enabled=RERANKER_ENABLED,
+    )
+
     # Initialize repository with session factory
     repository = PersistentAgentRepository(
         llm_provider=llm_provider,
         session_factory=db_connection.get_session,
         global_memory_repository=memory_repository,
         task_profile_repository=task_profile_repository,
+        rag_service=rag_service,
     )
 
     # Create and return all use cases
@@ -169,4 +247,30 @@ def initialize_application() -> UseCasesBundle:
             send_message=send_message,
             connect_mcp=connect_mcp,
         ),
+        create_knowledge_base=CreateKnowledgeBaseUseCase(
+            knowledge_base_repository, rag_model_service
+        ),
+        delete_knowledge_base=DeleteKnowledgeBaseUseCase(
+            knowledge_base_repository
+        ),
+        list_knowledge_bases=ListKnowledgeBasesUseCase(knowledge_base_repository),
+        add_document=AddDocumentToKnowledgeBaseUseCase(
+            knowledge_base_repository, document_repository, rag_model_service
+        ),
+        list_documents=ListDocumentsUseCase(
+            knowledge_base_repository, document_repository
+        ),
+        list_document_chunks=ListDocumentChunksUseCase(document_repository),
+        delete_document=DeleteDocumentUseCase(document_repository),
+        attach_knowledge_base=AttachKnowledgeBaseToAgentUseCase(
+            knowledge_base_repository, agent_knowledge_base_repository
+        ),
+        detach_knowledge_base=DetachKnowledgeBaseFromAgentUseCase(
+            knowledge_base_repository, agent_knowledge_base_repository
+        ),
+        list_agent_knowledge_bases=ListAgentKnowledgeBasesUseCase(
+            agent_knowledge_base_repository
+        ),
+        retrieve_rag_context=RetrieveRagContextUseCase(rag_service),
+        search_knowledge_base=SearchKnowledgeBaseUseCase(rag_service),
     )

@@ -26,6 +26,7 @@ from context_strategies import (
 if TYPE_CHECKING:
     from agents import Prompt, TaskProfile
     from llm_providers import LlmProvider
+    from rag_models import RagContextChunk
 
 
 @dataclass
@@ -45,6 +46,7 @@ class PromptSources:
     global_facts: list[str] = field(default_factory=list)
     task_profile: TaskProfile | None = None
     phase_description: str | None = None
+    rag_context: list[RagContextChunk] = field(default_factory=list)
 
 
 class PromptBuilder:
@@ -140,7 +142,28 @@ class PromptBuilder:
                     "даже если пользователь настаивает."
                 )
 
+        if sources.rag_context:
+            parts.append(_compose_rag_context(sources.rag_context))
+
         if sources.phase_description:
             parts.append(sources.phase_description)
 
         return "\n\n".join(parts)
+
+
+def _compose_rag_context(chunks: list[RagContextChunk]) -> str:
+    """Собирает секцию RAG-контекста из найденных чанков."""
+    lines = [
+        "--- КОНТЕКСТ ИЗ БАЗ ЗНАНИЙ ---",
+        (
+            "Ниже приведены фрагменты документов, релевантные запросу "
+            "пользователя. Используй их при ответе; если данных недостаточно, "
+            "сообщи об этом."
+        ),
+    ]
+    for position, chunk in enumerate(chunks, start=1):
+        lines.append(
+            f"[{position}] Документ: {chunk.document_name} "
+            f"(фрагмент {chunk.chunk_index + 1}):\n{chunk.text}"
+        )
+    return "\n".join(lines)

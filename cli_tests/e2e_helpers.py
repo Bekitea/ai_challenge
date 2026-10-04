@@ -32,6 +32,19 @@ def _manual_chat(name: str) -> str:
     )
 
 
+def ollama_available(timeout: float = 3.0) -> bool:
+    """Проверяет доступность Ollama (эмбеддинги RAG требуют реальной модели)."""
+    import urllib.error
+    import urllib.request
+
+    base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    try:
+        with urllib.request.urlopen(f"{base}/api/tags", timeout=timeout) as response:
+            return response.status == 200
+    except (urllib.error.URLError, OSError):
+        return False
+
+
 def get_project_root() -> Path:
     """Dynamically resolve project root directory."""
     script_dir = Path(__file__).parent.absolute()

@@ -24,6 +24,7 @@ from context_strategies import (
 )
 from llm_providers import LlmResponse
 from prompt_builder import PromptBuilder, PromptSources
+from rag_models import RagContextChunk
 
 
 class _StubLlmProvider:
@@ -116,6 +117,39 @@ def test_context_sources_survive_summarization():
     assert "task-fact" in base_system["content"]
     assert "rule-1" in base_system["content"]
     assert "Фаза: EXECUTE" in base_system["content"]
+
+
+def test_rag_context_injected_into_system_prompt():
+    sources = PromptSources(
+        phase_description="Фаза: PLAN",
+        rag_context=[
+            RagContextChunk(
+                chunk_id=1,
+                document_id=1,
+                knowledge_base_id=1,
+                document_name="doc.txt",
+                chunk_index=2,
+                text="Уникальный факт RAG",
+                vector_distance=0.1,
+            )
+        ],
+    )
+
+    prepared = PromptBuilder().build(_history(2), sources, SlidingWindowStrategy(10))
+
+    content = prepared.messages[0]["content"]
+    assert "--- КОНТЕКСТ ИЗ БАЗ ЗНАНИЙ ---" in content
+    assert "doc.txt" in content
+    assert "фрагмент 3" in content
+    assert "Уникальный факт RAG" in content
+
+
+def test_no_rag_section_without_context():
+    prepared = PromptBuilder().build(
+        _history(2), PromptSources(), SlidingWindowStrategy(10)
+    )
+
+    assert "КОНТЕКСТ ИЗ БАЗ ЗНАНИЙ" not in prepared.messages[0]["content"]
 
 
 def test_key_value_strategy_serialization_roundtrip():

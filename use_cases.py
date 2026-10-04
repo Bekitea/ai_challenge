@@ -11,6 +11,14 @@ from agents import (
     Prompt,
     TaskProfile,
 )
+from chunking import chunk_text
+from config import (
+    RAG_CHUNK_OVERLAP,
+    RAG_CHUNK_SIZE,
+    RAG_FILE_EXTENSIONS,
+    RAG_FILE_MAX_BYTES,
+    RAG_FOLDER_MAX_FILES,
+)
 from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
@@ -18,8 +26,29 @@ from context_strategies import (
     SlidingWindowStrategy,
     SummarizationStrategy,
 )
+from file_extractor import extract_from_path
 from llm_providers import LlmProvider, LlmResponse
+from rag_errors import (
+    DocumentIndexingError,
+    EmbeddingDimensionMismatchError,
+    KnowledgeBaseNotFoundError,
+    RagError,  # noqa: F401 — реэкспорт базовой ошибки RAG для CLI
+)
+from rag_models import (
+    DOCUMENT_STATUS_ERROR,
+    ChunkDTO,
+    DocumentDTO,
+    KnowledgeBaseDTO,
+    RagContextChunk,
+)
+from rag_service import RagModelService, RagService
 from storage.agent_repositories import AgentRepository
+from storage.rag_repositories import (
+    AgentKnowledgeBaseRepository,
+    ChunkIngest,
+    DocumentRepository,
+    KnowledgeBaseRepository,
+)
 
 
 @dataclass
@@ -51,6 +80,18 @@ class UseCasesBundle:
     disconnect_mcp: DisconnectMcpUseCase
     list_connected_mcp: ListConnectedMcpUseCase
     list_available_mcp: ListAvailableMcpUseCase
+    create_knowledge_base: CreateKnowledgeBaseUseCase
+    delete_knowledge_base: DeleteKnowledgeBaseUseCase
+    list_knowledge_bases: ListKnowledgeBasesUseCase
+    add_document: AddDocumentToKnowledgeBaseUseCase
+    list_documents: ListDocumentsUseCase
+    list_document_chunks: ListDocumentChunksUseCase
+    delete_document: DeleteDocumentUseCase
+    attach_knowledge_base: AttachKnowledgeBaseToAgentUseCase
+    detach_knowledge_base: DetachKnowledgeBaseFromAgentUseCase
+    list_agent_knowledge_bases: ListAgentKnowledgeBasesUseCase
+    retrieve_rag_context: RetrieveRagContextUseCase
+    search_knowledge_base: SearchKnowledgeBaseUseCase
 
 
 @dataclass
@@ -805,4 +846,316 @@ class RunScheduledAgentTaskUseCase:
             answer=response.content,
             prompt_tokens=counters.total_prompt_tokens,
             completion_tokens=counters.total_completion_tokens,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Use cases для работы с базами знаний (RAG)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AddDocumentsResult:
+    """Итог добавления документов в базу знаний."""
+
+    documents: list[DocumentDTO]
+
+    @property
+    def ready_count(self) -> int:
+        return sum(1 for doc in self.documents if doc.status != DOCUMENT_STATUS_ERROR)
+
+    @property
+    def error_count(self) -> int:
+        return sum(1 for doc in self.documents if doc.status == DOCUMENT_STATUS_ERROR)
+
+
+class CreateKnowledgeBaseUseCase:
+    """Use case создания базы знаний."""
+
+    def __init__(
+        self,
+        knowledge_base_repository: KnowledgeBaseRepository,
+        rag_model_service: RagModelService,
+    ):
+        self._kb_repository = knowledge_base_repository
+        self._model_service = rag_model_service
+
+    def execute(self, name: str, description: str | None = None) -> KnowledgeBaseDTO:
+        clean_name = (name or "").strip()
+        if not clean_name:
+            raise ValueError("Название базы знаний не может быть пустым")
+
+        return self._kb_repository.create(
+            name=clean_name,
+            description=(description or "").strip() or None,
+            embedding_model=self._model_service.embedding_model_name,
+            embedding_dimension=self._model_service.embedding_dimension,
+        )
+
+
+class DeleteKnowledgeBaseUseCase:
+    """Use case удаления базы знаний."""
+
+    def __init__(self, knowledge_base_repository: KnowledgeBaseRepository):
+        self._kb_repository = knowledge_base_repository
+
+    def execute(self, knowledge_base_id: int) -> bool:
+        return self._kb_repository.delete(knowledge_base_id)
+
+
+class ListKnowledgeBasesUseCase:
+    """Use case получения списка баз знаний."""
+
+    def __init__(self, knowledge_base_repository: KnowledgeBaseRepository):
+        self._kb_repository = knowledge_base_repository
+
+    def execute(self) -> list[KnowledgeBaseDTO]:
+        return self._kb_repository.list()
+
+
+class AddDocumentToKnowledgeBaseUseCase:
+    """Use case добавления документа(ов) в базу знаний с индексацией.
+
+    Источником может быть отдельный файл (.txt/.md/.py) или папка. Каждый файл
+    становится отдельным документом. Индексация синхронная: при ошибке
+    документ помечается статусом ``error`` и не участвует в поиске.
+    """
+
+    def __init__(
+        self,
+        knowledge_base_repository: KnowledgeBaseRepository,
+        document_repository: DocumentRepository,
+        rag_model_service: RagModelService,
+        chunk_size: int = RAG_CHUNK_SIZE,
+        chunk_overlap: int = RAG_CHUNK_OVERLAP,
+        file_extensions: set[str] | None = None,
+        max_bytes: int = RAG_FILE_MAX_BYTES,
+        max_files: int = RAG_FOLDER_MAX_FILES,
+    ):
+        self._kb_repository = knowledge_base_repository
+        self._document_repository = document_repository
+        self._model_service = rag_model_service
+        self._chunk_size = chunk_size
+        self._chunk_overlap = chunk_overlap
+        self._file_extensions = file_extensions or set(RAG_FILE_EXTENSIONS)
+        self._max_bytes = max_bytes
+        self._max_files = max_files
+
+    def execute(
+        self, knowledge_base_id: int, source_path: str
+    ) -> AddDocumentsResult:
+        kb = self._kb_repository.get(knowledge_base_id)
+        if kb is None:
+            raise KnowledgeBaseNotFoundError(
+                f"База знаний #{knowledge_base_id} не найдена."
+            )
+
+        if (
+            kb.embedding_model != self._model_service.embedding_model_name
+            or kb.embedding_dimension != self._model_service.embedding_dimension
+        ):
+            raise EmbeddingDimensionMismatchError(
+                "Модель эмбеддинга текущего приложения не совпадает с моделью, "
+                f"под которую создана база знаний '{kb.name}'."
+            )
+
+        extracted_files = extract_from_path(
+            source_path,
+            extensions=self._file_extensions,
+            max_bytes=self._max_bytes,
+            max_files=self._max_files,
+        )
+
+        documents: list[DocumentDTO] = []
+        for extracted in extracted_files:
+            document_id = self._document_repository.create_pending(
+                kb_id=kb.id,
+                name=extracted.name,
+                source_type="file",
+                source_path=extracted.source_path,
+                content_hash=extracted.content_hash,
+            )
+            try:
+                text_chunks = chunk_text(
+                    extracted.text,
+                    chunk_size=self._chunk_size,
+                    overlap=self._chunk_overlap,
+                )
+                if not text_chunks:
+                    raise DocumentIndexingError("Документ не содержит текста.")
+
+                embeddings = self._model_service.embed_documents(
+                    [chunk.text for chunk in text_chunks]
+                )
+                ingests = [
+                    ChunkIngest(
+                        chunk_index=chunk.chunk_index,
+                        text=chunk.text,
+                        char_start=chunk.char_start,
+                        char_end=chunk.char_end,
+                        token_count=chunk.token_count,
+                        embedding=embedding,
+                    )
+                    for chunk, embedding in zip(
+                        text_chunks, embeddings, strict=True
+                    )
+                ]
+                self._document_repository.store_indexed(
+                    kb_id=kb.id,
+                    document_id=document_id,
+                    chunks=ingests,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._document_repository.set_status(
+                    document_id,
+                    DOCUMENT_STATUS_ERROR,
+                    error_message=str(exc),
+                    chunk_count=0,
+                )
+
+            document = self._document_repository.get(document_id)
+            if document is not None:
+                documents.append(document)
+
+        return AddDocumentsResult(documents=documents)
+
+
+class ListDocumentsUseCase:
+    """Use case получения списка документов базы знаний."""
+
+    def __init__(
+        self,
+        knowledge_base_repository: KnowledgeBaseRepository,
+        document_repository: DocumentRepository,
+    ):
+        self._kb_repository = knowledge_base_repository
+        self._document_repository = document_repository
+
+    def execute(self, knowledge_base_id: int) -> list[DocumentDTO]:
+        if self._kb_repository.get(knowledge_base_id) is None:
+            raise KnowledgeBaseNotFoundError(
+                f"База знаний #{knowledge_base_id} не найдена."
+            )
+        return self._document_repository.list_by_kb(knowledge_base_id)
+
+
+class ListDocumentChunksUseCase:
+    """Use case получения чанков документа."""
+
+    def __init__(self, document_repository: DocumentRepository):
+        self._document_repository = document_repository
+
+    def execute(self, document_id: int) -> list[ChunkDTO]:
+        return self._document_repository.list_chunks(document_id)
+
+
+class DeleteDocumentUseCase:
+    """Use case удаления документа вместе с чанками и векторами."""
+
+    def __init__(self, document_repository: DocumentRepository):
+        self._document_repository = document_repository
+
+    def execute(self, document_id: int) -> bool:
+        return self._document_repository.delete(document_id)
+
+
+class AttachKnowledgeBaseToAgentUseCase:
+    """Use case подключения базы знаний к чату (агенту)."""
+
+    def __init__(
+        self,
+        knowledge_base_repository: KnowledgeBaseRepository,
+        agent_knowledge_base_repository: AgentKnowledgeBaseRepository,
+    ):
+        self._kb_repository = knowledge_base_repository
+        self._agent_kb_repository = agent_knowledge_base_repository
+
+    def execute(self, agent: Agent, knowledge_base_id: int) -> tuple[bool, str]:
+        if agent.agent_id is None:
+            return False, "Агент ещё не сохранён — подключите базу знаний позже."
+
+        kb = self._kb_repository.get(knowledge_base_id)
+        if kb is None:
+            return False, f"База знаний #{knowledge_base_id} не найдена."
+
+        created = self._agent_kb_repository.attach(agent.agent_id, knowledge_base_id)
+        if created:
+            return True, f"База знаний '{kb.name}' подключена к чату."
+        return True, f"База знаний '{kb.name}' уже подключена к чату."
+
+
+class DetachKnowledgeBaseFromAgentUseCase:
+    """Use case отключения базы знаний от чата (агента)."""
+
+    def __init__(
+        self,
+        knowledge_base_repository: KnowledgeBaseRepository,
+        agent_knowledge_base_repository: AgentKnowledgeBaseRepository,
+    ):
+        self._kb_repository = knowledge_base_repository
+        self._agent_kb_repository = agent_knowledge_base_repository
+
+    def execute(self, agent: Agent, knowledge_base_id: int) -> tuple[bool, str]:
+        if agent.agent_id is None:
+            return False, "Агент ещё не сохранён."
+
+        kb = self._kb_repository.get(knowledge_base_id)
+        name = kb.name if kb is not None else f"#{knowledge_base_id}"
+
+        removed = self._agent_kb_repository.detach(
+            agent.agent_id, knowledge_base_id
+        )
+        if removed:
+            return True, f"База знаний '{name}' отключена от чата."
+        return True, f"База знаний '{name}' не была подключена к чату."
+
+
+class ListAgentKnowledgeBasesUseCase:
+    """Use case получения баз знаний, подключённых к чату."""
+
+    def __init__(self, agent_knowledge_base_repository: AgentKnowledgeBaseRepository):
+        self._agent_kb_repository = agent_knowledge_base_repository
+
+    def execute(self, agent: Agent) -> list[KnowledgeBaseDTO]:
+        if agent.agent_id is None:
+            return []
+        return self._agent_kb_repository.list_for_agent(agent.agent_id)
+
+
+class RetrieveRagContextUseCase:
+    """Use case поиска релевантных чанков по базам знаний агента.
+
+    Используется CLI для проверки поиска; диалог агента обращается к
+    ``RagService`` напрямую.
+    """
+
+    def __init__(self, rag_service: RagService):
+        self._rag_service = rag_service
+
+    def execute(
+        self,
+        agent_id: int | None,
+        query_text: str,
+        max_candidates: int | None = None,
+        final_top_k: int | None = None,
+    ) -> list[RagContextChunk]:
+        return self._rag_service.retrieve(
+            agent_id=agent_id,
+            query_text=query_text,
+            max_candidates=max_candidates,
+            final_top_k=final_top_k,
+        )
+
+
+class SearchKnowledgeBaseUseCase:
+    """Use case поиска по одной базе знаний (для меню управления)."""
+
+    def __init__(self, rag_service: RagService):
+        self._rag_service = rag_service
+
+    def execute(
+        self, knowledge_base_id: int, query_text: str, top_k: int | None = None
+    ) -> list[RagContextChunk]:
+        return self._rag_service.search_knowledge_base(
+            knowledge_base_id, query_text, top_k
         )

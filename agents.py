@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -12,6 +13,8 @@ from context_strategies import (
 )
 from llm_providers import LlmProvider, LlmResponse
 from prompt_builder import PromptBuilder, PromptSources
+
+logger = logging.getLogger("agent.rag")
 
 
 class ContextWindowExceededError(Exception):
@@ -214,6 +217,7 @@ class Agent:
         connected_mcp_servers: list[str] | None = None,
         initial_phase: AgentPhase | None = None,
         prompt_builder: PromptBuilder | None = None,
+        rag_service: Any | None = None,
     ):
         if llm_provider is None:
             raise ValueError("llm_provider is required")
@@ -255,6 +259,10 @@ class Agent:
         # Подключённые к чату MCP-серверы (машинные имена).
         # По умолчанию пусто: у всех новых агентов/чатов MCP отсутствуют.
         self.connected_mcp_servers: list[str] = list(connected_mcp_servers or [])
+
+        # RAG-сервис: если задан и к чату подключены базы знаний, перед
+        # запросом к LLM подмешивается релевантный контекст.
+        self._rag_service = rag_service
 
         # Добавляем системный промпт только если сообщений ещё нет
         if system_prompt and not self._messages:
@@ -443,6 +451,19 @@ class Agent:
         if self._repository is not None and self._auto_save:
             self._repository.update_agent(self)
 
+    def _retrieve_rag_context(self, query: str):
+        """Поднимает RAG-контекст, деградируя без него при ошибке провайдера."""
+        if self._rag_service is None or self.agent_id is None:
+            return []
+        try:
+            return self._rag_service.retrieve(self.agent_id, query)
+        except Exception:
+            logger.debug(
+                "RAG-поиск недоступен, диалог продолжен без контекста",
+                exc_info=True,
+            )
+            return []
+
     def continue_dialog(self, user_prompt: str) -> LlmResponse:
         """
         Продолжает диалог: добавляет сообщение пользователя, делает запрос к LLM,
@@ -464,13 +485,19 @@ class Agent:
         self._messages.append(user_message)
         self._last_message_timestamp = user_timestamp
 
+        # RAG: если сервис задан и у чата есть подключённые базы знаний,
+        # поднимаем релевантные чанки. При отсутствии баз знаний сервис
+        # завершается сразу, без эмбеддинга запроса.
+        rag_context = self._retrieve_rag_context(user_prompt)
+
         # Подготавливаем сообщения через PromptBuilder: он централизованно
-        # подмешивает память, профиль задачи и фазу, а стратегия управляет
-        # только контекстным окном.
+        # подмешивает память, профиль задачи, RAG-контекст и фазу, а стратегия
+        # управляет только контекстным окном.
         sources = PromptSources(
             global_facts=list(self.global_memory.facts),
             task_profile=self.task_profile,
             phase_description=self._current_phase.get_description(),
+            rag_context=rag_context,
         )
         prepared = self._prompt_builder.build(
             history=self._messages,
@@ -712,6 +739,7 @@ class Agent:
             task_profile=self.task_profile,
             task_profile_repository=self._task_profile_repository,
             connected_mcp_servers=list(self.connected_mcp_servers),
+            rag_service=self._rag_service,
         )
 
         branched_agent._repository = self._repository

@@ -4,7 +4,15 @@ import json
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from agents import AgentPhase, AgentSettings
@@ -186,6 +194,13 @@ class AgentORM(Base):
     # Relationship back to TaskProfile
     task_profile: Mapped[TaskProfileORM | None] = relationship(back_populates="agents")
 
+    # Связи с базами знаний (RAG)
+    knowledge_base_links: Mapped[list[AgentKnowledgeBaseORM]] = relationship(
+        back_populates="agent",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     def get_settings(self) -> AgentSettings | None:
         """Возвращает десериализованные настройки агента."""
         return _deserialize_settings(self.settings_json)
@@ -244,3 +259,147 @@ class AgentORM(Base):
 
     def __repr__(self) -> str:
         return f"<AgentORM(id={self.id}, name={self.name})>"
+
+
+class KnowledgeBaseORM(Base):
+    """ORM модель базы знаний (RAG).
+
+    Векторы чанков хранятся не здесь, а в отдельной виртуальной таблице
+    sqlite-vec с именем ``vector_table`` (например, ``vec_chunks_kb_1``).
+    Векторные таблицы не описываются в ``Base.metadata``.
+    """
+
+    __tablename__ = "knowledge_bases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vector_table: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, unique=True
+    )
+    embedding_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    embedding_dimension: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now().astimezone()
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    documents: Mapped[list[DocumentORM]] = relationship(
+        back_populates="knowledge_base",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    agent_links: Mapped[list[AgentKnowledgeBaseORM]] = relationship(
+        back_populates="knowledge_base",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"<KnowledgeBaseORM(id={self.id}, name={self.name})>"
+
+
+class DocumentORM(Base):
+    """ORM модель документа базы знаний."""
+
+    __tablename__ = "documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kb_id: Mapped[int] = mapped_column(
+        ForeignKey("knowledge_bases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="pending", index=True
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now().astimezone()
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    knowledge_base: Mapped[KnowledgeBaseORM] = relationship(
+        back_populates="documents"
+    )
+    chunks: Mapped[list[ChunkORM]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ChunkORM.chunk_index",
+    )
+
+    def __repr__(self) -> str:
+        return f"<DocumentORM(id={self.id}, name={self.name}, status={self.status})>"
+
+
+class ChunkORM(Base):
+    """ORM модель чанка документа.
+
+    ``ChunkORM.id`` используется как ``rowid`` в соответствующей векторной
+    таблице sqlite-vec базы знаний.
+    """
+
+    __tablename__ = "chunks"
+    __table_args__ = (UniqueConstraint("document_id", "chunk_index"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    char_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    char_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now().astimezone()
+    )
+
+    document: Mapped[DocumentORM] = relationship(back_populates="chunks")
+
+    def __repr__(self) -> str:
+        return f"<ChunkORM(id={self.id}, document_id={self.document_id})>"
+
+
+class AgentKnowledgeBaseORM(Base):
+    """Таблица связи агента и подключённой к нему базы знаний (RAG)."""
+
+    __tablename__ = "agent_knowledge_bases"
+    __table_args__ = (
+        UniqueConstraint("agent_id", "knowledge_base_id", name="uq_agent_knowledge_base"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agent_id: Mapped[int] = mapped_column(
+        ForeignKey("agents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    knowledge_base_id: Mapped[int] = mapped_column(
+        ForeignKey("knowledge_bases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now().astimezone()
+    )
+
+    agent: Mapped[AgentORM] = relationship(back_populates="knowledge_base_links")
+    knowledge_base: Mapped[KnowledgeBaseORM] = relationship(
+        back_populates="agent_links"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentKnowledgeBaseORM(agent_id={self.agent_id}, "
+            f"knowledge_base_id={self.knowledge_base_id})>"
+        )

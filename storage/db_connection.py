@@ -1,7 +1,8 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from config import DATABASE_URL
+from storage.extensions import sqlite_vec
 
 
 class DatabaseConnection:
@@ -41,6 +42,27 @@ class DatabaseConnection:
             echo=self._echo,
             connect_args=self._connect_args,
         )
+
+        # Расширение sqlite-vec загружается на каждом новом соединении, если
+        # для текущей платформы есть вендорный бинарник (иначе молча пропускаем).
+        # Там же включаются PRAGMA, критичные для каскадных удалений и RAG.
+        @event.listens_for(self._engine, "connect")
+        def _configure_sqlite(dbapi_connection, _connection_record):
+            if not self._database_url.startswith("sqlite"):
+                return
+
+            if sqlite_vec.is_available():
+                sqlite_vec.load(dbapi_connection)
+
+            cursor = dbapi_connection.cursor()
+            try:
+                cursor.execute("PRAGMA foreign_keys=ON")
+                if ":memory:" not in self._database_url:
+                    cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+            finally:
+                cursor.close()
+
         self._session_factory = sessionmaker(
             bind=self._engine, autoflush=False, expire_on_commit=False
         )

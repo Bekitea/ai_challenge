@@ -85,10 +85,11 @@ Facts are extracted into global and task-profile memory by the `save_agent_memor
 4. Просмотреть глобальную память
 5. Вернуться в чат: {chat_name} | Вернуться в чат (нет активного чата)
 6. Выход
+7. Базы знаний
 ----------------------------------------
 ```
 
-Prompt line: `Ваш выбор (1-6):`
+Prompt line: `Ваш выбор (1-7):`
 
 #### 4.2.2 Dynamic Behavior
 
@@ -98,10 +99,11 @@ Prompt line: `Ваш выбор (1-6):`
 - Selecting option 5 with an active chat prints `[OK] Возврат в чат: {name}` and enters the chat loop.
 - Selecting option 5 without an active chat prints `[WARN] Нет активного чата. Выберите или создайте чат.` and stays in the menu.
 - Option 6 prints `До свидания!` and terminates the application.
+- Option 7 enters the Knowledge Bases menu (§4.9).
 
 #### 4.2.3 Input Validation
 
-- Accept only strings "1".."6" (exact match after strip)
+- Accept only strings "1".."7" (exact match after strip)
 - Any other input: `[WARN] Неверный выбор, попробуйте снова.` and re-prompt
 - `KeyboardInterrupt` / `EOFError` at the menu prompt: print `До свидания!` and exit cleanly
 - On application start (before the menu loop) the system executes `save_unsaved_memories` use case: for every agent with unremembered prompts it extracts facts into global/task memory (technical token counters).
@@ -387,6 +389,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   /validate - перейти в фазу тестирования
   /report - перейти в фазу отчета
   /mcp - показать подключённые к чату MCP и подключить новые
+  /rag - базы знаний чата: подключить или отключить
   /help - показать этот список команд
 ```
 
@@ -470,6 +473,29 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
      - Non-numeric text is treated as a server name and passed to the use case
   5. On selection: `[INFO] Подключаю MCP '{name}'...`, then result `[OK] {message}` or `[ERROR] {message}` from `connect_mcp` use case
 - **Side Effects**: Successful connection persists the server list on the agent; tools become available to the LLM in subsequent messages (tool-calling loop inside `continue_dialog`)
+
+##### `/rag`
+
+- **Action**: Manage knowledge bases attached to the current chat (`rag_menu`)
+- **Flow**:
+  1. Display attached knowledge bases:
+     ```
+     --- БАЗЫ ЗНАНИЙ ЧАТА: {chat_name} ---
+       1. {name} (документов: {n}, чанков: {m})
+     ```
+     If none: `К этому чату ещё не подключено ни одной базы знаний.`
+  2. Action menu:
+     ```
+     Действия:
+     1. Подключить базу знаний
+     2. Отключить базу знаний
+     0. Назад
+     ```
+     Prompt: `Выберите действие (0-2):`
+  3. **Attach**: lists knowledge bases not yet attached; selection prompt `Выберите базу знаний (номер, 0 - отмена):`. Success/idempotent message `[OK] База знаний '{name}' подключена к чату.` / `[OK] ... уже подключена к чату.`; no available bases → `[INFO] Нет доступных баз знаний для подключения. Создайте их в меню 'Базы знаний'.`
+  4. **Detach**: selects from attached; message `[OK] База знаний '{name}' отключена от чата.` or `[INFO] К чату не подключено ни одной базы знаний.`
+- **RAG behaviour**: while at least one knowledge base is attached, every user message triggers a RAG search before the LLM request; with none attached, no embedding or search is performed. Search results are injected into the system prompt (see UC-020).
+- **Side Effects**: attachment is stored in the `agent_knowledge_bases` table; detach removes the link.
 
 #### 4.5.4 Error Handling
 
@@ -629,6 +655,43 @@ Main Menu option 4 (`print_global_memory`), available without an active chat:
 
 Empty memory: `(память пуста)`. Returns to Main Menu (no confirmation prompt).
 
+### 4.9 Knowledge Bases Menu (Main Menu Option 7)
+
+Entered from Main Menu option 7 (`knowledge_bases_menu`). Loops until `0`.
+
+```
+--- БАЗЫ ЗНАНИЙ ---
+1. Создать базу знаний
+2. Показать список баз знаний
+3. Добавить документы (файл или папка)
+4. Показать документы базы знаний
+5. Показать чанки документа
+6. Удалить документ
+7. Удалить базу знаний
+8. Проверить поиск
+0. Назад в главное меню
+----------------------------------------
+```
+
+Prompt: `Ваш выбор (0-8):`. Invalid choice: `[WARN] Неверный выбор, попробуйте снова.` and the menu is re-displayed. Option 0 returns to the Main Menu.
+
+- **Create (1)**: prompts `Введите название базы знаний:` (empty re-prompts with `[ERROR] Название базы знаний не может быть пустым.`) and `Введите описание (Enter для пропуска):`. Success:
+  ```
+  [OK] База знаний '{name}' создана!
+    ID: {id}
+    Модель эмбеддинга: {model} ({dimension})
+  ```
+  Duplicate name → `[ERROR] База знаний '{name}' уже существует.`
+- **List (2)**: prints `--- СПИСОК БАЗ ЗНАНИЙ ---` with each base's id, model, document and chunk counts; empty list → `[INFO] Базы знаний отсутствуют. Создайте первую базу знаний.`
+- **Add documents (3)**: select a base (`Выберите базу знаний (номер, 0 - отмена):`), then `Введите путь к файлу (.md/.py/.txt) или папке с файлами:` (the extension list is built from `RAG_FILE_EXTENSIONS`). Files are chunked, embedded and indexed synchronously; a folder is traversed recursively and each supported file becomes a separate document. Empty files are skipped silently (when scanning a folder, unreadable files are skipped too, so one bad file does not abort the batch). Per-document result lines `[OK] {file} — чанков: {n}` or `[ERROR] {file} — {reason}`, followed by `[OK] Готово: успешно {n}, с ошибками {m}.` Missing path / unsupported extension / empty folder → `[ERROR] {message}`.
+- **Documents (4)**: prints `--- ДОКУМЕНТЫ БАЗЫ '{name}' ---` with name, status, id and chunk count; empty → `[INFO] В базе знаний '{name}' нет документов.`
+- **Chunks (5)**: select a document, then prints `--- ЧАНКИ ДОКУМЕНТА '{name}' ---` in `chunk_index` order, without embeddings.
+- **Delete document (6)**: select a document, confirm `Удалить документ '{name}'? (y/n):`; on `y` deletes the document, its chunks and vectors.
+- **Delete knowledge base (7)**: select a base, confirm; deletes the base, its documents, chunks, vectors and agent links.
+- **Search (8)**: select a base, enter `Введите поисковый запрос:`; prints `--- РЕЗУЛЬТАТЫ ПОИСКА (база '{name}') ---` with the top-`RAG_FINAL_TOP_K` chunks, their document and vector distance. Empty result → `[INFO] Ничего не найдено.`
+
+All list-selection prompts accept a number or `0` to cancel; non-numeric input prints `[WARN] Введите корректное число.`
+
 ---
 
 ## 5. Use Cases Index
@@ -658,3 +721,4 @@ this document.
 | UC-017 | Delete Task Profile | Delete an unattached task profile with confirmation. | [uc-017-delete-task-profile.md](uc/uc-017-delete-task-profile.md) |
 | UC-018 | Change Workflow Phase With Phase Commands | Move the agent between PLAN/EXECUTE/VALIDATE/REPORT phases. | [uc-018-change-workflow-phase-with-phase-commands.md](uc/uc-018-change-workflow-phase-with-phase-commands.md) |
 | UC-019 | Manage MCP Servers Of The Current Chat (/mcp) | Connect MCP servers to the current chat. | [uc-019-manage-mcp-servers-of-the-current-chat.md](uc/uc-019-manage-mcp-servers-of-the-current-chat.md) |
+| UC-020 | Manage Knowledge Bases And RAG (/rag, menu 7) | Create bases, index .txt/.md/.py documents, attach bases to a chat and search. | [uc-020-rag-knowledge-bases.md](uc/uc-020-rag-knowledge-bases.md) |

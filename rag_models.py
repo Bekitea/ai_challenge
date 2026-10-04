@@ -1,0 +1,88 @@
+"""DTO и доменные структуры RAG-подсистемы.
+
+Эти объекты не зависят от ORM и провайдеров — ими обмениваются слои
+приложения и представления.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+
+
+@dataclass
+class KnowledgeBaseDTO:
+    """Информация о базе знаний для отображения."""
+
+    id: int
+    name: str
+    description: str | None
+    embedding_model: str
+    embedding_dimension: int
+    created_at: datetime
+    updated_at: datetime | None = None
+    document_count: int | None = None
+    chunk_count: int | None = None
+
+
+@dataclass
+class DocumentDTO:
+    """Информация о документе базы знаний."""
+
+    id: int
+    knowledge_base_id: int
+    name: str
+    source_type: str
+    source_path: str | None
+    status: str
+    error_message: str | None
+    chunk_count: int
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+@dataclass
+class ChunkDTO:
+    """Информация о чанке документа (без эмбеддинга)."""
+
+    id: int
+    document_id: int
+    chunk_index: int
+    text: str
+    char_start: int | None
+    char_end: int | None
+    token_count: int | None
+    created_at: datetime
+
+
+@dataclass
+class RagContextChunk:
+    """Чанк, попавший в RAG-контекст диалога."""
+
+    chunk_id: int
+    document_id: int
+    knowledge_base_id: int
+    document_name: str
+    chunk_index: int
+    text: str
+    vector_distance: float | None = None
+    rerank_score: float | None = None
+
+
+@dataclass
+class RetrievedChunk:
+    """Чанк, поднятый из БД для RAG-поиска (без оценки релевантности)."""
+
+    chunk_id: int
+    document_id: int
+    knowledge_base_id: int
+    document_name: str
+    chunk_index: int
+    text: str
+
+
+# Статусы индексации документа
+DOCUMENT_STATUS_PENDING = "pending"
+DOCUMENT_STATUS_INDEXING = "indexing"
+DOCUMENT_STATUS_READY = "ready"
+DOCUMENT_STATUS_ERROR = "error"

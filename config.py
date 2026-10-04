@@ -20,10 +20,14 @@ AVAILABLE_MODELS = {
 REASONING_EFFORTS = ["none", "low", "medium", "high"]
 
 # --- Настройки Ollama (Локальные модели и Эмбеддинги) ---
-# Автоматически определяем, запущен ли код внутри Docker-контейнера
+# Автоматически определяем, запущен ли код внутри Docker-контейнера.
+# На хосте Ollama доступна как localhost, из контейнера — через
+# host.docker.internal (docker.internal не резолвится).
 IS_INSIDE_DOCKER = Path("/.dockerenv").exists()
 DEFAULT_OLLAMA_URL = (
-    "http://docker.internal" if IS_INSIDE_DOCKER else "http://localhost:11434"
+    "http://host.docker.internal:11434"
+    if IS_INSIDE_DOCKER
+    else "http://localhost:11434"
 )
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_URL)
@@ -32,6 +36,31 @@ OLLAMA_DEFAULT_EMBEDDING_MODEL = os.getenv("OLLAMA_DEFAULT_EMBEDDING_MODEL", "bg
 AVAILABLE_EMBEDDING_MODELS = {
     "bge-m3": "BGE-M3 Multilingual Embedding (Local)",
 }
+
+# --- Настройки RAG (эмбеддинг, реранкер, чанкинг, поиск) ---
+EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", OLLAMA_BASE_URL)
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "bge-m3")
+EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "1024"))
+EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "16"))
+EMBEDDING_TIMEOUT = int(os.getenv("EMBEDDING_TIMEOUT", "60"))
+
+# Реранкер по умолчанию отключён: без него сразу берём RAG_FINAL_TOP_K.
+RERANKER_ENABLED = os.getenv("RERANKER_ENABLED", "false").lower() in ("1", "true", "yes")
+RERANKER_BASE_URL = os.getenv("RERANKER_BASE_URL", OLLAMA_BASE_URL)
+RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "bge-reranker-v2-m3")
+RERANKER_BATCH_SIZE = int(os.getenv("RERANKER_BATCH_SIZE", "32"))
+RERANKER_TIMEOUT = int(os.getenv("RERANKER_TIMEOUT", "60"))
+
+RAG_CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "800"))
+RAG_CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "120"))
+RAG_VECTOR_TOP_K_PER_KB = int(os.getenv("RAG_VECTOR_TOP_K_PER_KB", "20"))
+RAG_CANDIDATE_LIMIT_TOTAL = int(os.getenv("RAG_CANDIDATE_LIMIT_TOTAL", "60"))
+RAG_FINAL_TOP_K = int(os.getenv("RAG_FINAL_TOP_K", "5"))
+
+# Загрузка документов из файлов (.txt/.md/.py)
+RAG_FILE_EXTENSIONS = {".txt", ".md", ".py"}
+RAG_FILE_MAX_BYTES = int(os.getenv("RAG_FILE_MAX_BYTES", str(1024 * 1024)))
+RAG_FOLDER_MAX_FILES = int(os.getenv("RAG_FOLDER_MAX_FILES", "100"))
 
 # --- Режим работы приложения ---
 APPLICATION_MODE = os.getenv("APPLICATION_MODE", "PROD").upper()  # TEST, PROD

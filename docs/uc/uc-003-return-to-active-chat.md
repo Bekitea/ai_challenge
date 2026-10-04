@@ -26,7 +26,7 @@
   - System remains in Main Menu
 
 - **A2: KeyboardInterrupt / EOFError At Menu Prompt**
-  - Any step: User presses Ctrl+C or the input stream ends at `Ваш выбор (1-6):`
+  - Any step: User presses Ctrl+C or the input stream ends at `Ваш выбор (1-7):`
   - System prints `До свидания!` and terminates the application cleanly (same as option 6)
 
 ## Postconditions
@@ -69,7 +69,7 @@
 
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | In Main Menu press Ctrl+C at `Ваш выбор (1-6):` (or feed end of input — EOFError) | System handles the exception at the menu prompt (UC-003 A2) |
+| 1    | In Main Menu press Ctrl+C at `Ваш выбор (1-7):` (or feed end of input — EOFError) | System handles the exception at the menu prompt (UC-003 A2) |
 | 2    | Verify exit message                           | `До свидания!` printed                        |
 | 3    | Verify termination                            | Application terminates cleanly, no traceback  |
 
@@ -82,7 +82,7 @@
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | 1    | Create a chat, return to Main Menu via `/menu`                   | Option 5 shows `Вернуться в чат: {name}`                                                 |
-| 2    | Feed end of input (EOF) at `Ваш выбор (1-6):` without selecting an option | `До свидания!` printed; application terminates cleanly (UC-003 A2)                        |
+| 2    | Feed end of input (EOF) at `Ваш выбор (1-7):` without selecting an option | `До свидания!` printed; application terminates cleanly (UC-003 A2)                        |
 | 3    | Restart the application                                         | The chat from step 1 is still present and selectable via option 2                       |
 
 ---

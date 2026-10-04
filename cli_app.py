@@ -1,7 +1,12 @@
 import os
 
 from agents import Agent, AgentSettings, ContextWindowExceededError
-from config import AVAILABLE_MODELS, REASONING_EFFORTS, YANDEX_DEFAULT_MODEL
+from config import (
+    AVAILABLE_MODELS,
+    RAG_FILE_EXTENSIONS,
+    REASONING_EFFORTS,
+    YANDEX_DEFAULT_MODEL,
+)
 from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
@@ -10,6 +15,7 @@ from context_strategies import (
     SummarizationStrategy,
 )
 from use_cases import (
+    RagError,
     UseCasesBundle,
 )
 
@@ -25,6 +31,7 @@ HELP_COMMANDS = [
     "/validate - перейти в фазу тестирования",
     "/report - перейти в фазу отчета",
     "/mcp - показать подключённые к чату MCP и подключить новые",
+    "/rag - базы знаний чата: подключить или отключить",
     "/help - показать этот список команд",
 ]
 
@@ -58,6 +65,7 @@ class CLIChat:
         else:
             print("5. Вернуться в чат (нет активного чата)")
         print("6. Выход")
+        print("7. Базы знаний")
         print("-" * 40)
 
     def print_chat_list(self):
@@ -911,6 +919,419 @@ class CLIChat:
         prefix = "[OK]" if success else "[ERROR]"
         print(f"\n{prefix} {message}")
 
+    # ------------------------------------------------------------------
+    # Базы знаний (RAG)
+    # ------------------------------------------------------------------
+
+    def _select_knowledge_base(self, knowledge_bases: list):
+        """Показывает нумерованный список баз знаний и предлагает выбор."""
+        if not knowledge_bases:
+            print("\n[INFO] Нет доступных баз знаний.")
+            return None
+        for index, kb in enumerate(knowledge_bases, 1):
+            print(
+                f"  {index}. {kb.name} "
+                f"(документов: {kb.document_count or 0}, "
+                f"чанков: {kb.chunk_count or 0})"
+            )
+        try:
+            raw = input("Выберите базу знаний (номер, 0 - отмена): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
+        if not raw or raw == "0":
+            return None
+        if not raw.isdigit():
+            print("[WARN] Введите корректное число.")
+            return None
+        number = int(raw)
+        if 1 <= number <= len(knowledge_bases):
+            return knowledge_bases[number - 1]
+        print("[WARN] Неверный номер базы знаний.")
+        return None
+
+    def _select_document(self, documents: list):
+        """Показывает нумерованный список документов и предлагает выбор."""
+        if not documents:
+            print("\n[INFO] В базе знаний нет документов.")
+            return None
+        for index, doc in enumerate(documents, 1):
+            print(f"  {index}. {doc.name} [{doc.status}]")
+        try:
+            raw = input("Выберите документ (номер, 0 - отмена): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
+        if not raw or raw == "0":
+            return None
+        if not raw.isdigit():
+            print("[WARN] Введите корректное число.")
+            return None
+        number = int(raw)
+        if 1 <= number <= len(documents):
+            return documents[number - 1]
+        print("[WARN] Неверный номер документа.")
+        return None
+
+    def rag_menu(self):
+        """Обрабатывает команду /rag: подключение/отключение баз знаний чата."""
+        agent = self.current_agent
+        if not agent:
+            print("\n[WARN] Сначала выберите или создайте чат!")
+            return
+
+        print(f"\n--- БАЗЫ ЗНАНИЙ ЧАТА: {agent.name} ---")
+        attached = self.use_cases.list_agent_knowledge_bases.execute(agent)
+        if attached:
+            for index, kb in enumerate(attached, 1):
+                print(
+                    f"  {index}. {kb.name} "
+                    f"(документов: {kb.document_count or 0}, "
+                    f"чанков: {kb.chunk_count or 0})"
+                )
+        else:
+            print("  К этому чату ещё не подключено ни одной базы знаний.")
+
+        print("Действия:")
+        print("1. Подключить базу знаний")
+        print("2. Отключить базу знаний")
+        print("0. Назад")
+        try:
+            action = input("Выберите действие (0-2): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+
+        if action == "1":
+            self._attach_knowledge_base_to_chat(agent, attached)
+        elif action == "2":
+            self._detach_knowledge_base_from_chat(agent, attached)
+
+    def _attach_knowledge_base_to_chat(self, agent, attached: list):
+        attached_ids = {kb.id for kb in attached}
+        all_kbs = self.use_cases.list_knowledge_bases.execute()
+        available = [kb for kb in all_kbs if kb.id not in attached_ids]
+        if not available:
+            print(
+                "\n[INFO] Нет доступных баз знаний для подключения. "
+                "Создайте их в меню 'Базы знаний'."
+            )
+            return
+
+        print("\n--- ДОСТУПНЫЕ БАЗЫ ЗНАНИЙ ---")
+        kb = self._select_knowledge_base(available)
+        if kb is None:
+            print("[INFO] Подключение отменено.")
+            return
+
+        try:
+            success, message = self.use_cases.attach_knowledge_base.execute(
+                agent, kb.id
+            )
+        except RagError as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+        prefix = "[OK]" if success else "[ERROR]"
+        print(f"\n{prefix} {message}")
+
+    def _detach_knowledge_base_from_chat(self, agent, attached: list):
+        if not attached:
+            print("\n[INFO] К чату не подключено ни одной базы знаний.")
+            return
+
+        print("\n--- ПОДКЛЮЧЁННЫЕ БАЗЫ ЗНАНИЙ ---")
+        kb = self._select_knowledge_base(attached)
+        if kb is None:
+            print("[INFO] Отключение отменено.")
+            return
+
+        try:
+            success, message = self.use_cases.detach_knowledge_base.execute(
+                agent, kb.id
+            )
+        except RagError as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+        prefix = "[OK]" if success else "[ERROR]"
+        print(f"\n{prefix} {message}")
+
+    def knowledge_bases_menu(self):
+        """Пункт главного меню: управление базами знаний и документами."""
+        while True:
+            print("\n--- БАЗЫ ЗНАНИЙ ---")
+            print("1. Создать базу знаний")
+            print("2. Показать список баз знаний")
+            print("3. Добавить документы (файл или папка)")
+            print("4. Показать документы базы знаний")
+            print("5. Показать чанки документа")
+            print("6. Удалить документ")
+            print("7. Удалить базу знаний")
+            print("8. Проверить поиск")
+            print("0. Назад в главное меню")
+            print("-" * 40)
+
+            try:
+                choice = input("Ваш выбор (0-8): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return
+
+            if choice == "1":
+                self._create_knowledge_base()
+            elif choice == "2":
+                self._list_knowledge_bases()
+            elif choice == "3":
+                self._add_documents_to_knowledge_base()
+            elif choice == "4":
+                self._list_documents_in_knowledge_base()
+            elif choice == "5":
+                self._list_document_chunks()
+            elif choice == "6":
+                self._delete_document()
+            elif choice == "7":
+                self._delete_knowledge_base()
+            elif choice == "8":
+                self._search_knowledge_base()
+            elif choice == "0":
+                return
+            else:
+                print("\n[WARN] Неверный выбор, попробуйте снова.")
+
+    def _create_knowledge_base(self):
+        print("\n--- СОЗДАНИЕ БАЗЫ ЗНАНИЙ ---")
+        name = ""
+        while not name:
+            name = input("Введите название базы знаний: ").strip()
+            if not name:
+                print("[ERROR] Название базы знаний не может быть пустым.")
+        description = input("Введите описание (Enter для пропуска): ").strip()
+
+        try:
+            kb = self.use_cases.create_knowledge_base.execute(name, description)
+        except (ValueError, RagError) as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+
+        print(f"\n[OK] База знаний '{kb.name}' создана!")
+        print(f"  ID: {kb.id}")
+        print(
+            f"  Модель эмбеддинга: {kb.embedding_model} "
+            f"({kb.embedding_dimension})"
+        )
+
+    def _list_knowledge_bases(self):
+        knowledge_bases = self.use_cases.list_knowledge_bases.execute()
+        if not knowledge_bases:
+            print("\n[INFO] Базы знаний отсутствуют. Создайте первую базу знаний.")
+            return
+
+        print("\n--- СПИСОК БАЗ ЗНАНИЙ ---")
+        for index, kb in enumerate(knowledge_bases, 1):
+            description = f" | {kb.description}" if kb.description else ""
+            print(f"{index}. {kb.name}{description}")
+            print(
+                f"   ID: {kb.id} | Модель: {kb.embedding_model} "
+                f"({kb.embedding_dimension})"
+            )
+            print(
+                f"   Документов: {kb.document_count or 0} | "
+                f"Чанков: {kb.chunk_count or 0}"
+            )
+        print("-" * 40)
+
+    def _resolve_knowledge_base(self):
+        """Выбирает базу знаний из списка; возвращает DTO или None."""
+        knowledge_bases = self.use_cases.list_knowledge_bases.execute()
+        if not knowledge_bases:
+            print("\n[INFO] Нет баз знаний. Сначала создайте базу знаний.")
+            return None
+        return self._select_knowledge_base(knowledge_bases)
+
+    def _add_documents_to_knowledge_base(self):
+        print("\n--- ДОБАВЛЕНИЕ ДОКУМЕНТОВ ---")
+        kb = self._resolve_knowledge_base()
+        if kb is None:
+            print("[INFO] Действие отменено.")
+            return
+
+        extensions = "/".join(sorted(RAG_FILE_EXTENSIONS))
+        path = input(
+            f"Введите путь к файлу ({extensions}) или папке с файлами: "
+        ).strip()
+        if not path:
+            print("[WARN] Путь не указан.")
+            return
+
+        print("\n[INFO] Индексирую документы...", flush=True)
+        try:
+            result = self.use_cases.add_document.execute(kb.id, path)
+        except (RagError, ValueError) as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+
+        if not result.documents:
+            print("[WARN] Не найдено документов для индексации.")
+            return
+
+        for doc in result.documents:
+            if doc.status == "ready":
+                print(f"  [OK] {doc.name} — чанков: {doc.chunk_count}")
+            else:
+                print(
+                    f"  [ERROR] {doc.name} — "
+                    f"{doc.error_message or 'ошибка индексации'}"
+                )
+        print(
+            f"\n[OK] Готово: успешно {result.ready_count}, "
+            f"с ошибками {result.error_count}."
+        )
+
+    def _list_documents_in_knowledge_base(self):
+        kb = self._resolve_knowledge_base()
+        if kb is None:
+            print("[INFO] Действие отменено.")
+            return
+
+        try:
+            documents = self.use_cases.list_documents.execute(kb.id)
+        except RagError as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+
+        if not documents:
+            print(f"\n[INFO] В базе знаний '{kb.name}' нет документов.")
+            return
+
+        print(f"\n--- ДОКУМЕНТЫ БАЗЫ '{kb.name}' ---")
+        for index, doc in enumerate(documents, 1):
+            print(f"{index}. {doc.name} [{doc.status}]")
+            print(f"   ID: {doc.id} | Чанков: {doc.chunk_count}")
+            if doc.error_message:
+                print(f"   Ошибка: {doc.error_message}")
+        print("-" * 40)
+
+    def _list_document_chunks(self):
+        kb = self._resolve_knowledge_base()
+        if kb is None:
+            print("[INFO] Действие отменено.")
+            return
+
+        try:
+            documents = self.use_cases.list_documents.execute(kb.id)
+        except RagError as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+
+        print(f"\n--- ВЫБОР ДОКУМЕНТА БАЗЫ '{kb.name}' ---")
+        document = self._select_document(documents)
+        if document is None:
+            print("[INFO] Действие отменено.")
+            return
+
+        chunks = self.use_cases.list_document_chunks.execute(document.id)
+        if not chunks:
+            print(f"\n[INFO] У документа '{document.name}' нет чанков.")
+            return
+
+        print(f"\n--- ЧАНКИ ДОКУМЕНТА '{document.name}' ---")
+        for chunk in chunks:
+            print(
+                f"[{chunk.chunk_index}] (id={chunk.id}, "
+                f"символов: {len(chunk.text)})"
+            )
+            print(chunk.text)
+            print("-" * 40)
+
+    def _delete_document(self):
+        kb = self._resolve_knowledge_base()
+        if kb is None:
+            print("[INFO] Действие отменено.")
+            return
+
+        try:
+            documents = self.use_cases.list_documents.execute(kb.id)
+        except RagError as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+
+        print(f"\n--- УДАЛЕНИЕ ДОКУМЕНТА БАЗЫ '{kb.name}' ---")
+        document = self._select_document(documents)
+        if document is None:
+            print("[INFO] Действие отменено.")
+            return
+
+        confirm = input(
+            f"Удалить документ '{document.name}'? (y/n): "
+        ).strip().lower()
+        if confirm != "y":
+            print("[INFO] Удаление отменено.")
+            return
+
+        if self.use_cases.delete_document.execute(document.id):
+            print(f"\n[OK] Документ '{document.name}' удалён.")
+        else:
+            print("\n[ERROR] Не удалось удалить документ.")
+
+    def _delete_knowledge_base(self):
+        kb = self._resolve_knowledge_base()
+        if kb is None:
+            print("[INFO] Действие отменено.")
+            return
+
+        confirm = input(
+            f"Удалить базу знаний '{kb.name}'? "
+            f"Все её документы, чанки и векторы будут удалены. (y/n): "
+        ).strip().lower()
+        if confirm != "y":
+            print("[INFO] Удаление отменено.")
+            return
+
+        try:
+            deleted = self.use_cases.delete_knowledge_base.execute(kb.id)
+        except RagError as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+        if deleted:
+            print(f"\n[OK] База знаний '{kb.name}' удалена.")
+        else:
+            print("\n[ERROR] Не удалось удалить базу знаний.")
+
+    def _search_knowledge_base(self):
+        kb = self._resolve_knowledge_base()
+        if kb is None:
+            print("[INFO] Действие отменено.")
+            return
+
+        query = input("Введите поисковый запрос: ").strip()
+        if not query:
+            print("[WARN] Запрос не может быть пустым.")
+            return
+
+        print("\n[INFO] Выполняю поиск...", flush=True)
+        try:
+            chunks = self.use_cases.search_knowledge_base.execute(kb.id, query)
+        except RagError as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+
+        if not chunks:
+            print("\n[INFO] Ничего не найдено.")
+            return
+
+        print(f"\n--- РЕЗУЛЬТАТЫ ПОИСКА (база '{kb.name}') ---")
+        for position, chunk in enumerate(chunks, 1):
+            distance = (
+                f"{chunk.vector_distance:.4f}"
+                if chunk.vector_distance is not None
+                else "-"
+            )
+            print(
+                f"{position}. {chunk.document_name} "
+                f"(фрагмент {chunk.chunk_index + 1}, distance={distance})"
+            )
+            print(chunk.text)
+            print("-" * 40)
+
     def chat_loop(self):
         """Основной цикл общения с агентом."""
         if not self.current_agent:
@@ -981,6 +1402,10 @@ class CLIChat:
 
                 if user_input.lower() == "/mcp":
                     self.mcp_menu()
+                    continue
+
+                if user_input.lower() == "/rag":
+                    self.rag_menu()
                     continue
 
                 print("\n[AGENT] печатает...", end="", flush=True)
@@ -1058,7 +1483,7 @@ class CLIChat:
             self.print_menu()
 
             try:
-                choice = input("\nВаш выбор (1-6): ").strip()
+                choice = input("\nВаш выбор (1-7): ").strip()
 
                 if choice == "1":
                     self.create_new_chat()
@@ -1077,6 +1502,8 @@ class CLIChat:
                 elif choice == "6":
                     print("\nДо свидания!\n")
                     break
+                elif choice == "7":
+                    self.knowledge_bases_menu()
                 else:
                     print("\n[WARN] Неверный выбор, попробуйте снова.")
 

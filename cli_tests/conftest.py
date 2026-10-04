@@ -6,6 +6,15 @@ import os
 # так как config.py читает эту переменную при загрузке модуля
 os.environ["APPLICATION_MODE"] = "TEST"
 
+# Из контейнера Ollama доступна только через host.docker.internal, а не через
+# устаревший docker.internal (он не резолвится). Нормализуем URL для тестов.
+if os.path.exists("/.dockerenv"):
+    os.environ["OLLAMA_BASE_URL"] = os.environ.get(
+        "OLLAMA_BASE_URL", ""
+    ).replace("http://docker.internal", "http://host.docker.internal:11434") or (
+        "http://host.docker.internal:11434"
+    )
+
 import sys
 
 import pytest

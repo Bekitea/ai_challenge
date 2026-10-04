@@ -42,6 +42,13 @@ New feature flow: add use case file in `docs/uc/` and register it in the UC inde
 - Worker: `celery -A celery_app worker --loglevel=info --pool=solo` (`--pool=solo` is required on Windows). Beat: `celery -A celery_app beat --loglevel=info`.
 - Reports are declared in `SCHEDULED_REPORTS` in `celery_app.py`; every entry is auto-scheduled to run once per minute.
 
+## sqlite-vec (инфраструктура RAG)
+
+- Расширение `sqlite-vec` вендорится в `storage/extensions/sqlite_vec/` (`vec0.so` для Linux/musl, `vec0.dll` для win_amd64). Загрузчик — `storage/extensions/sqlite_vec/__init__.py`; он вызывается из `storage/db_connection.py` через SQLAlchemy-событие `connect` на каждом соединении. Полная инструкция по пересборке/обновлению — `storage/extensions/sqlite_vec/INSTALL.md`.
+- `pip install sqlite-vec` / добавление пакета в `pyproject.toml` **ломает установку на Alpine**: для musl нет ни колеса, ни sdist. Не добавлять `sqlite-vec` в зависимости.
+- Пересборка musl-бинарника: `sh storage/extensions/sqlite_vec/build.sh` (нужен пакет `sqlite-dev` и `gcc`). Ключ `-include sys/types.h` обязателен на musl.
+- Быстрая проверка (в т.ч. на Windows с `vec0.dll`): `poetry run python test_vec.py`.
+
 ## Misc
 
 - `mcp/` contains MCP servers (`time_mcp.py`, `open_alex_mcp.py`); root `*_mcp_test.py` files are manual test scripts for them, not pytest suites.

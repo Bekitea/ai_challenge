@@ -121,6 +121,7 @@ class PersistentAgentRepository(AgentRepository):
         session_factory: Callable[[], Session],
         global_memory_repository=None,
         task_profile_repository=None,
+        rag_service=None,
     ):
         """
         Инициализирует репозиторий.
@@ -137,6 +138,7 @@ class PersistentAgentRepository(AgentRepository):
         self._chat_storage = ConversationRepository()
         self._global_memory_repository = global_memory_repository
         self._task_profile_repository = task_profile_repository
+        self._rag_service = rag_service
 
     def _get_session(self) -> Session:
         """Возвращает новую сессию БД."""
@@ -218,6 +220,7 @@ class PersistentAgentRepository(AgentRepository):
             task_profile=task_profile,  # ✅ ДОБАВЛЕНО
             task_profile_repository=self._task_profile_repository,  # ✅ ДОБАВЛЕНО
             connected_mcp_servers=orm.get_mcp_servers(),
+            rag_service=self._rag_service,
         )
 
         # Восстанавливаем живые MCP-подключения (если серверы есть в реестре)
@@ -370,6 +373,7 @@ class PersistentAgentRepository(AgentRepository):
             task_profile=task_profile,
             task_profile_repository=self._task_profile_repository,
             initial_phase=initial_phase,
+            rag_service=self._rag_service,
         )
 
         # Устанавливаем ссылку на репозиторий для автосохранения

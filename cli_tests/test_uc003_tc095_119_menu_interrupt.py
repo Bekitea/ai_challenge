@@ -10,7 +10,7 @@ class TestUC003_TC095_119_MenuInterrupt:
         """
         TC-095: Return To Active Chat - Ctrl+C At Menu Prompt (UC-003 A2)
 
-        EOF at 'Ваш выбор (1-6):' (emulated Ctrl+C) -> 'До свидания!', clean
+        EOF at 'Ваш выбор (1-7):' (emulated Ctrl+C) -> 'До свидания!', clean
         termination, no traceback.
         """
         test_input = (

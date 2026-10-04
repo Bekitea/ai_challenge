@@ -66,7 +66,7 @@ class TestUC004_TC078_083_MessagingBranches:
         assert "(лимит: 1)" in stdout
         assert "Необходимо очистить историю сообщений или создать новый чат." in stdout
         # Шаг 3: возврат в главное меню
-        assert "Ваш выбор (1-6):" in stdout
+        assert "Ваш выбор (1-7):" in stdout
         # Шаг 4: тот же чат всё ещё активен и доступен через опцию 5
         assert "[OK] Возврат в чат: TinyCtx" in stdout
         assert "Traceback" not in stderr

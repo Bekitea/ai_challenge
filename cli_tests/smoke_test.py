@@ -64,6 +64,7 @@ def run_smoke_test():
             cwd=str(project_root),
             capture_output=False,
             text=True,
+            check=False,
         )
 
         print("-" * 50)
@@ -74,7 +75,7 @@ def run_smoke_test():
             print("❌ Smoke test FAILED")
             return False
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"❌ Test failed with exception: {e}")
         return False
 

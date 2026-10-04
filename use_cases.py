@@ -741,7 +741,7 @@ class RunScheduledAgentTaskUseCase:
     @staticmethod
     def _run_chat_name(base_name: str) -> str:
         """Формирует уникальное имя чата для конкретного запуска."""
-        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
         return f"{base_name} · {stamp}"
 
     def execute(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import json
 import sys
@@ -147,10 +148,8 @@ def run_async_in_new_loop(coro_factory: Any, timeout: float | None = None) -> An
             return loop.run_until_complete(asyncio.wait_for(coro, timeout=timeout))
         return loop.run_until_complete(coro)
     finally:
-        try:
+        with contextlib.suppress(Exception):
             loop.run_until_complete(loop.shutdown_asyncgens())
-        except Exception:
-            pass
         loop.close()
 
 
@@ -341,17 +340,13 @@ class McpConnection:
             proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
             proc.kill()
-            try:
+            with contextlib.suppress(subprocess.TimeoutExpired, OSError):
                 proc.wait(timeout=5)
-            except Exception:
-                pass
             return None
         stderr_text = ""
-        try:
+        with contextlib.suppress(OSError, ValueError, AssertionError):
             assert proc.stderr is not None
             stderr_text = proc.stderr.read().decode("utf-8", errors="replace").strip()
-        except Exception:
-            pass
         code = proc.returncode
         tail = "\n".join(stderr_text.splitlines()[-15:]) if stderr_text else ""
         message = f"MCP-сервер завершился при запуске с кодом {code}."

@@ -30,6 +30,7 @@ class TestUC019_TC101_110_McpMenu:
                 text=True,
                 timeout=15,
                 cwd=str(root),
+                check=False,
             )
             if proc.returncode != 0:
                 return False

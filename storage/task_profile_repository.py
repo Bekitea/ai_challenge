@@ -1,23 +1,10 @@
 import pickle
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from agents import TaskProfile
 from storage.orm_models import TaskProfileInvariantORM
-
-
-@dataclass
-class TaskProfile:
-    """Профиль задачи с памятью о фактах задачи."""
-    id: str
-    name: str
-    description: str
-    created_at: datetime
-    facts: list[str] = field(default_factory=list)
-    preferences: str = ""
-    invariants: list[str] = field(default_factory=list)
 
 
 class TaskProfileRepository(ABC):
@@ -254,6 +241,7 @@ class DatabaseTaskProfileRepository(TaskProfileRepository):
         self._save_facts_to_file(profile_id, facts)
     
     def is_profile_linked_to_agents(self, profile_id: str) -> bool:
+        """Проверяет, привязан ли профиль к каким-либо агентам через БД."""
         from sqlalchemy import select
 
         from storage.orm_models import AgentORM
@@ -321,13 +309,3 @@ class DatabaseTaskProfileRepository(TaskProfileRepository):
                 }
                 for inv in inv_orms
             ]
-    def is_profile_linked_to_agents(self, profile_id: str) -> bool:
-        """Проверяет, привязан ли профиль к каким-либо агентам через БД."""
-        from sqlalchemy import select
-
-        from storage.orm_models import AgentORM
-
-        with self._get_session() as session:
-            stmt = select(AgentORM).where(AgentORM.task_profile_id == profile_id)
-            result = session.execute(stmt).scalars().first()
-            return result is not None

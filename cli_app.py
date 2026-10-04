@@ -536,7 +536,7 @@ class CLIChat:
             else:
                 print("\nВетка создана. Вы можете вернуться к ней через меню.")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"\n[ERROR] Ошибка при создании ветки: {e}")
 
     def print_global_memory(self):
@@ -949,7 +949,7 @@ class CLIChat:
 
                 # Обработка команд фаз
                 if user_input.lower() in ("/plan", "/execute", "/validate", "/report"):
-                    success, message = self.current_agent.handle_phase_command(
+                    _, message = self.current_agent.handle_phase_command(
                         user_input.lower()
                     )
                     print(f"\n[INFO] {message}")
@@ -1041,7 +1041,7 @@ class CLIChat:
                 if self.current_agent:
                     self.use_cases.save_agent_memory.execute(self.current_agent)
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"\n[ERROR] Ошибка: {e}")
                 break
 

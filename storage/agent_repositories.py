@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -466,7 +466,7 @@ class PersistentAgentRepository(AgentRepository):
                 key=lambda p: (
                     p.last_message_timestamp
                     if p.last_message_timestamp
-                    else datetime.min
+                    else datetime.min.replace(tzinfo=UTC)
                 ),
                 reverse=True,
             )

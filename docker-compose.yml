@@ -38,8 +38,15 @@ services:
       - poetry_cache:/root/.cache
       
     working_dir: /workspace
+    
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      
     environment:
       - OPENCODE_API_KEY
+      - OLLAMA_HOST=http://docker.internal
+      - OLLAMA_BASE_URL=http://docker.internal
+      
     stdin_open: true
     tty: true
 

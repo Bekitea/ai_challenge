@@ -29,9 +29,8 @@ class TestUC009_ViewConversationSummary:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "/summary" in stdout or "Суммаризация" in stdout or "[INFO]" in stdout
 
     def test_tc_027_view_summary_without_summarization(self):
@@ -50,7 +49,6 @@ class TestUC009_ViewConversationSummary:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "[INFO]" in stdout or "Суммаризация еще не выполнялась" in stdout

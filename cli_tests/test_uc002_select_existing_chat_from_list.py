@@ -28,9 +28,8 @@ class TestUC002_SelectExistingChatFromList:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert (
             "Нет доступных чатов" in stdout
             or "Нет доступных чатов. Создайте новый." in stdout
@@ -65,9 +64,8 @@ class TestUC002_SelectExistingChatFromList:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(select_input)
+        stdout, _, _ = run_cli_command(select_input)
 
-        assert returncode == 0
         assert "(нет сообщений)" in stdout or "Сообщений: 0" in stdout
 
     def test_tc_011_preview_with_user_message(self):
@@ -99,7 +97,6 @@ class TestUC002_SelectExistingChatFromList:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(select_input)
+        stdout, _, _ = run_cli_command(select_input)
 
-        assert returncode == 0
         assert "PreviewTest" in stdout or "Превью:" in stdout

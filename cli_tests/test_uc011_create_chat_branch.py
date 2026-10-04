@@ -33,9 +33,8 @@ class TestUC011_CreateChatBranch:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "Ветка" in stdout or "branch" in stdout.lower()
         assert "Продолжить в новой ветке?" in stdout
 
@@ -57,9 +56,8 @@ class TestUC011_CreateChatBranch:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "Ветка" in stdout or "[OK]" in stdout
 
     def test_tc_031_create_branch_with_custom_name(self):
@@ -80,9 +78,8 @@ class TestUC011_CreateChatBranch:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "My Custom Branch" in stdout or "Ветка" in stdout
 
     def test_tc_044_branch_preserves_strategy_type(self):
@@ -104,9 +101,8 @@ class TestUC011_CreateChatBranch:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "Ветка" in stdout or "[OK]" in stdout
 
     def test_tc_045_branch_preserves_sliding_window_configuration(self):
@@ -128,7 +124,6 @@ class TestUC011_CreateChatBranch:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "Ветка" in stdout or "[OK]" in stdout

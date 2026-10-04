@@ -44,9 +44,8 @@ class TestUC004_SendMessageAndReceiveResponse:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "[USER]:" in stdout
         assert "[AGENT]" in stdout
 
@@ -75,9 +74,8 @@ class TestUC004_SendMessageAndReceiveResponse:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "[USER]:" in stdout or "Введите сообщение" in stdout
 
     def test_tc_021_unknown_command_handling(self):
@@ -101,9 +99,8 @@ class TestUC004_SendMessageAndReceiveResponse:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert (
             "[WARN]" in stdout or "Неизвестная команда" in stdout or "/help" in stdout
         )
@@ -131,9 +128,8 @@ class TestUC004_SendMessageAndReceiveResponse:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "[SYSTEM]" in stdout or "SYSTEM" in stdout.upper()
 
     def test_tc_023_special_characters_in_input(self):
@@ -160,7 +156,6 @@ class TestUC004_SendMessageAndReceiveResponse:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "[USER]:" in stdout

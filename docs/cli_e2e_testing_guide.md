@@ -66,9 +66,8 @@ class TestUC001_CreateChatWithAllSettings:
 
         test_input = "1\n\n4\n"  # New Chat -> quick path (Enter = default "n") -> Exit
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "[OK] Чат 'Чат" in stdout
 ```
 
@@ -222,7 +221,7 @@ Always specify a `timeout` parameter in `communicate()` to prevent hanging tests
 
 ### 3. Capture Both stdout and stderr
 
-Some applications write warnings or errors to stderr. Capture both streams for complete debugging information.
+Some applications write warnings or errors to stderr. `run_cli_command` captures both streams and enforces the success invariant itself: `returncode == 0` and empty `stderr`. Tests therefore only assert on `stdout` and drop the unused parts of the tuple with `_`.
 
 ### 4. Use Descriptive Test Names
 
@@ -293,7 +292,7 @@ The project includes pytest-based E2E tests that emulate real user interaction v
 
 - Use `subprocess.Popen` to spawn actual CLI processes (no mocking at Python level)
 - Send input via stdin (simulating keyboard input)
-- Capture stdout/stderr (simulating terminal output)
+- Capture stdout/stderr (simulating terminal output) and assert `returncode == 0` plus empty `stderr` via `run_cli_command`
 - Set `APPLICATION_MODE=TEST` for complete isolation
 - Do NOT use pytest fixtures - each test is self-contained to maximize realism
 - Directly map to test cases from the use case files under `docs/uc/`
@@ -356,9 +355,8 @@ class TestUC001_CreateChatWithAllSettings:
             "\\n"            # Temperature disabled
             "4\\n"           # Exit
         )
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "Чат создан" in stdout
 ```
 
@@ -425,7 +423,7 @@ def test_something(create_test_chat):
 def test_tc_001_create_chat_default_values(self):
     """Test creates its own state via CLI interaction."""
     test_input = "1\n\n\n1\n\n4\n"
-    stdout, stderr, returncode = run_cli_command(test_input)
+    stdout, _, _ = run_cli_command(test_input)
     assert "Чат создан" in stdout
 ```
 
@@ -447,7 +445,7 @@ chat = create_chat(name="Test")
 
 # ✅ CORRECT: Subprocess interaction
 test_input = "1\nTest\n...\n"
-stdout, stderr, returncode = run_cli_command(test_input)
+stdout, _, _ = run_cli_command(test_input)
 ```
 
 ### 3. Dynamic Path Resolution
@@ -540,21 +538,41 @@ process = subprocess.Popen([sys.executable, "main_cli.py"], ..., env=env)
 
 ### 7. Complete Output Capture
 
-**Rule:** ALWAYS capture both `stdout` AND `stderr`.
+**Rule:** ALWAYS capture both `stdout` AND `stderr`, and treat a non-zero exit code or non-empty `stderr` as a test failure.
 
 **Rationale:**
 - Complete debugging information
 - Catch warnings and errors
 - Verify correct output streams
+- A clean `stderr` on success proves the app did not leak errors/warnings
 
 **Example:**
 ```python
-# ❌ WRONG: Only stdout
+# ✅ `run_cli_command` already captures both streams and asserts
+# returncode == 0 plus an empty stderr.
+# ❌ WRONG: only stdout (raw subprocess, no stderr captured)
 stdout = process.stdout.read()
 
-# ✅ CORRECT: Both streams
-stdout, stderr = process.communicate(input=test_input, timeout=30)
+# ✅ CORRECT: helper captures both and enforces the invariant
+stdout, _, _ = run_cli_command(test_input)
 ```
+
+### Helper Contract (`run_cli_command`)
+
+`e2e_helpers.run_cli_command(test_input, timeout=30)` returns `(stdout, stderr, returncode)` and, before returning, asserts:
+
+- `returncode == 0`
+- `stderr == ""`
+
+Consequences for tests:
+
+- Do **not** repeat `assert returncode == 0` or `assert "Traceback" not in stderr` — the helper already guarantees it (with a detailed failure message containing `stdout`/`stderr`).
+- Unused parts of the tuple **must** be discarded with `_` to keep Ruff (`RUF059`) clean:
+  ```python
+  stdout, _, _ = run_cli_command(test_input)   # only stdout needed
+  _, stderr, _ = run_cli_command(test_input)   # only stderr needed
+  run_cli_command(test_input)                  # result not inspected at all
+  ```
 
 ## Test Case Design Guidelines
 
@@ -576,11 +594,11 @@ test_input = (
 
 ### Assertion Strategy
 
-Focus on observable behavior:
+Focus on observable behavior. The exit code and empty `stderr` are enforced by `run_cli_command`, so tests do not assert them explicitly:
 
 ```python
-# ✅ Check return code
-assert returncode == 0
+# ✅ Get stdout (exit code / stderr are checked by the helper)
+stdout, _, _ = run_cli_command(test_input)
 
 # ✅ Check success messages
 assert "Чат создан" in stdout
@@ -588,10 +606,11 @@ assert "Чат создан" in stdout
 # ✅ Check menu options
 assert "1. Новый чат" in stdout
 
-# ✅ Check error handling
+# ✅ Check error handling (in-app messages go to stdout)
 assert "Ошибка" in stdout or "Error" in stdout
 
 # ❌ Avoid: Internal state checks (use CLI commands instead)
+# ❌ Avoid: assert returncode == 0 / "Traceback" not in stderr (guaranteed by the helper)
 ```
 
 ### Handling Sequential Dependencies
@@ -616,7 +635,7 @@ def test_tc_013_return_to_chat_with_active_chat(self):
         "3\n"           # Return to chat
         "4\n"           # Exit
     )
-    stdout, stderr, returncode = run_cli_command(test_input)
+    stdout, _, _ = run_cli_command(test_input)
     assert "Активный чат" in stdout
 ```
 
@@ -687,7 +706,7 @@ test_input = (
     "2\n"           # View chat list
     "4\n"           # Exit
 )
-stdout, stderr, returncode = run_cli_command(test_input)
+stdout, _, _ = run_cli_command(test_input)
 assert "Chat A" in stdout or "Chat B" in stdout
 ```
 

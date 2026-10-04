@@ -34,9 +34,8 @@ class TestUC006_NavigateToMenuFromChat:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "МЕНЮ" in stdout or "AI CHAT CLI" in stdout
 
     def test_tc_122_concurrent_chat_operations(self):

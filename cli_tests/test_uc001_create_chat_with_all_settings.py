@@ -100,9 +100,8 @@ class TestUC001_CreateChatWithAllSettings:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "[OK] Чат 'Test Chat' создан!" in stdout
         # TC-002 step 13: all entered values saved correctly
         assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout
@@ -138,9 +137,8 @@ class TestUC001_CreateChatWithAllSettings:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert (
             "Некорректное число. Используется значение по умолчанию (отключено)."
             in stdout
@@ -167,9 +165,8 @@ class TestUC001_CreateChatWithAllSettings:
                 "6\n"
             )
 
-            stdout, stderr, returncode = run_cli_command(test_input)
+            stdout, _, _ = run_cli_command(test_input)
 
-            assert returncode == 0
             assert "Температура должна быть от 0.0 до 2.0." in stdout, (
                 f"Range warning expected for temperature={bad_value}"
             )
@@ -200,9 +197,8 @@ class TestUC001_CreateChatWithAllSettings:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert f"[OK] Чат '{long_name}' создан!" in stdout, (
             "Full 150-char name should be accepted without truncation"
         )
@@ -233,9 +229,8 @@ class TestUC001_CreateChatWithAllSettings:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "SlidingWindowStrategy" in stdout or "4." in stdout
 
     def test_tc_037_sliding_window_strategy_custom_window(self):
@@ -262,9 +257,8 @@ class TestUC001_CreateChatWithAllSettings:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "SlidingWindowStrategy" in stdout or "window" in stdout.lower()
 
     def test_tc_038_summarization_strategy_creation(self):
@@ -293,9 +287,8 @@ class TestUC001_CreateChatWithAllSettings:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "SummarizationStrategy" in stdout
 
     def test_tc_039_summarization_strategy_custom_parameters(self):
@@ -324,9 +317,8 @@ class TestUC001_CreateChatWithAllSettings:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "SummarizationStrategy" in stdout
 
     def test_tc_040_key_value_memory_strategy_creation(self):
@@ -355,9 +347,8 @@ class TestUC001_CreateChatWithAllSettings:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "KeyValueMemoryStrategy" in stdout
 
     def test_tc_041_key_value_memory_strategy_custom_parameters(self):
@@ -386,9 +377,8 @@ class TestUC001_CreateChatWithAllSettings:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "KeyValueMemoryStrategy" in stdout
 
     def test_tc_042_default_strategy_creation(self):
@@ -414,7 +404,6 @@ class TestUC001_CreateChatWithAllSettings:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "DefaultStrategy" in stdout or "[OK]" in stdout

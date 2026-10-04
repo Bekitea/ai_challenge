@@ -27,9 +27,8 @@ class TestUC003_ReturnToActiveChat:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "нет активного чата" in stdout.lower() or "[WARN]" in stdout
 
     def test_tc_013_return_to_chat_with_active_chat(self):
@@ -56,9 +55,8 @@ class TestUC003_ReturnToActiveChat:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert (
             "Вернуться в чат: ActiveChatTest" in stdout
             or "ЧАТ: ActiveChatTest" in stdout

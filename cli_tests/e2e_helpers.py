@@ -64,12 +64,20 @@ def run_cli_command(
     2. Sending input via stdin (like real keyboard input)
     3. Capturing stdout/stderr (like real terminal output)
 
+    Функция сама проверяет инварианты успешного запуска: код возврата равен
+    0, а stderr пуст. Поэтому в тестах эти проверки дублировать не нужно, а
+    неиспользуемые части результата можно отбрасывать через `_`.
+
     Args:
         test_input: String with newlines representing user keystrokes
         timeout: Maximum execution time in seconds
 
     Returns:
         Tuple of (stdout, stderr, return_code)
+
+    Raises:
+        AssertionError: Если процесс завершился с ненулевым кодом или записал
+            что-либо в stderr.
     """
     project_root = get_project_root()
 
@@ -88,4 +96,13 @@ def run_cli_command(
     )
 
     stdout, stderr = process.communicate(input=test_input, timeout=timeout)
+
+    assert process.returncode == 0, (
+        f"CLI exited with code {process.returncode}\n"
+        f"--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
+    )
+    assert stderr == "", (
+        f"stderr must be empty on success, got:\n{stderr}\n"
+        f"--- stdout ---\n{stdout}"
+    )
     return stdout, stderr, process.returncode

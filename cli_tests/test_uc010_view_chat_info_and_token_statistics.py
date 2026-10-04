@@ -28,9 +28,8 @@ class TestUC010_ViewChatInfoAndTokenStatistics:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "--- ИНФОРМАЦИЯ О ЧАТЕ ---" in stdout or "ИНФОРМАЦИЯ" in stdout
 
     def test_tc_043_view_info_for_different_strategies(self):
@@ -50,7 +49,6 @@ class TestUC010_ViewChatInfoAndTokenStatistics:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "Стратегия:" in stdout or "DefaultStrategy" in stdout

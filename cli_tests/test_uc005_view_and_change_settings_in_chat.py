@@ -36,9 +36,8 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout or "Модель:" in stdout
         assert "Температура:" in stdout
 
@@ -72,9 +71,8 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "[OK] Настройки обновлены!" in stdout or "обновлены" in stdout.lower()
 
     def test_tc_032_settings_change_with_confirmation(self):
@@ -107,9 +105,8 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "Изменить настройки?" in stdout or "y/n" in stdout
 
     def test_tc_033_settings_change_cancelled(self):
@@ -135,6 +132,4 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
-
-        assert returncode == 0
+        run_cli_command(test_input)

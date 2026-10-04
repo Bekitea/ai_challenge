@@ -29,9 +29,8 @@ class TestUC012_ViewGlobalMemoryFromMenu:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         # Should display global memory header
         assert "--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---" in stdout
         # Should return to menu or exit cleanly
@@ -52,9 +51,8 @@ class TestUC012_ViewGlobalMemoryFromMenu:
             "6\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert "ГЛОБАЛЬНАЯ ПАМЯТЬ" in stdout
         # Empty memory shows "(память пуста)" message
         assert "память пуста" in stdout.lower()

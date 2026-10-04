@@ -256,7 +256,9 @@ class PersistentAgentRepository(AgentRepository):
             agent: Агент для сохранения.
         """
         with self._get_session() as session:
-            orm = session.get(AgentORM, agent.agent_id)
+            orm = None
+            if agent.agent_id is not None:
+                orm = session.get(AgentORM, agent.agent_id)
             if orm is None:
                 orm = AgentORM()
                 session.add(orm)

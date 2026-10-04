@@ -34,9 +34,8 @@ class TestUC007_StopOngoingGeneration:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         # CLI shows "Генерация остановлена." even when idle in mock mode
         assert (
             "Генерация" in stdout
@@ -63,9 +62,7 @@ class TestUC007_StopOngoingGeneration:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
-
-        assert returncode == 0
+        run_cli_command(test_input)
 
     def test_tc_035_stop_command_preserves_chat_state(self):
         """
@@ -89,9 +86,8 @@ class TestUC007_StopOngoingGeneration:
             "4\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0
         assert (
             "Генерация не активна" in stdout or "[INFO]" in stdout or "[WARN]" in stdout
         )

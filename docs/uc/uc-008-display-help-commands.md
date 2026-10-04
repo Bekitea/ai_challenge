@@ -30,7 +30,7 @@
 | ---- | -------------- | ---------------------- |
 | 1    | Enter chat     | Prompt displayed       |
 | 2    | Type "/help"   | Command list displayed |
-| 3    | Verify content | All 12 commands listed in the exact `HELP_COMMANDS` order (§4.5.3 `/help`) |
+| 3    | Verify content | All 13 commands listed in the exact `HELP_COMMANDS` order (§4.5.3 `/help`) |
 | 4    | Verify return  | Back to prompt         |
 
 ---

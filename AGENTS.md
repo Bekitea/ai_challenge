@@ -49,6 +49,17 @@ New feature flow: add use case file in `docs/uc/` and register it in the UC inde
 - Пересборка musl-бинарника: `sh storage/extensions/sqlite_vec/build.sh` (нужен пакет `sqlite-dev` и `gcc`). Ключ `-include sys/types.h` обязателен на musl.
 - Быстрая проверка (в т.ч. на Windows с `vec0.dll`): `poetry run python test_vec.py`.
 
+## Секреты
+
+- **Никогда не читай `.env`.** Этот файл содержит секреты (API-ключи, токены). Если нужно узнать переменную окружения — смотри `config.py`/документацию или переменные процесса, но не открывай `.env`. Это правило распространяется на любые `.env*`-файлы.
+
+## Reranking (bge-reranker-v2-m3)
+
+- Модель реранкинга `bge-reranker-v2-m3` на CPU работает в **отдельном HTTP-контейнере** `reranker_service/` (Python 3.12 + torch/sentence-transformers). Основной код на Python 3.14/Alpine torch не тянет — взаимодействие только по HTTP (TEI-совместимый `POST /rerank`).
+- Переключатель per-chat: команда `/rerank on|off` (bare `/rerank` показывает состояние); по умолчанию реранкинг включён (`AgentSettings.reranker_enabled=True`). Состояние также видно в `/rag` и `/settings`.
+- Запуск сервиса: `cd reranker_service && docker compose up --build` (порт 18080; на Windows — через Docker Desktop). Адрес — `RERANKER_BASE_URL` (по умолчанию `http://127.0.0.1:18080`, **не** `localhost`: на Windows `localhost` → `::1` и может попасть в чужой процесс), глобальный выключатель — `RERANKER_ENABLED`.
+- В `APPLICATION_MODE=TEST` подключается `MockRerankerProvider` (без сети); в проде — `HttpRerankerProvider`. При недоступном сервисе `RagService` деградирует к векторному порядку (circuit breaker).
+
 ## Misc
 
 - `mcp/` contains MCP servers (`time_mcp.py`, `open_alex_mcp.py`); root `*_mcp_test.py` files are manual test scripts for them, not pytest suites.

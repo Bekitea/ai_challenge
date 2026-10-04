@@ -94,6 +94,10 @@ class RagService:
         self._candidate_limit_total = candidate_limit_total
         self._final_top_k = final_top_k
         self._reranker_enabled = reranker_enabled
+        # Circuit breaker: после первой ошибки провайдера не пытаемся
+        # реранжить до перезапуска процесса (сервис реранкинга может быть
+        # не запущен — не тормозим каждый запрос сетевыми таймаутами).
+        self._reranker_unavailable = False
 
     def retrieve(
         self,
@@ -101,11 +105,14 @@ class RagService:
         query_text: str,
         max_candidates: int | None = None,
         final_top_k: int | None = None,
+        reranker_enabled: bool | None = None,
     ) -> list[RagContextChunk]:
         """Возвращает релевантные чанки по подключённым базам знаний агента.
 
-        Если у агента нет подключённых баз знаний, возвращает пустой список,
-        НЕ выполняя эмбеддинг запроса и реранкинг.
+        ``reranker_enabled`` задаёт per-chat флаг: ``None`` — использовать
+        глобальный дефолт (``RERANKER_ENABLED``). Если у агента нет
+        подключённых баз знаний, возвращает пустой список, НЕ выполняя
+        эмбеддинг запроса и реранкинг.
         """
         if agent_id is None or not query_text.strip():
             return []
@@ -162,17 +169,31 @@ class RagService:
 
         chunks = list(candidates.values())
 
-        if self._reranker_enabled and self._model_service.reranker_available:
-            reranked = self._model_service.rerank(
-                query_text, [chunk.text for chunk in chunks], top_n=top_k
-            )
-            ordered: list[RagContextChunk] = []
-            for result in reranked:
-                if 0 <= result.index < len(chunks):
-                    chunk = chunks[result.index]
-                    chunk.rerank_score = result.score
-                    ordered.append(chunk)
-            return ordered[:top_k]
+        use_reranker = (
+            self._reranker_enabled if reranker_enabled is None else reranker_enabled
+        )
+        if (
+            use_reranker
+            and not self._reranker_unavailable
+            and self._model_service.reranker_available
+        ):
+            try:
+                reranked = self._model_service.rerank(
+                    query_text, [chunk.text for chunk in chunks], top_n=top_k
+                )
+                ordered: list[RagContextChunk] = []
+                for result in reranked:
+                    if 0 <= result.index < len(chunks):
+                        chunk = chunks[result.index]
+                        chunk.rerank_score = result.score
+                        ordered.append(chunk)
+                return ordered[:top_k]
+            except RerankerProviderError:
+                self._reranker_unavailable = True
+                logger.warning(
+                    "Реранкинг недоступен, переходим к векторному порядку",
+                    exc_info=True,
+                )
 
         chunks.sort(
             key=lambda chunk: (

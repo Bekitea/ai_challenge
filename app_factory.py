@@ -10,13 +10,19 @@ from config import (
     RAG_CANDIDATE_LIMIT_TOTAL,
     RAG_FINAL_TOP_K,
     RAG_VECTOR_TOP_K_PER_KB,
+    RERANKER_BASE_URL,
+    RERANKER_BATCH_SIZE,
     RERANKER_ENABLED,
+    RERANKER_MODEL_NAME,
+    RERANKER_RETRY_COUNT,
+    RERANKER_TIMEOUT,
     YANDEX_API_KEY,
     YANDEX_FOLDER_ID,
 )
 from embedding_providers import OllamaEmbeddingProvider
 from llm_providers import MockLlmProvider, YandexCloudLlmProvider
 from rag_service import RagModelService, RagService
+from reranker_providers import HttpRerankerProvider, MockRerankerProvider
 from storage.agent_repositories import PersistentAgentRepository
 from storage.db_connection import DatabaseConnection
 from storage.global_memory_repository import FileGlobalMemoryRepository
@@ -64,6 +70,7 @@ from use_cases import (
     SelectChatUseCase,
     SelectContextStrategyUseCase,
     SendMessageUseCase,
+    SetRerankerEnabledUseCase,
     ShowChatInfoUseCase,
     ShowHistoryUseCase,
     ShowSummaryUseCase,
@@ -81,6 +88,7 @@ class UseCasesBundle:
     send_message: SendMessageUseCase
     view_settings: ViewSettingsUseCase
     change_settings: ChangeSettingsUseCase
+    set_reranker_enabled: SetRerankerEnabledUseCase
     show_history: ShowHistoryUseCase
     show_summary: ShowSummaryUseCase
     show_chat_info: ShowChatInfoUseCase
@@ -178,8 +186,21 @@ def initialize_application() -> UseCasesBundle:
         batch_size=EMBEDDING_BATCH_SIZE,
         timeout=EMBEDDING_TIMEOUT,
     )
-    # Реранкер выключен по умолчанию (RERANKER_ENABLED=false).
-    rag_model_service = RagModelService(embedder=embedder, reranker=None)
+    # Реранкер: в тестовом режиме — детерминированный мок без сети;
+    # в проде — HTTP-сервис (reranker_service/) при RERANKER_ENABLED.
+    if mode_config.use_mock_provider:
+        reranker = MockRerankerProvider(model_name=RERANKER_MODEL_NAME)
+    elif RERANKER_ENABLED:
+        reranker = HttpRerankerProvider(
+            base_url=RERANKER_BASE_URL,
+            model_name=RERANKER_MODEL_NAME,
+            batch_size=RERANKER_BATCH_SIZE,
+            timeout=RERANKER_TIMEOUT,
+            retry_count=RERANKER_RETRY_COUNT,
+        )
+    else:
+        reranker = None
+    rag_model_service = RagModelService(embedder=embedder, reranker=reranker)
 
     knowledge_base_repository = KnowledgeBaseRepository(
         db_connection.get_session, vector_store
@@ -222,6 +243,7 @@ def initialize_application() -> UseCasesBundle:
         send_message=send_message,
         view_settings=ViewSettingsUseCase(),
         change_settings=ChangeSettingsUseCase(repository),
+        set_reranker_enabled=SetRerankerEnabledUseCase(),
         show_history=ShowHistoryUseCase(),
         show_summary=ShowSummaryUseCase(),
         show_chat_info=ShowChatInfoUseCase(),

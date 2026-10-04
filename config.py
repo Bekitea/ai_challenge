@@ -44,12 +44,16 @@ EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "1024"))
 EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "16"))
 EMBEDDING_TIMEOUT = int(os.getenv("EMBEDDING_TIMEOUT", "60"))
 
-# Реранкер по умолчанию отключён: без него сразу берём RAG_FINAL_TOP_K.
-RERANKER_ENABLED = os.getenv("RERANKER_ENABLED", "false").lower() in ("1", "true", "yes")
-RERANKER_BASE_URL = os.getenv("RERANKER_BASE_URL", OLLAMA_BASE_URL)
+# Реранкер по умолчанию включён (per-chat флаг в AgentSettings тоже по
+# умолчанию True). Сервис реранкинга — отдельный HTTP-контейнер
+# (см. reranker_service/). Адрес — 127.0.0.1, а не localhost: на Windows
+# localhost резолвится в ::1 и может попасть в чужой процесс на этом порту.
+RERANKER_ENABLED = os.getenv("RERANKER_ENABLED", "true").lower() in ("1", "true", "yes")
+RERANKER_BASE_URL = os.getenv("RERANKER_BASE_URL", "http://127.0.0.1:18080")
 RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "bge-reranker-v2-m3")
 RERANKER_BATCH_SIZE = int(os.getenv("RERANKER_BATCH_SIZE", "32"))
 RERANKER_TIMEOUT = int(os.getenv("RERANKER_TIMEOUT", "60"))
+RERANKER_RETRY_COUNT = int(os.getenv("RERANKER_RETRY_COUNT", "1"))
 
 RAG_CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "800"))
 RAG_CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "120"))

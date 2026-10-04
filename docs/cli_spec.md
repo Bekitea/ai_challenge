@@ -390,6 +390,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   /report - перейти в фазу отчета
   /mcp - показать подключённые к чату MCP и подключить новые
   /rag - базы знаний чата: подключить или отключить
+  /rerank - включить или отключить реранкинг (on|off)
   /help - показать этот список команд
 ```
 
@@ -481,6 +482,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   1. Display attached knowledge bases:
      ```
      --- БАЗЫ ЗНАНИЙ ЧАТА: {chat_name} ---
+     [INFO] Реранкинг: включён|отключён.
        1. {name} (документов: {n}, чанков: {m})
      ```
      If none: `К этому чату ещё не подключено ни одной базы знаний.`
@@ -494,8 +496,19 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
      Prompt: `Выберите действие (0-2):`
   3. **Attach**: lists knowledge bases not yet attached; selection prompt `Выберите базу знаний (номер, 0 - отмена):`. Success/idempotent message `[OK] База знаний '{name}' подключена к чату.` / `[OK] ... уже подключена к чату.`; no available bases → `[INFO] Нет доступных баз знаний для подключения. Создайте их в меню 'Базы знаний'.`
   4. **Detach**: selects from attached; message `[OK] База знаний '{name}' отключена от чата.` or `[INFO] К чату не подключено ни одной базы знаний.`
-- **RAG behaviour**: while at least one knowledge base is attached, every user message triggers a RAG search before the LLM request; with none attached, no embedding or search is performed. Search results are injected into the system prompt (see UC-020).
+- **RAG behaviour**: while at least one knowledge base is attached, every user message triggers a RAG search before the LLM request; with none attached, no embedding or search is performed. Search results are injected into the system prompt (see UC-020). If the chat's reranking is enabled, candidates are re-scored by the reranker service before the top chunks are selected; when the service is unavailable the search degrades to vector order.
 - **Side Effects**: attachment is stored in the `agent_knowledge_bases` table; detach removes the link.
+
+##### `/rerank`
+
+- **Action**: Toggle per-chat reranking of RAG search results (`set_reranker_enabled`)
+- **Flow**:
+  1. `/rerank on` → `[OK] Реранкинг включён.`
+  2. `/rerank off` → `[OK] Реранкинг отключён.`
+  3. Bare `/rerank` → `[INFO] Реранкинг: включён|отключён.`
+  4. Any other argument → `[WARN] Использование: /rerank on|off`
+- **Behaviour**: reranking is enabled by default for every chat (`AgentSettings.reranker_enabled=True`). The flag is persisted with the chat settings and copied when branching. It only takes effect when the reranker provider is configured/available (see `RERANKER_ENABLED`); otherwise RAG falls back to vector order.
+- **Side Effects**: the flag is stored in the agent's `settings_json`
 
 #### 4.5.4 Error Handling
 

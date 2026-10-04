@@ -80,6 +80,7 @@ class AgentSettings:
     temperature: float | None = None
     reasoning_effort: str | None = None
     context_window_size: int | None = None
+    reranker_enabled: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         """Преобразует настройки в словарь, отфильтровывая None значения."""
@@ -92,6 +93,7 @@ class AgentSettings:
                 "temperature": self.temperature,
                 "reasoning_effort": self.reasoning_effort,
                 "context_window_size": self.context_window_size,
+                "reranker_enabled": self.reranker_enabled,
             }.items()
             if v is not None
         }
@@ -456,7 +458,11 @@ class Agent:
         if self._rag_service is None or self.agent_id is None:
             return []
         try:
-            return self._rag_service.retrieve(self.agent_id, query)
+            return self._rag_service.retrieve(
+                self.agent_id,
+                query,
+                reranker_enabled=self._settings.reranker_enabled,
+            )
         except Exception:
             logger.debug(
                 "RAG-поиск недоступен, диалог продолжен без контекста",

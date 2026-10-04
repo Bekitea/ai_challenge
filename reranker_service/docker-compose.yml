@@ -1,0 +1,33 @@
+services:
+  reranker:
+    build:
+      context: .
+      args:
+        # Пусто = модель скачается при первом старте. Укажите id модели,
+        # чтобы запечь её в образ для офлайн-работы:
+        # PREFETCH_MODEL: BAAI/bge-reranker-v2-m3
+        PREFETCH_MODEL: ""
+    # Порт 18080, чтобы не конфликтовать с другими сервисами на 8080.
+    # На Windows подключайтесь по 127.0.0.1 (localhost -> ::1).
+    ports:
+      - "18080:18080"
+    environment:
+      - RERANKER_MODEL_ID=BAAI/bge-reranker-v2-m3
+      - RERANKER_DEVICE=cpu
+      - PORT=18080
+    volumes:
+      - reranker_models:/models
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:18080/health', timeout=5).status == 200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Первый старт включает скачивание модели (~2.3 ГБ).
+      start_period: 600s
+
+volumes:
+  reranker_models:

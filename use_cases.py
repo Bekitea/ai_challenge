@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from agents import (
@@ -60,6 +60,7 @@ class UseCasesBundle:
     send_message: SendMessageUseCase
     view_settings: ViewSettingsUseCase
     change_settings: ChangeSettingsUseCase
+    set_reranker_enabled: SetRerankerEnabledUseCase
     show_history: ShowHistoryUseCase
     show_summary: ShowSummaryUseCase
     show_chat_info: ShowChatInfoUseCase
@@ -263,6 +264,16 @@ class ChangeSettingsUseCase:
             new_settings: Новые настройки.
         """
         agent.update_settings(new_settings)
+
+
+class SetRerankerEnabledUseCase:
+    """Use case включения/отключения реранкинга для конкретного чата."""
+
+    def execute(self, agent: Agent, enabled: bool) -> bool:
+        """Обновляет per-chat флаг реранкинга, сохраняя остальные настройки."""
+        current = agent.get_settings()
+        agent.update_settings(replace(current, reranker_enabled=bool(enabled)))
+        return bool(enabled)
 
 
 class ShowHistoryUseCase:
@@ -1138,12 +1149,14 @@ class RetrieveRagContextUseCase:
         query_text: str,
         max_candidates: int | None = None,
         final_top_k: int | None = None,
+        reranker_enabled: bool | None = None,
     ) -> list[RagContextChunk]:
         return self._rag_service.retrieve(
             agent_id=agent_id,
             query_text=query_text,
             max_candidates=max_candidates,
             final_top_k=final_top_k,
+            reranker_enabled=reranker_enabled,
         )
 
 

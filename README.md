@@ -74,6 +74,56 @@ celery -A celery_app beat --loglevel=info
 
 После запуска всех процессов периодические задачи будут выполняться по расписанию, заданному в `celery_app.py`.
 
+## Реранкинг (RAG)
+
+Для переупорядочивания найденных RAG-чанков по релевантности используется
+кросс-энкодер `bge-reranker-v2-m3` на CPU. Модель работает в **отдельном
+HTTP-сервисе** (`reranker_service/`, Python 3.12 + torch/sentence-transformers),
+поэтому основное приложение (Python 3.14/Alpine) не тянет torch и общается с
+ним по TEI-совместимому эндпоинту `POST /rerank`.
+
+### Запуск сервиса (Docker)
+
+```bash
+cd reranker_service
+docker compose up --build
+```
+
+Сервис слушает `http://127.0.0.1:18080` (порт `18080`, чтобы не конфликтовать с
+часто занятым `8080`). На Windows запускайте тот же `docker compose` через
+Docker Desktop и обращайтесь по `127.0.0.1`, а не `localhost`: `localhost`
+резолвится в `::1` и может попасть в чужой процесс на том же порту. При первом
+старте модель (~2.3 ГБ) скачивается в volume `reranker_models`; чтобы «запечь»
+её в образ для офлайн-работы, передайте
+`--build-arg PREFETCH_MODEL=BAAI/bge-reranker-v2-m3`.
+
+Проверка:
+
+```bash
+curl http://127.0.0.1:18080/health
+curl -X POST http://127.0.0.1:18080/rerank \
+  -H "Content-Type: application/json" \
+  -d '{"query": "capital of France", "texts": ["Paris is the capital", "Cats are pets"]}'
+```
+
+### Настройка приложения
+
+| Переменная | По умолчанию | Назначение |
+| --- | --- | --- |
+| `RERANKER_ENABLED` | `true` | Глобальный выключатель реранкинга |
+| `RERANKER_BASE_URL` | `http://127.0.0.1:18080` | Адрес сервиса реранкинга |
+| `RERANKER_MODEL_NAME` | `bge-reranker-v2-m3` | Имя модели (информационно) |
+| `RERANKER_BATCH_SIZE` | `32` | Размер батча |
+| `RERANKER_TIMEOUT` | `60` | Таймаут HTTP-запроса, с |
+| `RERANKER_RETRY_COUNT` | `1` | Число повторов при ошибке |
+
+Реранкинг включён по умолчанию для каждого чата. Управление — командой в чате:
+`/rerank on`, `/rerank off`, bare `/rerank` показывает состояние (оно также
+видно в `/rag` и `/settings`). Если сервис недоступен, RAG-поиск деградирует к
+векторному порядку (circuit breaker отключает повторные попытки до перезапуска
+процесса). В `APPLICATION_MODE=TEST` используется `MockRerankerProvider` без
+сети, поэтому e2e-тесты не требуют запущенного сервиса.
+
 ## Тестирование
 
 ### Запуск E2E тестов CLI
@@ -231,6 +281,13 @@ python cli_tests/smoke_test.py
 **Реализации:**
 - `YandexCloudLlmProvider` — production провайдер для Yandex Cloud API
 - `MockLlmProvider` — тестовый провайдер для e2e тестов
+
+#### 6.1. RAG-провайдеры
+- `embedding_providers.py` — `OllamaEmbeddingProvider` (эмбеддинги через Ollama)
+- `reranker_providers.py` — `HttpRerankerProvider` (HTTP-сервис `reranker_service/`),
+  `MockRerankerProvider` (тестовый режим)
+- `reranker_service/` — отдельный CPU-контейнер с моделью `bge-reranker-v2-m3`
+  (см. раздел «Реранкинг (RAG)»)
 
 #### 7. `agents.py` — Бизнес-объекты
 Эти классы тоже относятся к бизнес-логике приложения, они могут напрямую использовать API репозиториев, провайдеров и так далее.

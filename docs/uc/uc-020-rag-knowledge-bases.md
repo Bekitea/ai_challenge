@@ -37,6 +37,10 @@
 13. On every subsequent user message the agent retrieves relevant chunks from
     attached bases and injects them into the system prompt before the LLM call
 14. User may detach a base via `/rag` action `2`
+15. User enters `/rerank off` to disable reranking for the chat (or `/rerank on`
+    to re-enable it); bare `/rerank` prints the current state. Reranking is
+    enabled by default and re-scores retrieved candidates before the top chunks
+    are selected
 
 ## Alternative Flows
 
@@ -71,6 +75,14 @@
 - **A8: Attach / detach is idempotent**
   - Step 12: attaching an already-attached base or detaching a non-attached
     base reports success without side effects
+
+- **A9: Reranker service unavailable**
+  - Step 15: reranking is requested but the reranker service is not available →
+    the RAG search degrades to vector order (the dialogue still proceeds); a
+    circuit breaker avoids repeated failed calls until process restart
+
+- **A10: Invalid `/rerank` argument**
+  - Step 15: `/rerank foo` → `[WARN] Использование: /rerank on|off`
 
 ## Postconditions
 
@@ -229,3 +241,47 @@
 | ---- | ---------------------------------------- | ------------------------------------------------ |
 | 1    | `3`, select base, enter the folder path   | Only the non-empty file is indexed: `[OK] notes.txt — чанков: {n}`; the empty file is skipped without `[ERROR]` |
 | 2    | `4`, select base                          | Only the non-empty document listed as `[ready]`  |
+
+---
+
+### TC-135: Reranking Enabled By Default
+
+**Related UC**: UC-020 step 15
+
+| Step | Action       | Expected Result                      |
+| ---- | ------------ | ------------------------------------ |
+| 1    | Enter `/rerank` | `[INFO] Реранкинг: включён.`      |
+
+---
+
+### TC-136: Toggle Reranking
+
+**Related UC**: UC-020 step 15
+
+| Step | Action             | Expected Result                       |
+| ---- | ------------------ | ------------------------------------- |
+| 1    | `/rerank off`      | `[OK] Реранкинг отключён.`            |
+| 2    | `/rerank`          | `[INFO] Реранкинг: отключён.`         |
+| 3    | `/rerank on`       | `[OK] Реранкинг включён.`             |
+| 4    | `/rerank`          | `[INFO] Реранкинг: включён.`          |
+
+---
+
+### TC-137: Invalid Rerank Argument
+
+**Related UC**: UC-020 A10
+
+| Step | Action          | Expected Result                          |
+| ---- | --------------- | ---------------------------------------- |
+| 1    | `/rerank maybe` | `[WARN] Использование: /rerank on|off`   |
+
+---
+
+### TC-138: Rerank State In RAG Menu
+
+**Related UC**: UC-020 step 15, §4.5.3 `/rag`
+
+| Step | Action             | Expected Result                                       |
+| ---- | ------------------ | ----------------------------------------------------- |
+| 1    | `/rerank off`      | `[OK] Реранкинг отключён.`                            |
+| 2    | `/rag` then `0`    | `--- БАЗЫ ЗНАНИЙ ЧАТА: ...` and `[INFO] Реранкинг: отключён.` |

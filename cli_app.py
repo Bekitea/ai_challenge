@@ -32,6 +32,7 @@ HELP_COMMANDS = [
     "/report - перейти в фазу отчета",
     "/mcp - показать подключённые к чату MCP и подключить новые",
     "/rag - базы знаний чата: подключить или отключить",
+    "/rerank - включить или отключить реранкинг (on|off)",
     "/help - показать этот список команд",
 ]
 
@@ -210,6 +211,11 @@ class CLIChat:
             top_k=top_k if top_k > 0 else None,
             reasoning_effort=reasoning_effort,
             context_window_size=context_window_size,
+            reranker_enabled=(
+                current_settings.reranker_enabled
+                if current_settings is not None
+                else True
+            ),
         )
 
     def get_default_agent_settings(self) -> AgentSettings:
@@ -451,6 +457,7 @@ class CLIChat:
             else 200_000
         )
         print(f"  Размер контекстного окна: {context_window} токенов")
+        print(f"  Реранкинг: {'вкл' if settings.reranker_enabled else 'выкл'}")
         print("-" * 40)
 
     def print_settings(self):
@@ -468,7 +475,7 @@ class CLIChat:
             return
 
         print(f"\n--- НАСТРОЙКИ ДЛЯ '{self.current_agent.name}' ---")
-        new_settings = self.get_agent_settings()
+        new_settings = self.get_agent_settings(self.current_agent.get_settings())
         self.use_cases.change_settings.execute(self.current_agent, new_settings)
         print("\n[OK] Настройки обновлены!")
         self._print_current_settings()
@@ -973,6 +980,30 @@ class CLIChat:
         print("[WARN] Неверный номер документа.")
         return None
 
+    def _print_rerank_state(self, agent):
+        """Печатает текущее состояние реранкинга для чата."""
+        state = "включён" if agent.get_settings().reranker_enabled else "отключён"
+        print(f"[INFO] Реранкинг: {state}.")
+
+    def rerank_command(self, argument: str):
+        """Обрабатывает команду /rerank on|off (без аргумента — показать)."""
+        agent = self.current_agent
+        if not agent:
+            print("\n[WARN] Сначала выберите или создайте чат!")
+            return
+
+        arg = argument.strip().lower()
+        if arg == "on":
+            self.use_cases.set_reranker_enabled.execute(agent, True)
+            print("\n[OK] Реранкинг включён.")
+        elif arg == "off":
+            self.use_cases.set_reranker_enabled.execute(agent, False)
+            print("\n[OK] Реранкинг отключён.")
+        elif arg == "":
+            self._print_rerank_state(agent)
+        else:
+            print("\n[WARN] Использование: /rerank on|off")
+
     def rag_menu(self):
         """Обрабатывает команду /rag: подключение/отключение баз знаний чата."""
         agent = self.current_agent
@@ -981,6 +1012,7 @@ class CLIChat:
             return
 
         print(f"\n--- БАЗЫ ЗНАНИЙ ЧАТА: {agent.name} ---")
+        self._print_rerank_state(agent)
         attached = self.use_cases.list_agent_knowledge_bases.execute(agent)
         if attached:
             for index, kb in enumerate(attached, 1):
@@ -1406,6 +1438,10 @@ class CLIChat:
 
                 if user_input.lower() == "/rag":
                     self.rag_menu()
+                    continue
+
+                if user_input.lower().startswith("/rerank"):
+                    self.rerank_command(user_input[len("/rerank") :])
                     continue
 
                 print("\n[AGENT] печатает...", end="", flush=True)

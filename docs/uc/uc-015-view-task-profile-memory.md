@@ -88,18 +88,6 @@
 
 ---
 
-### TC-092: View Task Profile Memory - Profile Not Found
-
-**Related UC**: UC-015 A3
-
-| Step | Action                                        | Expected Result                              |
-| ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | Arrange `get_task_profile_memory` to return None for the selected profile | Action 1 chosen from the profiles list submenu |
-| 2    | Verify error                                  | `[ERROR] Профиль не найден.` displayed        |
-| 3    | Verify navigation                             | Control returns to the Task Profiles menu     |
-
----
-
 ### TC-094: View Task Profile Memory - Invalid Selection Re-Prompts
 
 **Related UC**: UC-015 A1

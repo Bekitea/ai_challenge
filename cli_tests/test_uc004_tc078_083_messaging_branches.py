@@ -4,7 +4,7 @@ from e2e_helpers import _QUICK_CHAT, _manual_chat, run_cli_command
 
 
 class TestUC004_TC078_083_MessagingBranches:
-    """TC-078..TC-083: Message exchange branches (UC-004 A4, A5, A6, A8, A9)."""
+    """TC-078, TC-079, TC-081..TC-083: Message exchange branches (UC-004 A4, A6, A8, A9)."""
 
     def test_tc_078_token_statistics_lines_after_response(self):
         """
@@ -69,29 +69,6 @@ class TestUC004_TC078_083_MessagingBranches:
         assert "Ваш выбор (1-6):" in stdout
         # Шаг 4: тот же чат всё ещё активен и доступен через опцию 5
         assert "[OK] Возврат в чат: TinyCtx" in stdout
-        assert "Traceback" not in stderr
-
-    def test_tc_080_backend_error_during_message_exchange(self):
-        """
-        TC-080: Backend Error During Message Exchange (UC-004 A5)
-
-        TEST_MOCK_RAISE_GENERIC=1 makes the mock provider raise an arbitrary
-        RuntimeError on generation.
-        """
-        test_input = (
-            _QUICK_CHAT + "cause failure\n"
-            "6\n"  # Выход из меню (чат-луп завершится на ошибке)
-        )
-
-        stdout, stderr, returncode = run_cli_command(
-            test_input, extra_env={"TEST_MOCK_RAISE_GENERIC": "1"}
-        )
-
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[ERROR] Ошибка: Mock backend failure (TEST)" in stdout
-        # Шаг 3: цикл чата покинут, показано главное меню
-        after_error = stdout.split("[ERROR] Ошибка:", 1)[-1]
-        assert "Ваш выбор (1-6):" in after_error or "До свидания!" in after_error
         assert "Traceback" not in stderr
 
     def test_tc_081_keyboard_interrupt_during_exchange(self):

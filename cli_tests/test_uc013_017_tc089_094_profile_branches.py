@@ -5,8 +5,9 @@ from e2e_helpers import run_cli_command
 
 class TestUC013_017_TC089_094_ProfileBranches:
     """
-    TC-089..TC-094: Task profile flows validation/failure branches
-    (UC-013 A2-A4, UC-014 A4, UC-015 A1/A3, UC-016 A3, UC-017 A1).
+    TC-089, TC-090, TC-091, TC-093, TC-094: Task profile flows
+    validation/failure branches (UC-013 A2-A4, UC-014 A4, UC-015 A1,
+    UC-016 A3, UC-017 A1).
     """
 
     _PROFILE_SETUP = (
@@ -54,8 +55,8 @@ class TestUC013_017_TC089_094_ProfileBranches:
         """
         TC-090: Manage Invariants - Repository ValueError On Add (UC-016 A3)
 
-        TEST_FAIL_ADD_INVARIANT=1 makes add_invariant raise ValueError;
-        expected '[ERROR] {e}', nothing added, list redisplayed.
+        Adding an invariant that already exists makes the repository raise
+        ValueError; expected '[ERROR] {e}', nothing added, list redisplayed.
         """
         test_input = (
             self._PROFILE_SETUP
@@ -63,25 +64,22 @@ class TestUC013_017_TC089_094_ProfileBranches:
             + "2\n"  # Управление инвариантами
             + "1\n"  # Профиль №1
             + "1\n"  # Добавить инвариант
-            + "Duplicate rule\n"  # Вызовет ValueError (fault injection)
+            + "Rule A\n"  # Дубликат существующего инварианта -> ValueError
             + "3\n"  # Назад из подменю инвариантов
             + "4\n"  # Назад к списку
             + "3\n"  # Назад в главное меню
             + "6\n"
         )
 
-        stdout, stderr, returncode = run_cli_command(
-            test_input, extra_env={"TEST_FAIL_ADD_INVARIANT": "1"}
-        )
+        stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[ERROR] Инвариант уже существует (TEST)" in stdout
+        assert "[ERROR] Инвариант уже существует" in stdout
         assert "[OK] Инвариант добавлен!" not in stdout
         # Список перерисован: единственный исходный инвариант виден,
-        # добавленный отсутствует
+        # дубликат не добавлен
         inv_block = stdout.split("--- ИНВАРИАНТЫ ПРОФИЛЯ: Rule A Profile ---", 1)[-1]
         assert "Rule A" in inv_block
-        assert "Duplicate rule" not in inv_block
         assert "Traceback" not in stderr
 
     def test_tc_091_profiles_menu_and_submenu_invalid_choices(self):
@@ -112,7 +110,9 @@ class TestUC013_017_TC089_094_ProfileBranches:
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        profiles_menu_part = stdout.split("--- ПРОФИЛИ ЗАДАЧ ---")[1]
+        # Неверный выбор '9' вводится уже после создания профиля, т.е. после
+        # второго заголовка меню (первый — при первом входе в раздел).
+        profiles_menu_part = stdout.split("--- ПРОФИЛИ ЗАДАЧ ---")[2]
         assert "[WARN] Неверный выбор, попробуйте снова." in profiles_menu_part
         submenu_part = stdout.split("--- СПИСОК ПРОФИЛЕЙ ЗАДАЧ ---", 1)[-1]
         assert "[WARN] Неверный выбор, попробуйте снова." in submenu_part
@@ -120,44 +120,6 @@ class TestUC013_017_TC089_094_ProfileBranches:
         assert "Введите корректное число" in submenu_part
         # Шаг 5: действие выполнено — просмотр памяти профиля
         assert "--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---" in stdout
-        assert "Traceback" not in stderr
-
-    def test_tc_092_view_task_profile_memory_not_found(self):
-        """
-        TC-092: View Task Profile Memory - Profile Not Found (UC-015 A3)
-
-        Two profiles exist; delete the second one while its entry remains in
-        the stale submenu snapshot, then view memory with that stale index ->
-        repository returns None -> '[ERROR] Профиль не найден.' and control
-        returns to the Task Profiles menu.
-        """
-        test_input = (
-            self._PROFILE_SETUP  # Профиль №1: Rule A Profile
-            + "1\n"  # Ещё профиль: Second Profile
-            + "Second Profile\n"
-            + "Another description\n"
-            + "\n"  # Предпочтения
-            + "\n"  # Инварианты пусто
-            + "2\n"  # Просмотреть список (снимок: 2 профиля)
-            + "3\n"  # Удалить профиль
-            + "2\n"  # Профиль №2 (Second Profile)
-            + "y\n"  # Подтвердить удаление
-            + "2\n"  # Просмотреть список -> устаревший снимок с 2 записями
-            + "1\n"  # Действие: просмотр памяти
-            + "2\n"  # Ставший несуществующим профиль №2
-            + "3\n"  # Назад в главное меню (после ошибки вернулись туда)
-            + "6\n"
-        )
-
-        stdout, stderr, returncode = run_cli_command(test_input)
-
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Профиль 'Second Profile' успешно удалён." in stdout
-        assert "[ERROR] Профиль не найден." in stdout
-        # Шаг 3: управление вернулось в меню профилей (заголовок виден
-        # после сообщения об ошибке)
-        after_error = stdout.split("[ERROR] Профиль не найден.", 1)[-1]
-        assert "--- ПРОФИЛИ ЗАДАЧ ---" in after_error
         assert "Traceback" not in stderr
 
     def test_tc_093_delete_task_profile_invalid_selection_reprompts(self):

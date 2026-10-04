@@ -255,6 +255,7 @@ class DatabaseTaskProfileRepository(TaskProfileRepository):
     
     def is_profile_linked_to_agents(self, profile_id: str) -> bool:
         from sqlalchemy import select
+
         from storage.orm_models import AgentORM
         with self._get_session() as session:
             stmt = select(AgentORM).where(AgentORM.task_profile_id == profile_id)
@@ -274,10 +275,14 @@ class DatabaseTaskProfileRepository(TaskProfileRepository):
             orm = session.execute(stmt).scalars().first()
             if orm is None:
                 raise ValueError(f"Profile {profile_id} not found")
-            
+
+            stripped = text.strip()
+            if any(inv.text == stripped for inv in orm.invariants):
+                raise ValueError("Инвариант уже существует")
+
             inv_orm = TaskProfileInvariantORM(
                 profile_id=profile_id,
-                text=text.strip(),
+                text=stripped,
             )
             session.add(inv_orm)
             session.commit()

@@ -280,15 +280,15 @@ class CLIChat:
 
     def _select_context_strategy(self) -> ContextWindowStrategy:
         """Запрашивает у пользователя выбор стратегии управления контекстным окном."""
-        print("\n--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---")
-        print("1. DefaultStrategy (пересылка всех сообщений)")
-        print("2. SummarizationStrategy (суммаризация истории)")
-        print(
-            "3. KeyValueMemoryStrategy (JSON-суммаризация: цель, ограничения, предпочтения, решения, договоренности)"
-        )
-        print("4. SlidingWindowStrategy (скользящее окно: последние N сообщений)")
-
         while True:
+            print("\n--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---")
+            print("1. DefaultStrategy (пересылка всех сообщений)")
+            print("2. SummarizationStrategy (суммаризация истории)")
+            print(
+                "3. KeyValueMemoryStrategy (JSON-суммаризация: цель, ограничения, предпочтения, решения, договоренности)"
+            )
+            print("4. SlidingWindowStrategy (скользящее окно: последние N сообщений)")
+
             choice = (
                 input("\nВыберите стратегию (1-4, по умолчанию 1): ").strip() or "1"
             )

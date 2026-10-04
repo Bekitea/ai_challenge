@@ -139,16 +139,4 @@
 | 2    | Press Ctrl+C mid-flow (or feed end of input — EOFError)         | `Прервано пользователем.` displayed                                                     |
 | 3    | Verify navigation                                               | Chat loop exited, Main Menu displayed                                                    |
 
----
 
-### TC-087: Backend Error While Applying Settings
-
-**Related UC**: UC-005 A4
-
-| Step | Action                                                          | Expected Result                                                                       |
-| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| 1    | Arrange the `change_settings` use case to raise an exception    | Chat loop entered                                                                        |
-| 2    | Type "/settings", enter "y", complete all prompts               | `[ERROR] Ошибка: {message}` displayed                                                    |
-| 3    | Verify navigation                                               | Chat loop exited, Main Menu displayed                                                    |
-
----

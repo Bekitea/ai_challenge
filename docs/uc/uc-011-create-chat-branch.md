@@ -113,16 +113,4 @@
 | 2    | Verify new branch                                     | Strategy type = "SlidingWindowStrategy" |
 | 3    | Verify window_size copied                             | window_size = 15 in new branch          |
 
----
 
-### TC-088: Branch Creation Backend Error
-
-**Related UC**: UC-011 A3
-
-| Step | Action                                                          | Expected Result                                                                       |
-| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| 1    | Arrange the `create_branch` use case to raise an exception       | Chat loop entered                                                                        |
-| 2    | Type "/branch", provide a name                                    | `[ERROR] Ошибка при создании ветки: {e}` displayed                                       |
-| 3    | Verify state                                                    | Back to chat prompt; no switch happened — `current_agent` still points to original chat |
-
----

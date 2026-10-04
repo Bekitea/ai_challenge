@@ -129,18 +129,6 @@
 
 ---
 
-### TC-080: Backend Error During Message Exchange
-
-**Related UC**: UC-004 A5
-
-| Step | Action                                                          | Expected Result                                                                       |
-| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| 1    | Arrange the backend to raise an arbitrary exception on send     | Chat loop entered                                                                       |
-| 2    | Send any message                                                | `[ERROR] Ошибка: {message}` displayed                                                    |
-| 3    | Verify navigation                                               | Chat loop exited, Main Menu displayed                                                   |
-
----
-
 ### TC-081: Keyboard Interrupt During Exchange
 
 **Related UC**: UC-004 A6

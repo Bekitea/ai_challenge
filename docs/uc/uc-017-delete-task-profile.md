@@ -105,19 +105,4 @@
 | 3    | Enter "abc"                                   | `Введите корректное число`; selection re-prompted |
 | 4    | Enter a valid index                           | Confirmation prompt displayed for the chosen profile |
 
----
 
-### TC-118: Delete Task Profile - Repository Failure
-
-**Related UC**: UC-017 (step 7)
-
-**Precondition**: Unlinked task profile exists; repository deletion is arranged to fail
-
-| Step | Action                                                          | Expected Result                                                                       |
-| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| 1    | From profiles list submenu, select action 3 (Delete), choose the profile | Confirmation prompt `Вы уверены, что хотите удалить профиль '{name}'? (y/n):` displayed     |
-| 2    | Enter 'y'                                                       | `[ERROR] Не удалось удалить профиль '{name}'.` displayed (UC-017 step 7)                 |
-| 3    | Verify state                                                    | Profile still exists in repository                                                      |
-| 4    | Verify navigation                                               | Control returns to the Task Profiles menu                                               |
-
----

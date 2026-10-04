@@ -4,6 +4,8 @@
 
 AI Chat CLI — консольное приложение для взаимодействия с AI агентами (Yandex Cloud LLM via OpenAI-compatible API). Python >= 3.14.4, Poetry (`package-mode = false`, flat layout, no src package). README/docs/comments/UI strings are in Russian — keep new user-facing text and docstrings in Russian.
 
+**Language**: общение с пользователем и все ответы вести на русском языке.
+
 ## Setup & commands
 
 - `poetry install` — mandatory first step. Poetry's env is NOT in-project (configured `virtualenvs.in-project false`); the `.venv/` directory in the repo root is a stale artifact, ignore it. Run everything via `poetry run ...`.

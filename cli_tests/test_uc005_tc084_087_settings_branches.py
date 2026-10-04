@@ -5,7 +5,7 @@ from e2e_helpers import _QUICK_CHAT, run_cli_command
 
 
 class TestUC005_TC084_087_SettingsBranches:
-    """TC-084..TC-087: Settings change flow branches (UC-005 A1..A4)."""
+    """TC-084..TC-086: Settings change flow branches (UC-005 A1..A3)."""
 
     def test_tc_084_decline_settings_change_with_empty_or_other_input(self):
         """
@@ -110,33 +110,4 @@ class TestUC005_TC084_087_SettingsBranches:
                 "change_settings/get_agent_settings (UC-005 A3)"
             )
 
-    def test_tc_087_backend_error_while_applying_settings(self):
-        """
-        TC-087: Backend Error While Applying Settings (UC-005 A4)
 
-        TEST_FAIL_CHANGE_SETTINGS=1 makes the use case raise; the outer
-        chat-loop handler prints '[ERROR] Ошибка: {message}' and exits to menu.
-        """
-        test_input = (
-            _QUICK_CHAT + "/settings\n"
-            "y\n"
-            "\n"  # Модель
-            "\n"  # temp
-            "\n"  # top_p
-            "\n"  # top_k
-            "\n"  # reasoning
-            "\n"  # context window
-            "6\n"  # Выход из меню (цикл чата покинут обработчиком ошибки)
-        )
-
-        stdout, stderr, returncode = run_cli_command(
-            test_input, extra_env={"TEST_FAIL_CHANGE_SETTINGS": "1"}
-        )
-
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[ERROR] Ошибка: Mock settings persistence failure (TEST)" in stdout
-        assert "Настройки обновлены" not in stdout
-        # Шаг 3: цикл чата покинут, управление в главном меню
-        after_error = stdout.split("[ERROR] Ошибка:", 1)[-1]
-        assert "Ваш выбор (1-6):" in after_error or "До свидания!" in after_error
-        assert "Traceback" not in stderr

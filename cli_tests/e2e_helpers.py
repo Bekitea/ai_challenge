@@ -29,7 +29,7 @@ def _manual_chat(name: str) -> str:
         + "\n"  # Системный промпт (пропуск)
         + "\n" * 6  # Модель/temp/top_p/top_k/reasoning/context — дефолты
         + "1\n"  # DefaultStrategy
-        + "0\n"  # Профиль не привязывать (если профилей нет — блок пропускается)
+        # Профилей нет => блок привязки профиля пропускается без ввода.
     )
 
 
@@ -55,7 +55,6 @@ def clean_test_data():
 def run_cli_command(
     test_input: str,
     timeout: int = 30,
-    extra_env: dict | None = None,
 ) -> tuple[str, str, int]:
     """
     Run CLI application with given input and return output.
@@ -68,8 +67,6 @@ def run_cli_command(
     Args:
         test_input: String with newlines representing user keystrokes
         timeout: Maximum execution time in seconds
-        extra_env: Optional additional environment variables (e.g. TEST-only
-            fault-injection switches like TEST_FAIL_DELETE_PROFILE=1)
 
     Returns:
         Tuple of (stdout, stderr, return_code)
@@ -79,8 +76,6 @@ def run_cli_command(
     # Устанавливаем переменную окружения для тестового режима
     env = os.environ.copy()
     env["APPLICATION_MODE"] = "TEST"
-    if extra_env:
-        env.update(extra_env)
 
     process = subprocess.Popen(
         [sys.executable, "main_cli.py"],

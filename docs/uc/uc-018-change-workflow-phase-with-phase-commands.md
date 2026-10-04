@@ -34,7 +34,7 @@
   - Commands are matched case-insensitively; the transition succeeds exactly as in the main scenario
 
 - **A4: Phase Visible In Chat Header And /info**
-  - After any successful transition: entering the chat loop replays the header `--- ЧАТ: {name} [Фаза: {PHASE}] ---` (§4.5.1) and `/info` shows `Текущая фаза: {PHASE}` (§4.5.3 `/info`)
+  - After any successful transition: entering the chat loop replays the header `--- ЧАТ: {name} [Фаза: {PHASE}] ---` (§4.5.1) and `/info` shows the lowercase phase value `Текущая фаза: {plan|execute|validate|report}` (§4.5.3 `/info`)
 
 ## Postconditions
 
@@ -104,6 +104,6 @@
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | Enter `/execute`, then return to menu via `/menu` | Phase changed to EXECUTE before exiting the loop |
 | 2    | Return to the chat (option 5)                 | Header replayed as `--- ЧАТ: {name} [Фаза: EXECUTE] ---` (UC-018 A4, §4.5.1) |
-| 3    | Enter `/info`                                 | Line `Текущая фаза: EXECUTE` displayed        |
+| 3    | Enter `/info`                                 | Line `Текущая фаза: execute` displayed (lowercase phase value) |
 
 ---

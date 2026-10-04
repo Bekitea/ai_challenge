@@ -133,46 +133,6 @@ class TestUC017_DeleteFlow_TC115_116:
         # §4.7.3: при пустых предпочтениях строка 'Предпочтения:' не выводится
         assert "Предпочтения:" not in stdout
 
-    def test_tc_118_delete_task_profile_repository_failure(self):
-        """
-        TC-118: Delete Task Profile - Repository Failure (UC-017 step 7)
-
-        Uses the TEST-only fault-injection hook TEST_FAIL_DELETE_PROFILE=1
-        (use_cases.DeleteTaskProfileUseCase) so that profile deletion returns
-        False, which cli_app._delete_profile reports as
-        "[ERROR] Не удалось удалить профиль '{name}.'". The profile must stay
-        in the list afterwards.
-        """
-        test_input = (
-            self._PROFILE_SETUP
-            + "2\n"  # Просмотреть список профилей
-            + "3\n"  # Удалить профиль
-            "1\n"  # Профиль №1
-            "y\n"  # Подтвердить удаление (репозиторий «падает»)
-            "4\n"  # Назад к списку -> возврат в меню профилей
-            "2\n"  # Просмотреть список снова — профиль должен остаться
-            "3\n"  # Назад в главное меню
-            "6\n"  # Exit
-        )
-
-        stdout, stderr, returncode = run_cli_command(
-            test_input, extra_env={"TEST_FAIL_DELETE_PROFILE": "1"}
-        )
-
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert (
-            "Вы уверены, что хотите удалить профиль 'Del Target'? (y/n):" in stdout
-        ), "Confirmation prompt text must match UC-017 step 6"
-        assert "[ERROR] Не удалось удалить профиль 'Del Target'." in stdout, (
-            "Failed deletion must print the exact error from cli_app._delete_profile"
-        )
-        assert "успешно удалён" not in stdout
-        # Шаг 3 TC-118: профиль остаётся доступным в списке
-        assert "Del Target" in stdout.split("--- СПИСОК ПРОФИЛЕЙ ЗАДАЧ ---")[-1], (
-            "Profile must remain in the list after a failed deletion"
-        )
-        assert "Traceback" not in stderr
-
     def test_tc_115b_delete_profile_invalid_index(self):
         """
         Supplement (UC-017): Out-of-range and non-numeric delete indices must

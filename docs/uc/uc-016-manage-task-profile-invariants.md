@@ -91,7 +91,7 @@ profile. Profile deletion is covered separately in
 | Step | Action                                        | Expected Result                              |
 | ---- | --------------------------------------------- | -------------------------------------------- |
 | 1    | Open invariants submenu for the profile       | Invariant list displayed                     |
-| 2    | Select action 1, enter duplicate/invalid text causing repository `ValueError` | `[ERROR] {e}` displayed; nothing added, list redisplayed (UC-016 A3) |
+| 2    | Select action 1, enter the existing text "Rule A" again (duplicate) | `[ERROR] Инвариант уже существует` displayed; nothing added, list redisplayed (UC-016 A3) |
 
 ---
 
@@ -138,16 +138,4 @@ profile. Profile deletion is covered separately in
 | 3    | Verify the display                            | Invariants list and action prompt re-displayed |
 | 4    | Select action 1, add an invariant, then select action 2 | Removal prompt `Выберите номер инварианта для удаления (1-{n}):` is now displayed |
 
----
 
-### TC-111: Manage Invariants - Removal Failure Message
-
-**Related UC**: UC-016 A2
-
-| Step | Action                                        | Expected Result                              |
-| ---- | --------------------------------------------- | -------------------------------------------- |
-| 1    | Open invariants management with existing invariants, choose action "remove" (UC-016 step 9) | Removal prompt `Выберите номер инварианта для удаления (1-{n}):` displayed |
-| 2    | Arrange the repository removal to fail for a syntactically valid number | `[ERROR] Не удалось удалить инвариант.` displayed; the invariant remains in the list (UC-016 A2) |
-| 3    | Enter a valid number for a removable invariant | `[OK] Инвариант удалён!`; updated list shown |
-
----

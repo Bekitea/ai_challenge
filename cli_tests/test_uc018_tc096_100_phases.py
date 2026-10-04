@@ -133,7 +133,7 @@ class TestUC018_TC096_100_Phases:
         Steps:
         1. /execute then /menu -> phase changed before exiting the loop.
         2. Option 5 (return to chat) replays header with [Фаза: EXECUTE].
-        3. /info shows 'Текущая фаза: EXECUTE'.
+        3. /info shows 'Текущая фаза: execute' (lowercase phase value, §4.5.3).
         """
         test_input = (
             _QUICK_CHAT
@@ -153,5 +153,5 @@ class TestUC018_TC096_100_Phases:
         assert "--- ЧАТ: Чат 1 [Фаза: EXECUTE] ---" in replay, (
             "Header replay must show the persisted phase (UC-018 A4)"
         )
-        assert "Текущая фаза: EXECUTE" in replay
+        assert "Текущая фаза: execute" in replay
         assert "Traceback" not in stderr

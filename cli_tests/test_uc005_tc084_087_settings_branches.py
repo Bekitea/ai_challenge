@@ -1,6 +1,5 @@
 """E2E tests: TestUC005_TC084_087_SettingsBranches."""
 
-import pytest
 from e2e_helpers import _QUICK_CHAT, run_cli_command
 
 
@@ -84,12 +83,10 @@ class TestUC005_TC084_087_SettingsBranches:
         """
         TC-086: KeyboardInterrupt During Settings Flow (UC-005 A3)
 
-        EOF mid-flow (emulating Ctrl+C per guide limitations). NOTE: the
-        application does NOT catch EOFError inside the settings prompt chain
-        (change_settings -> get_agent_settings), so the process terminates
-        with an EOFError traceback instead of printing 'Прервано
-        пользователем.' and returning to the Main Menu as the spec requires.
-        Marked xfail until the app bug (UC-005 A3 handling) is fixed.
+        EOF mid-flow (emulating Ctrl+C per guide limitations): the chat loop
+        handler treats EOFError like KeyboardInterrupt, prints
+        'Прервано пользователем.', saves agent memory and exits to the Main
+        Menu instead of leaking an error/traceback.
         """
         test_input = (
             _QUICK_CHAT + "/settings\n" + "y\n" + "\n"  # Модель
@@ -98,16 +95,10 @@ class TestUC005_TC084_087_SettingsBranches:
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
-        try:
-            assert "Прервано пользователем." in stdout, (
-                "UC-005 A3: interruption must print 'Прервано пользователем.'"
-            )
-            assert returncode == 0, f"App exited with code {returncode}"
-            assert "Traceback" not in stderr
-        except AssertionError:
-            pytest.xfail(
-                "App bug: EOFError/KeyboardInterrupt not handled inside "
-                "change_settings/get_agent_settings (UC-005 A3)"
-            )
+        assert "Прервано пользователем." in stdout, (
+            "UC-005 A3: interruption must print 'Прервано пользователем.'"
+        )
+        assert returncode == 0, f"App exited with code {returncode}"
+        assert "Traceback" not in stderr
 
 

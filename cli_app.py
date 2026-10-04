@@ -1036,8 +1036,10 @@ class CLIChat:
                         for line in response.reasoning.split("\n"):
                             print(f"  {line}")
 
-            except KeyboardInterrupt:
+            except (KeyboardInterrupt, EOFError):
                 print("\n\nПрервано пользователем.")
+                if self.current_agent:
+                    self.use_cases.save_agent_memory.execute(self.current_agent)
                 break
             except Exception as e:
                 print(f"\n[ERROR] Ошибка: {e}")

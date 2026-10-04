@@ -30,15 +30,12 @@ KEY_VALUE_MEMORY_SCHEMA = {
 
 
 @dataclass
-class PreparedMessages:
-    """Результат подготовки сообщений для отправки в LLM."""
+class WindowResult:
+    """Результат применения стратегии к диалоговым сообщениям."""
 
-    messages: list[dict[str, Any]]
-    summary: str | None = None  # Текущий саммари (если используется)
-    is_summarization_request: bool = False  # Флаг: это запрос для суммаризации?
-    summarization_tokens: tuple[int, int] | None = (
-        None  # (prompt_tokens, completion_tokens) от суммаризации
-    )
+    dialogue: list[Any]
+    summary: str | None = None  # Итоговое саммари (старое или новое)
+    summarization_tokens: tuple[int, int] | None = None  # Токены суммаризации
 
 
 def prompt_to_llm_dict(msg: Any) -> dict[str, Any]:
@@ -101,7 +98,7 @@ def group_tool_blocks(messages: list[Any]) -> list[list[Any]]:
 def align_group_boundary(groups: list[list[Any]], index: int) -> int:
     """Сдвигает границу среза назад на целую группу сообщений.
 
-    Используется суммаризацией: срез history[:index] должен заканчиваться
+    Используется стратегиями: срез dialogue[:index] должен заканчиваться
     целиком на границе группы, чтобы assistant(tool_calls) не уходил в
     саммари, а его tool-ответы — в «хвост» (и наоборот).
     """
@@ -120,6 +117,23 @@ def _align_impl(groups: list[list[Any]], index: int, remainder: int) -> int:
         remainder += len(groups[index - 1])
         index -= 1
     return index
+
+
+def align_window_start(messages: list[Any], offset: int) -> int:
+    """Возвращает индекс начала окна, выровненный по целым группам.
+
+    ``offset`` — желаемый индекс начала среза (len(messages) - window_size).
+    Если внутри группы, граница сдвигается назад к началу группы.
+    """
+    if offset <= 0:
+        return 0
+    groups = group_tool_blocks(messages)
+    aligned = 0
+    for group in groups:
+        if aligned >= offset:
+            break
+        aligned += len(group)
+    return aligned
 
 
 def sanitize_llm_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -177,25 +191,27 @@ def sanitize_llm_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]
 
 
 class ContextWindowStrategy(ABC):
-    """Абстрактный базовый класс для стратегий управления контекстным окном."""
+    """Абстрактный базовый класс для стратегий управления контекстным окном.
+
+    Стратегия отвечает ТОЛЬКО за управление контекстным окном: какие
+    диалоговые сообщения отправить в LLM и какое саммари к ним добавить.
+    Подмешивание памяти, профиля и фазы — ответственность PromptBuilder.
+    """
 
     @abstractmethod
-    def prepare_messages(
+    def apply(
         self,
-        history: list[Any],  # Список Prompt объектов
+        dialogue: list[Any],  # Список Prompt объектов (без system)
         llm_provider: LlmProvider | None = None,
-        agent_memory_text: str | None = None,  # Текст памяти о пользователе
-    ) -> PreparedMessages:
-        """
-        Подготавливает сообщения для отправки в LLM провайдер.
+    ) -> WindowResult:
+        """Применяет стратегию к диалоговым сообщениям.
 
         Args:
-            history: Полная история сообщений (включая системный промпт).
-            llm_provider: Провайдер LLM для выполнения суммаризации (если нужен).
-            agent_memory_text: Текст памяти о пользователе (опционально).
+            dialogue: Сообщения диалога в хронологическом порядке.
+            llm_provider: Провайдер LLM для выполнения суммаризации.
 
         Returns:
-            PreparedMessages: Сообщения для отправки в LLM и метаданные.
+            WindowResult: выбранные сообщения, саммари и токены суммаризации.
         """
 
     @abstractmethod
@@ -219,22 +235,13 @@ class DefaultStrategy(ContextWindowStrategy):
     При переполнении контекстного окна выбрасывается исключение.
     """
 
-    def prepare_messages(
+    def apply(
         self,
-        history: list[Any],
+        dialogue: list[Any],
         llm_provider: LlmProvider | None = None,
-        agent_memory_text: str | None = None,
-    ) -> PreparedMessages:
-        """Просто возвращает все сообщения как есть (с сохранением протокола tool calling)."""
-        messages = [prompt_to_llm_dict(msg) for msg in history]
-
-        # Добавляем память о пользователе если есть
-        if agent_memory_text and messages and messages[0]["role"] == "system":
-            messages[0]["content"] = f"{messages[0]['content']}\n\n{agent_memory_text}"
-        elif agent_memory_text:
-            messages.insert(0, {"role": "system", "content": agent_memory_text})
-
-        return PreparedMessages(messages=messages)
+    ) -> WindowResult:
+        """Возвращает все диалоговые сообщения как есть."""
+        return WindowResult(dialogue=list(dialogue))
 
     def to_dict(self) -> dict[str, Any]:
         return {"strategy_type": self.strategy_type}
@@ -249,25 +256,24 @@ class DefaultStrategy(ContextWindowStrategy):
 
 
 @dataclass
-class SummarizationStrategy(ContextWindowStrategy):
-    """
-    Стратегия с суммаризацией истории.
+class BaseCompressionStrategy(ContextWindowStrategy):
+    """Общая логика стратегий со суммаризацией.
 
     Параметры:
         non_compressible_count: Количество последних сообщений, которые не сжимаются.
         buffer_size: Размер буфера сообщений перед суммаризацией.
 
     Логика:
-        - Системный промпт не считается и не суммаризируется.
-        - После добавления (non_compressible_count + buffer_size) сообщений,
-          первые buffer_size сообщений суммаризируются.
+        - После накопления (non_compressible_count + buffer_size) сообщений
+          первые (кратные buffer_size) сообщения суммаризируются.
         - Саммари хранится в поле стратегии и передаётся при следующей суммаризации.
+        - Границы среза выравниваются по целым группам tool-вызовов.
         - История сохраняется полностью, суммаризация только для отправки в LLM.
     """
 
     non_compressible_count: int
     buffer_size: int
-    _summary: str | None = field(default=None, repr=False)  # Хранит текущий саммари
+    _summary: str | None = field(default=None, repr=False)
 
     def __post_init__(self):
         if self.non_compressible_count < 0:
@@ -285,156 +291,72 @@ class SummarizationStrategy(ContextWindowStrategy):
         """Устанавливает новый саммари."""
         self._summary = value
 
-    def prepare_messages(
+    @abstractmethod
+    def _summarization_system_prompt(self) -> str:
+        """Возвращает системный промпт для выполнения суммаризации."""
+
+    def _summarization_kwargs(self) -> dict[str, Any]:
+        """Дополнительные параметры запроса суммаризации."""
+        return {}
+
+    def apply(
         self,
-        history: list[Any],
+        dialogue: list[Any],
         llm_provider: LlmProvider | None = None,
-        agent_memory_text: str | None = None,
-    ) -> PreparedMessages:
-        """
-        Подготавливает сообщения для отправки в LLM.
-
-        Если требуется суммаризация, выполняет её и возвращает сообщения с саммари.
-        """
-        # Разделяем системный промпт и остальные сообщения
-        system_msg = None
-        other_messages = []
-        for msg in history:
-            if msg.role == "system":
-                system_msg = msg
-            else:
-                other_messages.append(msg)
-
-        # Проверяем, нужна ли суммаризация
-        total_other = len(other_messages)
+    ) -> WindowResult:
+        """Сжимает старую часть диалога, сохраняя последние сообщения."""
+        total = len(dialogue)
         threshold = self.non_compressible_count + self.buffer_size
 
-        # Суммаризация нужна, когда количество сообщений достигает порога
-        # и есть сообщения для суммаризации (кратные buffer_size)
-        if total_other >= threshold and llm_provider is not None:
-            # Вычисляем, сколько сообщений нужно просуммировать
-            # Это все сообщения кроме последних non_compressible_count, округленные вниз до кратных buffer_size
-            messages_to_summarize_count = total_other - self.non_compressible_count
-            messages_to_summarize_count = (
-                messages_to_summarize_count // self.buffer_size
-            ) * self.buffer_size
-            # Граница среза должна проходить по целой группе tool-вызовов,
-            # чтобы assistant(tool_calls) и его tool-ответы не разрывались
-            groups = group_tool_blocks(other_messages)
-            messages_to_summarize_count = align_group_boundary(
-                groups, messages_to_summarize_count
-            )
+        if total >= threshold and llm_provider is not None:
+            count = total - self.non_compressible_count
+            count = (count // self.buffer_size) * self.buffer_size
+            count = align_group_boundary(group_tool_blocks(dialogue), count)
 
-            if messages_to_summarize_count > 0:
-                messages_to_summarize = other_messages[:messages_to_summarize_count]
-                remaining_messages = other_messages[messages_to_summarize_count:]
-
-                # Выполняем суммаризацию
+            if count > 0:
                 new_summary, tech_tokens = self._perform_summarization(
-                    messages_to_summarize,
-                    llm_provider,
+                    dialogue[:count], llm_provider
                 )
                 self._summary = new_summary
-
-                # Формируем итоговые сообщения
-                result_messages = []
-                if system_msg:
-                    result_messages.append(
-                        {"role": "system", "content": system_msg.content}
-                    )
-
-                # Добавляем саммари как системное сообщение (или как часть промпта)
-                if new_summary:
-                    result_messages.append(
-                        {"role": "system", "content": f"История диалога: {new_summary}"}
-                    )
-
-                # Добавляем оставшиеся сообщения (с сохранением протокола tool calling)
-                for msg in remaining_messages:
-                    result_messages.append(prompt_to_llm_dict(msg))
-
-                return PreparedMessages(
-                    messages=sanitize_llm_messages(result_messages),
+                return WindowResult(
+                    dialogue=dialogue[count:],
                     summary=new_summary,
-                    is_summarization_request=False,  # Основной запрос не технический
                     summarization_tokens=tech_tokens,
                 )
 
-        # Суммаризация не требуется, возвращаем все сообщения как есть
-        messages = []
-        if system_msg:
-            messages.append({"role": "system", "content": system_msg.content})
-
-        # Добавляем существующий саммари если есть
-        if self._summary:
-            messages.append(
-                {"role": "system", "content": f"История диалога: {self._summary}"}
-            )
-
-        for msg in other_messages:
-            messages.append(prompt_to_llm_dict(msg))
-
-        # Добавляем память о пользователе если есть
-        if agent_memory_text and messages and messages[0]["role"] == "system":
-            messages[0]["content"] = f"{messages[0]['content']}\n\n{agent_memory_text}"
-        elif agent_memory_text:
-            messages.insert(0, {"role": "system", "content": agent_memory_text})
-
-        return PreparedMessages(
-            messages=sanitize_llm_messages(messages),
-            summary=self._summary,
-            is_summarization_request=False,
-        )
+        return WindowResult(dialogue=list(dialogue), summary=self._summary)
 
     def _perform_summarization(
         self,
         messages_to_summarize: list[Any],
         llm_provider: LlmProvider,
     ) -> tuple[str, tuple[int, int]]:
-        """
-        Выполняет суммаризацию указанных сообщений через LLM.
-
-        Args:
-            messages_to_summarize: Сообщения для суммаризации.
-            llm_provider: Провайдер LLM.
+        """Выполняет суммаризацию указанных сообщений через LLM.
 
         Returns:
             Кортеж (саммари, (prompt_tokens, completion_tokens)).
         """
-        print("\n[INFO] Запущена суммаризация...")
+        print(f"\n[INFO] Запущена суммаризация ({self.strategy_type})...")
 
-        # Формируем системный промпт для суммаризации
-        system_prompt = (
-            "Ты ассистент для суммаризации диалогов. "
-            "Твоя задача — создать максимально краткое содержание предоставленной истории переписки. "
-            "Включи только ключевые моменты: предпочтения пользователя, ограничения задачи и важные выводы. "
-            "Не тяни бездумно все данные, а выделяй только существенную информацию. "
-            "Если есть предыдущее саммари, объедини его с новыми сообщениями, сохраняя краткость."
-        )
-
-        # Формируем сообщения для суммаризации
-        summarization_messages = [{"role": "system", "content": system_prompt}]
-
-        # Добавляем предыдущий саммари если есть
+        summarization_messages: list[dict[str, Any]] = [
+            {"role": "system", "content": self._summarization_system_prompt()}
+        ]
         if self._summary:
             summarization_messages.append(
                 {"role": "user", "content": f"Предыдущее саммари: {self._summary}"}
             )
-
-        # Добавляем сообщения для суммаризации
         for msg in messages_to_summarize:
-            role = msg.role
-            content = msg.content
-            summarization_messages.append({"role": role, "content": content})
+            summarization_messages.append(
+                {"role": msg.role, "content": msg.content}
+            )
 
-        # Делаем запрос к LLM
         response = llm_provider.generate(
             messages=summarization_messages,
             temperature=0.3,
             max_tokens=500,
+            **self._summarization_kwargs(),
         )
 
-        # Возвращаем саммари и токены
         prompt_tokens = response.prompt_tokens or 0
         completion_tokens = response.completion_tokens or 0
         return response.content, (prompt_tokens, completion_tokens)
@@ -448,7 +370,7 @@ class SummarizationStrategy(ContextWindowStrategy):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> SummarizationStrategy:
+    def from_dict(cls, data: dict[str, Any]) -> BaseCompressionStrategy:
         instance = cls(
             non_compressible_count=data["non_compressible_count"],
             buffer_size=data["buffer_size"],
@@ -456,175 +378,35 @@ class SummarizationStrategy(ContextWindowStrategy):
         instance._summary = data.get("summary")
         return instance
 
+
+@dataclass
+class SummarizationStrategy(BaseCompressionStrategy):
+    """Стратегия с суммаризацией истории."""
+
+    def _summarization_system_prompt(self) -> str:
+        return (
+            "Ты ассистент для суммаризации диалогов. "
+            "Твоя задача — создать максимально краткое содержание предоставленной истории переписки. "
+            "Включи только ключевые моменты: предпочтения пользователя, ограничения задачи и важные выводы. "
+            "Не тяни бездумно все данные, а выделяй только существенную информацию. "
+            "Если есть предыдущее саммари, объедини его с новыми сообщениями, сохраняя краткость."
+        )
+
     @property
     def strategy_type(self) -> str:
         return "SummarizationStrategy"
 
 
 @dataclass
-class KeyValueMemoryStrategy(ContextWindowStrategy):
-    """
-    Стратегия с суммаризацией истории в формате JSON (Key-Value Memory).
+class KeyValueMemoryStrategy(BaseCompressionStrategy):
+    """Стратегия с суммаризацией истории в формате JSON (Key-Value Memory).
 
-    Параметры:
-        non_compressible_count: Количество последних сообщений, которые не сжимаются.
-        buffer_size: Размер буфера сообщений перед суммаризацией.
-
-    Логика:
-        - Системный промпт не считается и не суммаризируется.
-        - После добавления (non_compressible_count + buffer_size) сообщений,
-          первые buffer_size сообщений суммаризируются.
-        - Саммари хранится в поле стратегии в виде JSON со строгой схемой:
-          ключи: цель, ограничения, предпочтения, решения, договоренности.
-        - История сохраняется полностью, суммаризация только для отправки в LLM.
+    Саммари хранится в виде JSON со строгой схемой:
+    ключи: цель, ограничения, предпочтения, решения, договоренности.
     """
 
-    non_compressible_count: int
-    buffer_size: int
-    _summary: str | None = field(
-        default=None, repr=False
-    )  # Хранит текущий саммари в формате JSON
-
-    def __post_init__(self):
-        if self.non_compressible_count < 0:
-            raise ValueError("non_compressible_count должен быть >= 0")
-        if self.buffer_size <= 0:
-            raise ValueError("buffer_size должен быть > 0")
-
-    @property
-    def summary(self) -> str | None:
-        """Возвращает текущий саммари."""
-        return self._summary
-
-    @summary.setter
-    def summary(self, value: str | None):
-        """Устанавливает новый саммари."""
-        self._summary = value
-
-    def prepare_messages(
-        self,
-        history: list[Any],
-        llm_provider: LlmProvider | None = None,
-        agent_memory_text: str | None = None,
-    ) -> PreparedMessages:
-        """
-        Подготавливает сообщения для отправки в LLM.
-
-        Если требуется суммаризация, выполняет её и возвращает сообщения с саммари.
-        """
-        # Разделяем системный промпт и остальные сообщения
-        system_msg = None
-        other_messages = []
-        for msg in history:
-            if msg.role == "system":
-                system_msg = msg
-            else:
-                other_messages.append(msg)
-
-        # Проверяем, нужна ли суммаризация
-        total_other = len(other_messages)
-        threshold = self.non_compressible_count + self.buffer_size
-
-        # Суммаризация нужна, когда количество сообщений достигает порога
-        # и есть сообщения для суммаризации (кратные buffer_size)
-        if total_other >= threshold and llm_provider is not None:
-            # Вычисляем, сколько сообщений нужно просуммировать
-            # Это все сообщения кроме последних non_compressible_count, округленные вниз до кратных buffer_size
-            messages_to_summarize_count = total_other - self.non_compressible_count
-            messages_to_summarize_count = (
-                messages_to_summarize_count // self.buffer_size
-            ) * self.buffer_size
-            # Граница среза должна проходить по целой группе tool-вызовов,
-            # чтобы assistant(tool_calls) и его tool-ответы не разрывались
-            groups = group_tool_blocks(other_messages)
-            messages_to_summarize_count = align_group_boundary(
-                groups, messages_to_summarize_count
-            )
-
-            if messages_to_summarize_count > 0:
-                messages_to_summarize = other_messages[:messages_to_summarize_count]
-                remaining_messages = other_messages[messages_to_summarize_count:]
-
-                # Выполняем суммаризацию
-                new_summary, tech_tokens = self._perform_summarization(
-                    messages_to_summarize,
-                    llm_provider,
-                )
-                self._summary = new_summary
-
-                # Формируем итоговые сообщения
-                result_messages = []
-                if system_msg:
-                    result_messages.append(
-                        {"role": "system", "content": system_msg.content}
-                    )
-
-                # Добавляем саммари как системное сообщение (или как часть промпта)
-                if new_summary:
-                    result_messages.append(
-                        {"role": "system", "content": f"История диалога: {new_summary}"}
-                    )
-
-                # Добавляем память о пользователе если есть
-                if agent_memory_text:
-                    result_messages.append(
-                        {"role": "system", "content": agent_memory_text}
-                    )
-
-                # Добавляем оставшиеся сообщения (с сохранением протокола tool calling)
-                for msg in remaining_messages:
-                    result_messages.append(prompt_to_llm_dict(msg))
-
-                return PreparedMessages(
-                    messages=sanitize_llm_messages(result_messages),
-                    summary=new_summary,
-                    is_summarization_request=False,  # Основной запрос не технический
-                    summarization_tokens=tech_tokens,
-                )
-
-        # Суммаризация не требуется, возвращаем все сообщения как есть
-        messages = []
-        if system_msg:
-            messages.append({"role": "system", "content": system_msg.content})
-
-        # Добавляем существующий саммари если есть
-        if self._summary:
-            messages.append(
-                {"role": "system", "content": f"История диалога: {self._summary}"}
-            )
-
-        # Добавляем память о пользователе если есть
-        if agent_memory_text:
-            messages.append({"role": "system", "content": agent_memory_text})
-
-        for msg in other_messages:
-            messages.append(prompt_to_llm_dict(msg))
-
-        return PreparedMessages(
-            messages=sanitize_llm_messages(messages),
-            summary=self._summary,
-            is_summarization_request=False,
-        )
-
-    def _perform_summarization(
-        self,
-        messages_to_summarize: list[Any],
-        llm_provider: LlmProvider,
-    ) -> tuple[str, tuple[int, int]]:
-        """
-        Выполняет суммаризацию указанных сообщений через LLM.
-
-        Args:
-            messages_to_summarize: Сообщения для суммаризации.
-            llm_provider: Провайдер LLM.
-
-        Returns:
-            Кортеж (саммари, (prompt_tokens, completion_tokens)).
-        """
-        print("\n[INFO] Запущена суммаризация (Key-Value Memory)...")
-
-        # Формируем системный промпт для суммаризации с указанием JSON схемы
-        system_prompt = (
+    def _summarization_system_prompt(self) -> str:
+        return (
             "Ты ассистент для суммаризации диалогов. "
             "Твоя задача — создать максимально краткое содержание предоставленной истории переписки "
             "в формате JSON со строгой схемой.\n\n"
@@ -643,50 +425,8 @@ class KeyValueMemoryStrategy(ContextWindowStrategy):
             "Ответ должен быть ТОЛЬКО валидным JSON без дополнительного текста."
         )
 
-        # Формируем сообщения для суммаризации
-        summarization_messages = [{"role": "system", "content": system_prompt}]
-
-        # Добавляем предыдущий саммари если есть
-        if self._summary:
-            summarization_messages.append(
-                {"role": "user", "content": f"Предыдущее саммари: {self._summary}"}
-            )
-
-        # Добавляем сообщения для суммаризации
-        for msg in messages_to_summarize:
-            role = msg.role
-            content = msg.content
-            summarization_messages.append({"role": role, "content": content})
-
-        # Делаем запрос к LLM с response_format для гарантии JSON
-        response = llm_provider.generate(
-            messages=summarization_messages,
-            temperature=0.3,
-            max_tokens=500,
-            response_format={"type": "json_object"},
-        )
-
-        # Возвращаем саммари и токены
-        prompt_tokens = response.prompt_tokens or 0
-        completion_tokens = response.completion_tokens or 0
-        return response.content, (prompt_tokens, completion_tokens)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "strategy_type": self.strategy_type,
-            "non_compressible_count": self.non_compressible_count,
-            "buffer_size": self.buffer_size,
-            "summary": self._summary,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> KeyValueMemoryStrategy:
-        instance = cls(
-            non_compressible_count=data["non_compressible_count"],
-            buffer_size=data["buffer_size"],
-        )
-        instance._summary = data.get("summary")
-        return instance
+    def _summarization_kwargs(self) -> dict[str, Any]:
+        return {"response_format": {"type": "json_object"}}
 
     @property
     def strategy_type(self) -> str:
@@ -702,9 +442,9 @@ class SlidingWindowStrategy(ContextWindowStrategy):
         window_size: Количество последних сообщений, которые передаются в LLM.
 
     Логика:
-        - При каждом запросе передаётся системный промпт (если есть) + N последних сообщений.
-        - Все сообщения старше N не передаются в LLM.
-        - История сохраняется полностью в хранилище, но для LLM отправляются только последние N сообщений.
+        - Для LLM отправляются только последние N сообщений.
+        - Окно выравнивается по целым группам tool-вызовов.
+        - История сохраняется полностью, но для LLM отправляется только окно.
     """
 
     window_size: int
@@ -713,60 +453,15 @@ class SlidingWindowStrategy(ContextWindowStrategy):
         if self.window_size <= 0:
             raise ValueError("window_size должен быть > 0")
 
-    def prepare_messages(
+    def apply(
         self,
-        history: list[Any],
+        dialogue: list[Any],
         llm_provider: LlmProvider | None = None,
-        agent_memory_text: str | None = None,
-    ) -> PreparedMessages:
-        """
-        Подготавливает сообщения для отправки в LLM.
-
-        Возвращает системный промпт + последние window_size сообщений.
-        """
-        # Разделяем системный промпт и остальные сообщения
-        system_msg = None
-        other_messages = []
-        for msg in history:
-            if msg.role == "system":
-                system_msg = msg
-            else:
-                other_messages.append(msg)
-
-        # Берём только последние window_size сообщений, выровняв границу
-        # окна по целым группам tool-вызовов (assistant(tool_calls) +
-        # tool-ответы неразрывны)
-        start = max(0, len(other_messages) - self.window_size)
-        if start > 0:
-            groups = group_tool_blocks(other_messages)
-            offset = 0
-            aligned_index = 0
-            for g in groups:
-                if offset >= start:
-                    break
-                offset += len(g)
-                aligned_index += len(g)
-            recent_messages = other_messages[aligned_index:]
-        else:
-            recent_messages = other_messages
-
-        # Формируем итоговые сообщения
-        messages = []
-        if system_msg:
-            messages.append({"role": "system", "content": system_msg.content})
-
-        # Добавляем память о пользователе если есть
-        if agent_memory_text:
-            messages.append({"role": "system", "content": agent_memory_text})
-
-        for msg in recent_messages:
-            messages.append(prompt_to_llm_dict(msg))
-
-        return PreparedMessages(
-            messages=sanitize_llm_messages(messages),
-            summary=None,
-            is_summarization_request=False,
-        )
+    ) -> WindowResult:
+        """Возвращает последние window_size сообщений (с выравниванием)."""
+        start = max(0, len(dialogue) - self.window_size)
+        aligned_start = align_window_start(dialogue, start)
+        return WindowResult(dialogue=dialogue[aligned_start:])
 
     def to_dict(self) -> dict[str, Any]:
         return {

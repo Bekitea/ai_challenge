@@ -9,10 +9,9 @@ from typing import Any
 from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
-    prompt_to_llm_dict,
-    sanitize_llm_messages,
 )
 from llm_providers import LlmProvider, LlmResponse
+from prompt_builder import PromptBuilder, PromptSources
 
 
 class ContextWindowExceededError(Exception):
@@ -214,6 +213,7 @@ class Agent:
         task_profile_repository: Any | None = None,
         connected_mcp_servers: list[str] | None = None,
         initial_phase: AgentPhase | None = None,
+        prompt_builder: PromptBuilder | None = None,
     ):
         if llm_provider is None:
             raise ValueError("llm_provider is required")
@@ -238,6 +238,7 @@ class Agent:
         self._settings = initial_settings or AgentSettings()
         self._messages: list[Prompt] = messages if messages is not None else []
         self._strategy = strategy or DefaultStrategy()
+        self._prompt_builder = prompt_builder or PromptBuilder()
         self._auto_save = auto_save
 
         # Global memory fields
@@ -442,18 +443,6 @@ class Agent:
         if self._repository is not None and self._auto_save:
             self._repository.update_agent(self)
 
-    def _build_llm_messages_with_tools(self, memory_text: str) -> list[dict]:
-        """Готовит сообщения для повторного запроса к LLM в цикле tool calling.
-
-        Берёт всю историю как есть (расширенные протокольные поля сохраняются
-        через prompt_to_llm_dict) и очищает её от невалидных фрагментов
-        протокола tool calling (см. sanitize_llm_messages).
-        """
-        messages = [prompt_to_llm_dict(msg) for msg in self._messages]
-        if memory_text and messages and messages[0]["role"] == "system":
-            messages[0]["content"] = f"{messages[0]['content']}\n\n{memory_text}"
-        return sanitize_llm_messages(messages)
-
     def continue_dialog(self, user_prompt: str) -> LlmResponse:
         """
         Продолжает диалог: добавляет сообщение пользователя, делает запрос к LLM,
@@ -475,17 +464,22 @@ class Agent:
         self._messages.append(user_message)
         self._last_message_timestamp = user_timestamp
 
-        # Подготавливаем сообщения через стратегию
-        memory_text = self.get_system_prompt_with_memory(None)
-
-        # Передаем memory_text всегда, т.к. он содержит описание фазы
-        prepared = self._strategy.prepare_messages(
+        # Подготавливаем сообщения через PromptBuilder: он централизованно
+        # подмешивает память, профиль задачи и фазу, а стратегия управляет
+        # только контекстным окном.
+        sources = PromptSources(
+            global_facts=list(self.global_memory.facts),
+            task_profile=self.task_profile,
+            phase_description=self._current_phase.get_description(),
+        )
+        prepared = self._prompt_builder.build(
             history=self._messages,
+            sources=sources,
+            strategy=self._strategy,
             llm_provider=self._llm_provider,
-            agent_memory_text=memory_text,
         )
 
-        messages_for_llm = sanitize_llm_messages(prepared.messages)
+        messages_for_llm = prepared.messages
         settings = self._settings
         kwargs = settings.to_llm_request_properties()
 
@@ -580,11 +574,6 @@ class Agent:
                     )
             pending = []
 
-        # Обновляем отправляемый набор сообщений итоговой историей: после
-        # завершённых групп tool-вызовов история содержит весь протокол, и
-        # повторять запрос с устаревшим messages_for_llm уже не нужно.
-        messages_for_llm = self._build_llm_messages_with_tools(memory_text)
-
         # Проверяем лимит контекстного окна (только для assistant prompt)
         context_window_size = (
             settings.context_window_size or 200_000
@@ -604,23 +593,12 @@ class Agent:
             self._token_counters.tech_prompt_tokens += tech_prompt
             self._token_counters.tech_completion_tokens += tech_completion
 
-        # Затем обновляем счетчики от основного запроса
-        is_tech_request = prepared.is_summarization_request
+        # Затем обновляем счетчики от основного (пользовательского) запроса
         if response.prompt_tokens is not None:
-            if is_tech_request:
-                self._token_counters.tech_prompt_tokens += response.prompt_tokens
-            else:
-                self._token_counters.chat_prompt_tokens += response.prompt_tokens
+            self._token_counters.chat_prompt_tokens += response.prompt_tokens
 
         if response.completion_tokens is not None:
-            if is_tech_request:
-                self._token_counters.tech_completion_tokens += (
-                    response.completion_tokens
-                )
-            else:
-                self._token_counters.chat_completion_tokens += (
-                    response.completion_tokens
-                )
+            self._token_counters.chat_completion_tokens += response.completion_tokens
 
         # Сохраняем ответ ассистента
         assistant_timestamp = datetime.now().astimezone()
@@ -814,26 +792,26 @@ class Agent:
         dialog_text = ""
         for msg in unremembered_prompts:
             role_ru = "Пользователь" if msg.role == "user" else "Ассистент"
-            dialog_text += f"{role_ru}: {msg.content}\\n"
+            dialog_text += f"{role_ru}: {msg.content}\n"
 
         # === Сохранение глобальной памяти (факты о пользователе) ===
         old_facts_text = ""
         if self.global_memory.facts:
-            old_facts_text = "Текущие факты о пользователе:\\n" + "\\n".join(
+            old_facts_text = "Текущие факты о пользователе:\n" + "\n".join(
                 f"- {f}" for f in self.global_memory.facts
             )
 
         global_system_prompt = (
             "Ты ассистент для извлечения фактов о пользователе из диалога. "
             "Твоя задача — найти новую информацию о пользователе (предпочтения, факты биографии, интересы и т.д.) "
-            "и вернуть её в формате JSON.\\n\\n"
-            "Важные правила:\\n"
-            "1. Возвращай ТОЛЬКО новые факты, которых нет в текущем списке.\\n"
-            "2. Игнорируй противоречия — просто добавляй новые факты.\\n"
-            "3. Факты должны быть краткими и конкретными.\\n"
-            "4. Если новых фактов нет, верни пустой список.\\n\\n"
-            f"{old_facts_text}\\n\\n"
-            f"Диалог для анализа:\\n{dialog_text}\\n\\n"
+            "и вернуть её в формате JSON.\n\n"
+            "Важные правила:\n"
+            "1. Возвращай ТОЛЬКО новые факты, которых нет в текущем списке.\n"
+            "2. Игнорируй противоречия — просто добавляй новые факты.\n"
+            "3. Факты должны быть краткими и конкретными.\n"
+            "4. Если новых фактов нет, верни пустой список.\n\n"
+            f"{old_facts_text}\n\n"
+            f"Диалог для анализа:\n{dialog_text}\n\n"
             "Верни ответ в формате JSON со схемой: "
             '{"facts": ["факт 1", "факт 2", ...]}'
         )
@@ -878,23 +856,23 @@ class Agent:
             task_old_facts_text = ""
             if self.task_profile.facts:
                 task_old_facts_text = (
-                    f'Текущие факты о задаче "{self.task_profile.name}":\\n'
-                    + "\\n".join(f"- {f}" for f in self.task_profile.facts)
+                    f'Текущие факты о задаче "{self.task_profile.name}":\n'
+                    + "\n".join(f"- {f}" for f in self.task_profile.facts)
                 )
 
             task_system_prompt = (
                 f"Ты ассистент для извлечения фактов о задаче из диалога. "
-                f"Задача: {self.task_profile.name}. Описание: {self.task_profile.description}.\\n"
+                f"Задача: {self.task_profile.name}. Описание: {self.task_profile.description}.\n"
                 "Твоя задача — найти новую информацию, относящуюся к задаче (прогресс, решения, ограничения, требования, результаты) "
-                "и вернуть её в формате JSON.\\n\\n"
-                "Важные правила:\\n"
-                "1. Возвращай ТОЛЬКО новые факты, которых нет в текущем списке.\\n"
-                "2. Игнорируй противоречия — просто добавляй новые факты.\\n"
-                "3. Факты должны быть краткими и конкретными.\\n"
-                "4. Если новых фактов нет, верни пустой список.\\n"
-                "5. Извлекай только факты, относящиеся к задаче, а не к пользователю.\\n\\n"
-                f"{task_old_facts_text}\\n\\n"
-                f"Диалог для анализа:\\n{dialog_text}\\n\\n"
+                "и вернуть её в формате JSON.\n\n"
+                "Важные правила:\n"
+                "1. Возвращай ТОЛЬКО новые факты, которых нет в текущем списке.\n"
+                "2. Игнорируй противоречия — просто добавляй новые факты.\n"
+                "3. Факты должны быть краткими и конкретными.\n"
+                "4. Если новых фактов нет, верни пустой список.\n"
+                "5. Извлекай только факты, относящиеся к задаче, а не к пользователю.\n\n"
+                f"{task_old_facts_text}\n\n"
+                f"Диалог для анализа:\n{dialog_text}\n\n"
                 "Верни ответ в формате JSON со схемой: "
                 '{"facts": ["факт 1", "факт 2", ...]}'
             )
@@ -941,65 +919,6 @@ class Agent:
 
         # Помечаем агента как remembered
         self.is_dialog_remembered = True
-
-    def get_system_prompt_with_memory(self, base_system_prompt: str | None) -> str:
-        """
-        Формирует системный промпт с добавлением памяти о пользователе,
-        памяти задачи, предпочтений и инвариантов.
-
-        Args:
-            base_system_prompt: Базовый системный промпт (если есть).
-
-        Returns:
-            Полный системный промпт с памятью (глобальной и задачи) и текущей фазой.
-        """
-        memory_text = ""
-
-        # Глобальная память
-        if self.global_memory.facts:
-            facts_list = "\\n".join(f"- {fact}" for fact in self.global_memory.facts)
-            memory_text = f"\\n\\nПамять о пользователе:\\n{facts_list}"
-
-        # Память задачи
-        if self.task_profile and self.task_profile.facts:
-            task_facts_list = "\\n".join(
-                f"- {fact}" for fact in self.task_profile.facts
-            )
-            memory_text += (
-                f"\\n\\nПамять задачи ({self.task_profile.name}):\\n{task_facts_list}"
-            )
-
-        # Предпочтения задачи
-        if self.task_profile and self.task_profile.preferences:
-            memory_text += f"\\n\\nПредпочтения задачи ({self.task_profile.name}):\\n{self.task_profile.preferences}"
-
-        # Инварианты задачи (строгие правила)
-        if self.task_profile and self.task_profile.invariants:
-            invariants_list = "\n".join(
-                f"- {inv}" for inv in self.task_profile.invariants
-            )
-            memory_text += (
-                f"\n\n--- ИНВАРИАНТЫ ЗАДАЧИ ({self.task_profile.name}) ---\n"
-                f"Строгие правила, которые ДОЛЖНЫ неукоснительно соблюдаться в этом диалоге:\n"
-                f"{invariants_list}\n\n"
-                f"КРИТИЧЕСКИ ВАЖНО: Если запрос пользователя противоречит ЛЮБОМУ из этих инвариантов, "
-                f"ты ОБЯЗАН вежливо отказать в выполнении и объяснить причину, сославшись на конкретный инвариант. "
-                f"Вместо этого предложи альтернативу, которая соответствует инвариантам. "
-                f"Никогда не нарушай инварианты, даже если пользователь настаивает."
-            )
-
-        # Добавляем описание текущей фазы
-        phase_description = self._current_phase.get_description()
-        memory_text += f"\\n\\n{phase_description}"
-
-        if base_system_prompt:
-            return f"{base_system_prompt}{memory_text}"
-        else:
-            return (
-                f"Ты полезный ассистент.{memory_text}"
-                if memory_text
-                else "Ты полезный ассистент."
-            )
 
     @property
     def current_phase(self) -> AgentPhase:

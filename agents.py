@@ -13,6 +13,7 @@ from context_strategies import (
 )
 from llm_providers import LlmProvider, LlmResponse
 from prompt_builder import PromptBuilder, PromptSources
+from rag_models import RagRetrievalResult
 
 logger = logging.getLogger("agent.rag")
 
@@ -453,10 +454,10 @@ class Agent:
         if self._repository is not None and self._auto_save:
             self._repository.update_agent(self)
 
-    def _retrieve_rag_context(self, query: str):
+    def _retrieve_rag_context(self, query: str) -> RagRetrievalResult:
         """Поднимает RAG-контекст, деградируя без него при ошибке провайдера."""
         if self._rag_service is None or self.agent_id is None:
-            return []
+            return RagRetrievalResult(chunks=[], has_knowledge_bases=False)
         try:
             return self._rag_service.retrieve(
                 self.agent_id,
@@ -468,7 +469,7 @@ class Agent:
                 "RAG-поиск недоступен, диалог продолжен без контекста",
                 exc_info=True,
             )
-            return []
+            return RagRetrievalResult(chunks=[], has_knowledge_bases=False)
 
     def continue_dialog(self, user_prompt: str) -> LlmResponse:
         """
@@ -494,7 +495,7 @@ class Agent:
         # RAG: если сервис задан и у чата есть подключённые базы знаний,
         # поднимаем релевантные чанки. При отсутствии баз знаний сервис
         # завершается сразу, без эмбеддинга запроса.
-        rag_context = self._retrieve_rag_context(user_prompt)
+        rag_result = self._retrieve_rag_context(user_prompt)
 
         # Подготавливаем сообщения через PromptBuilder: он централизованно
         # подмешивает память, профиль задачи, RAG-контекст и фазу, а стратегия
@@ -503,7 +504,8 @@ class Agent:
             global_facts=list(self.global_memory.facts),
             task_profile=self.task_profile,
             phase_description=self._current_phase.get_description(),
-            rag_context=rag_context,
+            rag_context=rag_result.chunks,
+            rag_enabled=rag_result.has_knowledge_bases,
         )
         prepared = self._prompt_builder.build(
             history=self._messages,
@@ -632,6 +634,13 @@ class Agent:
 
         if response.completion_tokens is not None:
             self._token_counters.chat_completion_tokens += response.completion_tokens
+
+        # Источники RAG для отображения в клиенте: None, если у чата нет
+        # подключённых баз знаний; пустой список — базы есть, но ни один
+        # чанк не прошёл порог релевантности.
+        response.rag_sources = (
+            rag_result.chunks if rag_result.has_knowledge_bases else None
+        )
 
         # Сохраняем ответ ассистента
         assistant_timestamp = datetime.now().astimezone()

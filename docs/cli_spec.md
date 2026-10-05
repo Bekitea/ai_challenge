@@ -497,6 +497,13 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   3. **Attach**: lists knowledge bases not yet attached; selection prompt `Выберите базу знаний (номер, 0 - отмена):`. Success/idempotent message `[OK] База знаний '{name}' подключена к чату.` / `[OK] ... уже подключена к чату.`; no available bases → `[INFO] Нет доступных баз знаний для подключения. Создайте их в меню 'Базы знаний'.`
   4. **Detach**: selects from attached; message `[OK] База знаний '{name}' отключена от чата.` or `[INFO] К чату не подключено ни одной базы знаний.`
 - **RAG behaviour**: while at least one knowledge base is attached, every user message triggers a RAG search before the LLM request; with none attached, no embedding or search is performed. Search results are injected into the system prompt (see UC-020). If the chat's reranking is enabled, candidates are re-scored by the reranker service before the top chunks are selected; when the service is unavailable the search degrades to vector order.
+- **Sources & threshold**: chunks with relevance below `RAG_RELEVANCE_THRESHOLD` (unified `[0..1]` scale: reranker score, or `1 - vector_distance / 2`) are discarded; when nothing passes, the agent is instructed to answer «Не знаю» and ask for clarification. After every answer in a chat with attached bases the CLI prints:
+  ```
+    [Источники]:
+      1. {document_name} — чанк #{chunk_id} (фрагмент {n}, релевантность {score})
+         «{краткая цитата}»
+  ```
+  If bases are attached but no chunk passed the threshold: `  [Источники] релевантных фрагментов не найдено (порог {threshold}).` See UC-021.
 - **Side Effects**: attachment is stored in the `agent_knowledge_bases` table; detach removes the link.
 
 ##### `/rerank`
@@ -735,3 +742,4 @@ this document.
 | UC-018 | Change Workflow Phase With Phase Commands | Move the agent between PLAN/EXECUTE/VALIDATE/REPORT phases. | [uc-018-change-workflow-phase-with-phase-commands.md](uc/uc-018-change-workflow-phase-with-phase-commands.md) |
 | UC-019 | Manage MCP Servers Of The Current Chat (/mcp) | Connect MCP servers to the current chat. | [uc-019-manage-mcp-servers-of-the-current-chat.md](uc/uc-019-manage-mcp-servers-of-the-current-chat.md) |
 | UC-020 | Manage Knowledge Bases And RAG (/rag, menu 7) | Create bases, index .txt/.md/.py documents, attach bases to a chat and search. | [uc-020-rag-knowledge-bases.md](uc/uc-020-rag-knowledge-bases.md) |
+| UC-021 | RAG Sources, Citations And Relevance Threshold | Show used sources/quotes after an answer and refuse below-threshold answers with «Не знаю». | [uc-021-rag-sources-and-relevance-threshold.md](uc/uc-021-rag-sources-and-relevance-threshold.md) |

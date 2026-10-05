@@ -9,6 +9,7 @@ from config import (
     EMBEDDING_TIMEOUT,
     RAG_CANDIDATE_LIMIT_TOTAL,
     RAG_FINAL_TOP_K,
+    RAG_RELEVANCE_THRESHOLD,
     RAG_VECTOR_TOP_K_PER_KB,
     RERANKER_BASE_URL,
     RERANKER_BATCH_SIZE,
@@ -221,6 +222,7 @@ def initialize_application() -> UseCasesBundle:
         candidate_limit_total=RAG_CANDIDATE_LIMIT_TOTAL,
         final_top_k=RAG_FINAL_TOP_K,
         reranker_enabled=RERANKER_ENABLED,
+        relevance_threshold=RAG_RELEVANCE_THRESHOLD,
     )
 
     # Initialize repository with session factory

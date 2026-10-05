@@ -61,6 +61,11 @@ RAG_VECTOR_TOP_K_PER_KB = int(os.getenv("RAG_VECTOR_TOP_K_PER_KB", "20"))
 RAG_CANDIDATE_LIMIT_TOTAL = int(os.getenv("RAG_CANDIDATE_LIMIT_TOTAL", "60"))
 RAG_FINAL_TOP_K = int(os.getenv("RAG_FINAL_TOP_K", "5"))
 
+# Порог релевантности RAG в единой шкале [0..1]: при реранкинге это score
+# кросс-энкодера, при векторном поиске — 1 - distance/2. Чанки ниже порога
+# отбрасываются, и ассистент обязан ответить «Не знаю» и попросить уточнений.
+RAG_RELEVANCE_THRESHOLD = float(os.getenv("RAG_RELEVANCE_THRESHOLD", "0.3"))
+
 # Загрузка документов из файлов (.txt/.md/.py)
 RAG_FILE_EXTENSIONS = {".txt", ".md", ".py"}
 RAG_FILE_MAX_BYTES = int(os.getenv("RAG_FILE_MAX_BYTES", str(1024 * 1024)))

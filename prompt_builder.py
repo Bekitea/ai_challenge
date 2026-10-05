@@ -47,6 +47,7 @@ class PromptSources:
     task_profile: TaskProfile | None = None
     phase_description: str | None = None
     rag_context: list[RagContextChunk] = field(default_factory=list)
+    rag_enabled: bool = False
 
 
 class PromptBuilder:
@@ -142,7 +143,7 @@ class PromptBuilder:
                     "даже если пользователь настаивает."
                 )
 
-        if sources.rag_context:
+        if sources.rag_enabled or sources.rag_context:
             parts.append(_compose_rag_context(sources.rag_context))
 
         if sources.phase_description:
@@ -151,14 +152,28 @@ class PromptBuilder:
         return "\n\n".join(parts)
 
 
+_RAG_UNKNOWN_RULE = (
+    "Если в приведённом контексте нет ответа на вопрос пользователя или "
+    "релевантность фрагментов недостаточна, ты ОБЯЗАН честно ответить "
+    "«Не знаю» и попросить пользователя уточнить вопрос. Не выдумывай "
+    "факты, которых нет во фрагментах."
+)
+
+
 def _compose_rag_context(chunks: list[RagContextChunk]) -> str:
     """Собирает секцию RAG-контекста из найденных чанков."""
+    if not chunks:
+        return (
+            "--- КОНТЕКСТ ИЗ БАЗ ЗНАНИЙ ---\n"
+            "Релевантных фрагментов не найдено. Ты ОБЯЗАН ответить «Не знаю» "
+            "и попросить пользователя уточнить вопрос."
+        )
+
     lines = [
         "--- КОНТЕКСТ ИЗ БАЗ ЗНАНИЙ ---",
         (
             "Ниже приведены фрагменты документов, релевантные запросу "
-            "пользователя. Используй их при ответе; если данных недостаточно, "
-            "сообщи об этом."
+            f"пользователя. Используй только их при ответе. {_RAG_UNKNOWN_RULE}"
         ),
     ]
     for position, chunk in enumerate(chunks, start=1):

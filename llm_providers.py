@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from openai import OpenAI
 
 from config import YANDEX_BASE_URL
+
+if TYPE_CHECKING:
+    from rag_models import RagContextChunk
 
 
 @dataclass
@@ -25,6 +30,10 @@ class LlmResponse:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     tool_calls: list[ToolCall] | None = None  # Вызовы инструментов (MCP)
+    # Чанки, использованные как RAG-контекст. ``None`` — RAG не задействован
+    # (нет подключённых баз знаний), пустой список — базы есть, но ни один
+    # чанк не прошёл порог релевантности.
+    rag_sources: list[RagContextChunk] | None = None
 
 
 class LlmProvider(ABC):

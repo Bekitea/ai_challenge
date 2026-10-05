@@ -1157,7 +1157,7 @@ class RetrieveRagContextUseCase:
             max_candidates=max_candidates,
             final_top_k=final_top_k,
             reranker_enabled=reranker_enabled,
-        )
+        ).chunks
 
 
 class SearchKnowledgeBaseUseCase:

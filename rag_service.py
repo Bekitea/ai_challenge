@@ -16,7 +16,7 @@ from collections.abc import Sequence
 
 from embedding_providers import EmbeddingProvider
 from rag_errors import EmbeddingDimensionMismatchError, RerankerProviderError
-from rag_models import RagContextChunk
+from rag_models import RagContextChunk, RagRetrievalResult
 from reranker_providers import RerankerProvider
 from storage.rag_repositories import (
     AgentKnowledgeBaseRepository,
@@ -84,6 +84,7 @@ class RagService:
         candidate_limit_total: int = 60,
         final_top_k: int = 5,
         reranker_enabled: bool = False,
+        relevance_threshold: float | None = None,
     ):
         self._model_service = model_service
         self._kb_repository = knowledge_base_repository
@@ -94,6 +95,7 @@ class RagService:
         self._candidate_limit_total = candidate_limit_total
         self._final_top_k = final_top_k
         self._reranker_enabled = reranker_enabled
+        self._relevance_threshold = relevance_threshold
         # Circuit breaker: после первой ошибки провайдера не пытаемся
         # реранжить до перезапуска процесса (сервис реранкинга может быть
         # не запущен — не тормозим каждый запрос сетевыми таймаутами).
@@ -106,20 +108,21 @@ class RagService:
         max_candidates: int | None = None,
         final_top_k: int | None = None,
         reranker_enabled: bool | None = None,
-    ) -> list[RagContextChunk]:
+    ) -> RagRetrievalResult:
         """Возвращает релевантные чанки по подключённым базам знаний агента.
 
         ``reranker_enabled`` задаёт per-chat флаг: ``None`` — использовать
         глобальный дефолт (``RERANKER_ENABLED``). Если у агента нет
-        подключённых баз знаний, возвращает пустой список, НЕ выполняя
-        эмбеддинг запроса и реранкинг.
+        подключённых баз знаний, возвращает пустой результат, НЕ выполняя
+        эмбеддинг запроса и реранкинг. Чанки с релевантностью ниже
+        ``relevance_threshold`` отбрасываются.
         """
         if agent_id is None or not query_text.strip():
-            return []
+            return RagRetrievalResult(chunks=[], has_knowledge_bases=False)
 
         kb_ids = self._agent_kb_repository.list_kb_ids(agent_id)
         if not kb_ids:
-            return []
+            return RagRetrievalResult(chunks=[], has_knowledge_bases=False)
 
         candidate_limit = max_candidates or self._candidate_limit_total
         top_k = final_top_k or self._final_top_k
@@ -168,6 +171,7 @@ class RagService:
                 break
 
         chunks = list(candidates.values())
+        was_empty = not chunks
 
         use_reranker = (
             self._reranker_enabled if reranker_enabled is None else reranker_enabled
@@ -187,7 +191,7 @@ class RagService:
                         chunk = chunks[result.index]
                         chunk.rerank_score = result.score
                         ordered.append(chunk)
-                return ordered[:top_k]
+                return self._finalize_result(ordered, was_empty, top_k)
             except RerankerProviderError:
                 self._reranker_unavailable = True
                 logger.warning(
@@ -202,7 +206,27 @@ class RagService:
                 else math.inf
             )
         )
-        return chunks[:top_k]
+        return self._finalize_result(chunks, was_empty, top_k)
+
+    def _finalize_result(
+        self,
+        ordered: list[RagContextChunk],
+        was_empty: bool,
+        top_k: int,
+    ) -> RagRetrievalResult:
+        """Применяет порог релевантности и формирует итог поиска."""
+        filtered = [
+            chunk
+            for chunk in ordered
+            if self._relevance_threshold is None
+            or chunk.relevance is None
+            or chunk.relevance >= self._relevance_threshold
+        ]
+        return RagRetrievalResult(
+            chunks=filtered[:top_k],
+            has_knowledge_bases=True,
+            below_threshold=not filtered and not was_empty,
+        )
 
     def search_knowledge_base(
         self,

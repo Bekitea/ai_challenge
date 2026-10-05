@@ -35,7 +35,12 @@
 12. System stores the link in `agent_knowledge_bases` and prints
     `[OK] База знаний '{name}' подключена к чату.`
 13. On every subsequent user message the agent retrieves relevant chunks from
-    attached bases and injects them into the system prompt before the LLM call
+    attached bases and injects them into the system prompt before the LLM call.
+    Chunks below `RAG_RELEVANCE_THRESHOLD` are discarded and, when nothing
+    passes, the agent is instructed to answer «Не знаю» and ask for
+    clarification. After the answer the CLI prints the `[Источники]:` block
+    (document name, chunk id, fragment number, relevance, quote) for the chunks
+    that were used (see [UC-021](uc-021-rag-sources-and-relevance-threshold.md))
 14. User may detach a base via `/rag` action `2`
 15. User enters `/rerank off` to disable reranking for the chat (or `/rerank on`
     to re-enable it); bare `/rerank` prints the current state. Reranking is

@@ -259,3 +259,40 @@ class TestUC020_RagKnowledgeBases:
         assert "empty.py" not in stdout
         assert "[ERROR]" not in stdout
         assert "[ready]" in stdout
+
+    def test_tc_139_rag_sources_shown_in_dialog(self, doc_file):
+        """TC-139: При подключённой базе знаний после ответа печатаются источники."""
+        test_input = (
+            "7\n1\nKB Sources\n\n"
+            f"3\n1\n{doc_file}\n"
+            "0\n"
+            + _QUICK_CHAT
+            + "/rag\n1\n1\n"
+            + "Где находится Эйфелева башня?\n\n"
+            + "/menu\n6\n"
+        )
+
+        stdout, _, _ = run_cli_command(test_input, timeout=TIMEOUT)
+
+        assert "[AGENT]: [MOCK RESPONSE]" in stdout
+        assert "[Источники]:" in stdout
+        assert "france.txt — чанк #" in stdout
+        assert "релевантность" in stdout
+
+    def test_tc_140_rag_below_threshold_reports_no_sources(self, doc_file, monkeypatch):
+        """TC-140: Порог релевантности выше любого score -> источников нет."""
+        monkeypatch.setenv("RAG_RELEVANCE_THRESHOLD", "1.1")
+        test_input = (
+            "7\n1\nKB Threshold\n\n"
+            f"3\n1\n{doc_file}\n"
+            "0\n"
+            + _QUICK_CHAT
+            + "/rag\n1\n1\n"
+            + "Где находится Эйфелева башня?\n\n"
+            + "/menu\n6\n"
+        )
+
+        stdout, _, _ = run_cli_command(test_input, timeout=TIMEOUT)
+
+        assert "[AGENT]: [MOCK RESPONSE]" in stdout
+        assert "релевантных фрагментов не найдено" in stdout

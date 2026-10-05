@@ -4,6 +4,7 @@ from agents import Agent, AgentSettings, ContextWindowExceededError
 from config import (
     AVAILABLE_MODELS,
     RAG_FILE_EXTENSIONS,
+    RAG_RELEVANCE_THRESHOLD,
     REASONING_EFFORTS,
     YANDEX_DEFAULT_MODEL,
 )
@@ -985,6 +986,35 @@ class CLIChat:
         state = "включён" if agent.get_settings().reranker_enabled else "отключён"
         print(f"[INFO] Реранкинг: {state}.")
 
+    def _print_rag_sources(self, sources):
+        """Печатает источники и цитаты RAG после ответа агента.
+
+        ``None`` — RAG не задействован (нет подключённых баз знаний);
+        пустой список — базы есть, но ни один чанк не прошёл порог.
+        """
+        if sources is None:
+            return
+        if not sources:
+            print(
+                "  [Источники] релевантных фрагментов не найдено "
+                f"(порог {RAG_RELEVANCE_THRESHOLD})."
+            )
+            return
+
+        print("  [Источники]:")
+        for position, chunk in enumerate(sources, start=1):
+            relevance = (
+                f"{chunk.relevance:.2f}" if chunk.relevance is not None else "-"
+            )
+            quote = chunk.text.strip().replace("\n", " ")
+            if len(quote) > 200:
+                quote = quote[:200] + "…"
+            print(
+                f"    {position}. {chunk.document_name} — чанк #{chunk.chunk_id} "
+                f"(фрагмент {chunk.chunk_index + 1}, релевантность {relevance})"
+            )
+            print(f"       «{quote}»")
+
     def rerank_command(self, argument: str):
         """Обрабатывает команду /rerank on|off (без аргумента — показать)."""
         agent = self.current_agent
@@ -1463,6 +1493,8 @@ class CLIChat:
                 print("\r" + " " * 40 + "\r", end="")
 
                 print(f"\n[AGENT]: {response.content}")
+
+                self._print_rag_sources(response.rag_sources)
 
                 # Отображаем информацию о токенах
                 if (

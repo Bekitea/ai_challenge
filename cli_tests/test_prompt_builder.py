@@ -152,6 +152,39 @@ def test_no_rag_section_without_context():
     assert "КОНТЕКСТ ИЗ БАЗ ЗНАНИЙ" not in prepared.messages[0]["content"]
 
 
+def test_rag_context_requires_unknown_answer_on_low_relevance():
+    sources = PromptSources(
+        rag_context=[
+            RagContextChunk(
+                chunk_id=1,
+                document_id=1,
+                knowledge_base_id=1,
+                document_name="doc.txt",
+                chunk_index=0,
+                text="Слабый фрагмент",
+                rerank_score=0.05,
+            )
+        ],
+    )
+
+    prepared = PromptBuilder().build(_history(2), sources, SlidingWindowStrategy(10))
+
+    content = prepared.messages[0]["content"]
+    assert "«Не знаю»" in content
+    assert "уточнить вопрос" in content
+
+
+def test_rag_enabled_without_chunks_requires_unknown_answer():
+    sources = PromptSources(rag_enabled=True)
+
+    prepared = PromptBuilder().build(_history(2), sources, SlidingWindowStrategy(10))
+
+    content = prepared.messages[0]["content"]
+    assert "--- КОНТЕКСТ ИЗ БАЗ ЗНАНИЙ ---" in content
+    assert "Релевантных фрагментов не найдено" in content
+    assert "«Не знаю»" in content
+
+
 def test_key_value_strategy_serialization_roundtrip():
     strategy = KeyValueMemoryStrategy(non_compressible_count=2, buffer_size=3)
     strategy.summary = '{"цель": "X"}'

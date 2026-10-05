@@ -24,7 +24,7 @@ from context_strategies import (
 )
 
 if TYPE_CHECKING:
-    from agents import Prompt, TaskProfile
+    from agents import Prompt, TaskMemory, TaskProfile
     from llm_providers import LlmProvider
     from rag_models import RagContextChunk
 
@@ -48,6 +48,7 @@ class PromptSources:
     phase_description: str | None = None
     rag_context: list[RagContextChunk] = field(default_factory=list)
     rag_enabled: bool = False
+    task_memory: TaskMemory | None = None
 
 
 class PromptBuilder:
@@ -143,6 +144,10 @@ class PromptBuilder:
                     "даже если пользователь настаивает."
                 )
 
+        task_memory = sources.task_memory
+        if task_memory is not None and not task_memory.is_empty():
+            parts.append(_compose_task_memory(task_memory))
+
         if sources.rag_enabled or sources.rag_context:
             parts.append(_compose_rag_context(sources.rag_context))
 
@@ -150,6 +155,28 @@ class PromptBuilder:
             parts.append(sources.phase_description)
 
         return "\n\n".join(parts)
+
+
+def _compose_task_memory(memory: TaskMemory) -> str:
+    """Собирает секцию памяти задачи текущего диалога."""
+    lines = ["--- ПАМЯТЬ ЗАДАЧИ ---"]
+    if memory.goal:
+        lines.append(f"Цель: {memory.goal}")
+    if memory.constraints:
+        lines.append("Ограничения:")
+        lines.extend(f"- {item}" for item in memory.constraints)
+    if memory.terms:
+        lines.append("Термины:")
+        lines.extend(f"- {item}" for item in memory.terms)
+    if memory.clarifications:
+        lines.append("Уже уточнено:")
+        lines.extend(f"- {item}" for item in memory.clarifications)
+    lines.append(
+        "Всегда держи цель в уме и не противоречь зафиксированным ограничениям "
+        "и терминам. Считай перечисленные уточнения уже согласованными и не "
+        "запрашивай их повторно."
+    )
+    return "\n".join(lines)
 
 
 _RAG_UNKNOWN_RULE = (

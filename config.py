@@ -66,6 +66,20 @@ RAG_FINAL_TOP_K = int(os.getenv("RAG_FINAL_TOP_K", "5"))
 # отбрасываются, и ассистент обязан ответить «Не знаю» и попросить уточнений.
 RAG_RELEVANCE_THRESHOLD = float(os.getenv("RAG_RELEVANCE_THRESHOLD", "0.3"))
 
+# --- Память задачи диалога (per-chat) ---
+# Память хранит цель диалога, зафиксированные ограничения/термины и уже
+# внесённые уточнения. Обновляется через LLM каждые N пользовательских ходов
+# и при сжатии контекста, чтобы цель не терялась в длинном диалоге.
+TASK_MEMORY_ENABLED = os.getenv("TASK_MEMORY_ENABLED", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+TASK_MEMORY_UPDATE_EVERY_N_MESSAGES = int(
+    os.getenv("TASK_MEMORY_UPDATE_EVERY_N_MESSAGES", "3")
+)
+TASK_MEMORY_WINDOW_MESSAGES = int(os.getenv("TASK_MEMORY_WINDOW_MESSAGES", "12"))
+
 # Загрузка документов из файлов (.txt/.md/.py)
 RAG_FILE_EXTENSIONS = {".txt", ".md", ".py"}
 RAG_FILE_MAX_BYTES = int(os.getenv("RAG_FILE_MAX_BYTES", str(1024 * 1024)))

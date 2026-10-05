@@ -512,6 +512,17 @@ class CLIChat:
         print(
             f"  Профиль задачи: {info.task_profile_name if info.task_profile_name else '(не привязан)'}"
         )
+        memory = info.task_memory
+        if memory is not None and not memory.is_empty():
+            print("  Память задачи:")
+            if memory.goal:
+                print(f"    Цель: {memory.goal}")
+            if memory.constraints:
+                print(f"    Ограничения: {'; '.join(memory.constraints)}")
+            if memory.terms:
+                print(f"    Термины: {'; '.join(memory.terms)}")
+            if memory.clarifications:
+                print(f"    Уже уточнено: {'; '.join(memory.clarifications)}")
         print(
             f"  Текущая фаза: {info.current_phase if info.current_phase else '(не установлена)'}"
         )

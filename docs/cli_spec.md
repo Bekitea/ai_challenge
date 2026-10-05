@@ -43,11 +43,12 @@ State model: the CLI keeps a single piece of state — `current_agent: Agent | N
 
 Memory facts are injected into the system prompt constructed for every message exchange (see UC-004) in the following fixed order:
 
-1. Global memory facts — section header `--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---` (omitted when global memory is empty);
-2. Task profile memory facts — section header `--- ПАМЯТЬ ЗАДАЧИ: {profile_name} ---` (only when the chat has a task profile attached and the profile has facts);
-3. User preferences — section header `--- ПРЕДПОЧТЕНИЯ ПОЛЬЗОВАТЕЛЯ ---` (only when the attached profile has non-empty preferences).
+1. Global memory facts — section header `Память о пользователе:` (omitted when global memory is empty);
+2. Task profile facts — section header `Память задачи ({profile_name}):`, then `Предпочтения задачи ({profile_name}):` and `--- ИНВАРИАНТЫ ЗАДАЧИ ({profile_name}) ---` (only when the chat has a task profile attached);
+3. Per-chat task memory — section header `--- ПАМЯТЬ ЗАДАЧИ ---` with `Цель`, `Ограничения`, `Термины` and `Уже уточнено` (omitted when empty). Maintained per `conversation_id` by `Agent.update_task_memory` every `TASK_MEMORY_UPDATE_EVERY_N_MESSAGES` turns and on context compression; new clarifications override outdated values (see UC-022);
+4. RAG context — section header `--- КОНТЕКСТ ИЗ БАЗ ЗНАНИЙ ---` (only when knowledge bases are attached, see UC-021).
 
-Facts are extracted into global and task-profile memory by the `save_agent_memory` use case whenever the chat loop exits (via `/menu`, `/stop`, an error or Ctrl+C — see UC-004 exit rule), and on application start by the `save_unsaved_memories` use case (§4.2.3).
+Facts are extracted into global and task-profile memory by the `save_agent_memory` use case whenever the chat loop exits (via `/menu`, Ctrl+C or application start — see UC-004 exit rule), and on application start by the `save_unsaved_memories` use case (§4.2.3). The per-chat task memory is additionally refreshed on exit by the same use case.
 
 ---
 
@@ -743,3 +744,4 @@ this document.
 | UC-019 | Manage MCP Servers Of The Current Chat (/mcp) | Connect MCP servers to the current chat. | [uc-019-manage-mcp-servers-of-the-current-chat.md](uc/uc-019-manage-mcp-servers-of-the-current-chat.md) |
 | UC-020 | Manage Knowledge Bases And RAG (/rag, menu 7) | Create bases, index .txt/.md/.py documents, attach bases to a chat and search. | [uc-020-rag-knowledge-bases.md](uc/uc-020-rag-knowledge-bases.md) |
 | UC-021 | RAG Sources, Citations And Relevance Threshold | Show used sources/quotes after an answer and refuse below-threshold answers with «Не знаю». | [uc-021-rag-sources-and-relevance-threshold.md](uc/uc-021-rag-sources-and-relevance-threshold.md) |
+| UC-022 | Task Memory Of The Dialogue | Keep goal, constraints, terms and clarifications per chat and inject them every turn. | [uc-022-task-memory.md](uc/uc-022-task-memory.md) |

@@ -7,6 +7,7 @@ from config import (
     EMBEDDING_DIMENSION,
     EMBEDDING_MODEL_NAME,
     EMBEDDING_TIMEOUT,
+    FILE_STORAGE_DIR,
     RAG_CANDIDATE_LIMIT_TOTAL,
     RAG_FINAL_TOP_K,
     RAG_RELEVANCE_THRESHOLD,
@@ -33,6 +34,7 @@ from storage.rag_repositories import (
     DocumentRepository,
     KnowledgeBaseRepository,
 )
+from storage.task_memory_repository import FileTaskMemoryRepository
 from storage.task_profile_repository import (
     DatabaseTaskProfileRepository,
 )
@@ -172,11 +174,12 @@ def initialize_application() -> UseCasesBundle:
     memory_repository = FileGlobalMemoryRepository(GLOBAL_MEMORY_PATH)
 
     # Initialize task profile repository
-    from config import FILE_STORAGE_DIR
-
     task_profile_repository = DatabaseTaskProfileRepository(
         FILE_STORAGE_DIR, db_connection.get_session
     )
+
+    # Память задачи диалога (per-chat, файловое хранилище)
+    task_memory_repository = FileTaskMemoryRepository(FILE_STORAGE_DIR)
 
     # Инициализация RAG-подсистемы (эмбеддер, векторное хранилище, репозитории)
     vector_store = SqliteVecVectorStore(db_connection.get_session)
@@ -232,6 +235,7 @@ def initialize_application() -> UseCasesBundle:
         global_memory_repository=memory_repository,
         task_profile_repository=task_profile_repository,
         rag_service=rag_service,
+        task_memory_repository=task_memory_repository,
     )
 
     # Create and return all use cases

@@ -9,6 +9,7 @@ from agents import (
     AgentPreview,
     AgentSettings,
     Prompt,
+    TaskMemory,
     TaskProfile,
 )
 from chunking import chunk_text
@@ -110,6 +111,7 @@ class ChatInfo:
     buffer_size: int | None = None
     task_profile_name: str | None = None
     current_phase: str | None = None
+    task_memory: TaskMemory | None = None
 
 
 @dataclass
@@ -360,6 +362,7 @@ class ShowChatInfoUseCase:
             buffer_size=buffer_size,
             task_profile_name=task_profile_name,
             current_phase=current_phase,
+            task_memory=agent.task_memory,
         )
 
 

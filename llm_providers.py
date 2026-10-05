@@ -227,8 +227,27 @@ class MockLlmProvider(LlmProvider):
         Returns:
             LlmResponse: Mock-объект с содержимым ответа.
         """
-        # Проверяем, запрошен ли JSON формат (для извлечения фактов памяти)
+        system_text = " ".join(
+            msg.get("content", "")
+            for msg in messages
+            if msg.get("role") == "system"
+        )
+
+        # Память задачи диалога: возвращаем структурированное состояние,
+        # чтобы тесты могли проверить подмешивание в системный промпт.
         if response_format and response_format.get("type") == "json_object":
+            if "память задачи диалога" in system_text.lower():
+                return LlmResponse(
+                    content=(
+                        '{"goal": "уточнить детали проекта", '
+                        '"constraints": ["только Python", "без внешних API"], '
+                        '"terms": ["RAG — поиск по базе знаний"], '
+                        '"clarifications": ["использовать локальную модель"]}'
+                    ),
+                    reasoning="[MOCK REASONING] JSON ответ для памяти задачи.",
+                    prompt_tokens=100,
+                    completion_tokens=20,
+                )
             # Возвращаем JSON с тестовыми фактами для memory extraction в тестах
             return LlmResponse(
                 content='{"facts": ["Пользователь предпочитает использовать Python для разработки", "Пользователь работает в Москве"]}',

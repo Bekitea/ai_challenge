@@ -122,6 +122,7 @@ class PersistentAgentRepository(AgentRepository):
         global_memory_repository=None,
         task_profile_repository=None,
         rag_service=None,
+        task_memory_repository=None,
     ):
         """
         Инициализирует репозиторий.
@@ -139,6 +140,7 @@ class PersistentAgentRepository(AgentRepository):
         self._global_memory_repository = global_memory_repository
         self._task_profile_repository = task_profile_repository
         self._rag_service = rag_service
+        self._task_memory_repository = task_memory_repository
 
     def _get_session(self) -> Session:
         """Возвращает новую сессию БД."""
@@ -221,6 +223,7 @@ class PersistentAgentRepository(AgentRepository):
             task_profile_repository=self._task_profile_repository,  # ✅ ДОБАВЛЕНО
             connected_mcp_servers=orm.get_mcp_servers(),
             rag_service=self._rag_service,
+            task_memory_repository=self._task_memory_repository,
         )
 
         # Восстанавливаем живые MCP-подключения (если серверы есть в реестре)
@@ -374,6 +377,7 @@ class PersistentAgentRepository(AgentRepository):
             task_profile_repository=self._task_profile_repository,
             initial_phase=initial_phase,
             rag_service=self._rag_service,
+            task_memory_repository=self._task_memory_repository,
         )
 
         # Устанавливаем ссылку на репозиторий для автосохранения
@@ -510,6 +514,10 @@ class PersistentAgentRepository(AgentRepository):
 
         # Удаляем файл истории по conversation_id
         self._chat_storage.delete_history(conversation_id)
+
+        # Удаляем память задачи диалога
+        if self._task_memory_repository is not None:
+            self._task_memory_repository.delete_memory(conversation_id)
 
         # Закрываем живые MCP-подключения, привязанные к удалённому чату
         from mcp_client import MCP_MANAGER

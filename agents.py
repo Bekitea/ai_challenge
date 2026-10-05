@@ -7,6 +7,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from config import (
+    TASK_MEMORY_ENABLED,
+    TASK_MEMORY_UPDATE_EVERY_N_MESSAGES,
+    TASK_MEMORY_WINDOW_MESSAGES,
+)
 from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
@@ -189,6 +194,28 @@ class TaskProfile:
 
 
 @dataclass
+class TaskMemory:
+    """Память текущего диалога о задаче.
+
+    Хранится per-chat (по ``conversation_id``) и подмешивается в системный
+    блок на каждом сообщении, поэтому цель и зафиксированные договорённости
+    не теряются на длинных диалогах.
+    """
+
+    goal: str = ""
+    constraints: list[str] = field(default_factory=list)
+    terms: list[str] = field(default_factory=list)
+    clarifications: list[str] = field(default_factory=list)
+    updated_at: datetime | None = None
+
+    def is_empty(self) -> bool:
+        """Возвращает True, если память не содержит данных."""
+        return not (
+            self.goal or self.constraints or self.terms or self.clarifications
+        )
+
+
+@dataclass
 class AgentPreview:
     """Превью агента для отображения в списке."""
 
@@ -221,6 +248,7 @@ class Agent:
         initial_phase: AgentPhase | None = None,
         prompt_builder: PromptBuilder | None = None,
         rag_service: Any | None = None,
+        task_memory_repository: Any | None = None,
     ):
         if llm_provider is None:
             raise ValueError("llm_provider is required")
@@ -254,6 +282,11 @@ class Agent:
 
         # Task profile fields
         self.task_profile = task_profile
+
+        # Память задачи текущего диалога (per-chat, по conversation_id).
+        self._task_memory_repository = task_memory_repository
+        self.task_memory = TaskMemory()
+        self._turns_since_task_memory = 0
 
         # Phase state (default to PLAN; non-interactive chats such as
         # scheduled reports may start directly in EXECUTE).
@@ -506,6 +539,7 @@ class Agent:
             phase_description=self._current_phase.get_description(),
             rag_context=rag_result.chunks,
             rag_enabled=rag_result.has_knowledge_bases,
+            task_memory=self.task_memory,
         )
         prepared = self._prompt_builder.build(
             history=self._messages,
@@ -666,6 +700,12 @@ class Agent:
         # Помечаем диалог как непрошедший через сохранение памяти
         self.is_dialog_remembered = False
 
+        # Память задачи: обновляем по счётчику ходов или сразу после сжатия
+        # контекста, чтобы цель диалога не терялась на длинных диалогах.
+        self._maybe_update_task_memory(
+            compressed=bool(prepared.summarization_tokens)
+        )
+
         # Автосохранение после каждого сообщения
         if self._auto_save:
             self.save()
@@ -755,6 +795,9 @@ class Agent:
             task_profile_repository=self._task_profile_repository,
             connected_mcp_servers=list(self.connected_mcp_servers),
             rag_service=self._rag_service,
+            # Ветка — чистый лист по памяти задачи: репозиторий передаём,
+            # но данные родителя не копируем (новый conversation_id).
+            task_memory_repository=self._task_memory_repository,
         )
 
         branched_agent._repository = self._repository
@@ -795,12 +838,163 @@ class Agent:
 
     def refresh_memory(self) -> None:
         """
-        Загружает общесистемную память из репозитория.
+        Загружает общесистемную память и память задачи из репозиториев.
 
         Вызывается при инициализации агента и при входе в чат.
-        Репозиторий должен быть установлен (иначе агент не будет создан).
+        Репозиторий глобальной памяти должен быть установлен (иначе агент
+        не будет создан).
         """
         self.global_memory = self._global_memory_repository.get_memory()
+        self.task_memory = self._load_task_memory()
+
+    def _load_task_memory(self) -> TaskMemory:
+        """Загружает память задачи текущего диалога из репозитория."""
+        if self._task_memory_repository is None or self.conversation_id is None:
+            return TaskMemory()
+        memory = self._task_memory_repository.get_memory(self.conversation_id)
+        return memory if memory is not None else TaskMemory()
+
+    def _save_task_memory(self) -> None:
+        """Сохраняет память задачи текущего диалога."""
+        if self._task_memory_repository is None or self.conversation_id is None:
+            return
+        self.task_memory.updated_at = datetime.now().astimezone()
+        self._task_memory_repository.save_memory(
+            self.conversation_id, self.task_memory
+        )
+
+    @staticmethod
+    def _as_str_list(value: Any) -> list[str]:
+        """Нормализует значение из JSON в список непустых строк."""
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    def _maybe_update_task_memory(self, compressed: bool) -> None:
+        """Триггерит обновление памяти задачи по счётчику или при сжатии."""
+        if not TASK_MEMORY_ENABLED:
+            return
+        self._turns_since_task_memory += 1
+        if (
+            compressed
+            or self._turns_since_task_memory >= TASK_MEMORY_UPDATE_EVERY_N_MESSAGES
+        ):
+            self.update_task_memory()
+            self._turns_since_task_memory = 0
+
+    def update_task_memory(self) -> None:
+        """Обновляет память задачи текущего диалога через LLM.
+
+        Отправляет ограниченное окно последних сообщений вместе с текущей
+        памятью и просит вернуть полное актуальное состояние: новые
+        уточнения пользователя заменяют устаревшие. Расход токенов пишется
+        в ``tech_prompt_tokens``/``tech_completion_tokens``.
+        """
+        if not TASK_MEMORY_ENABLED or self._task_memory_repository is None:
+            return
+
+        window = [
+            msg for msg in self._messages if msg.role in ("user", "assistant")
+        ][-TASK_MEMORY_WINDOW_MESSAGES:]
+        if not window:
+            return
+
+        import json
+
+        dialog_text = ""
+        for msg in window:
+            role_ru = "Пользователь" if msg.role == "user" else "Ассистент"
+            dialog_text += f"{role_ru}: {msg.content}\n"
+
+        current_memory = json.dumps(
+            {
+                "goal": self.task_memory.goal,
+                "constraints": self.task_memory.constraints,
+                "terms": self.task_memory.terms,
+                "clarifications": self.task_memory.clarifications,
+            },
+            ensure_ascii=False,
+        )
+
+        profile_context = ""
+        if self.task_profile is not None:
+            profile_context = (
+                f"\nКонтекст профиля задачи «{self.task_profile.name}»: "
+                f"{self.task_profile.description}\n"
+            )
+
+        system_prompt = (
+            "Ты ведёшь память задачи диалога и возвращаешь её в формате JSON.\n"
+            "Поля:\n"
+            '- "goal": основная цель диалога одной строкой;\n'
+            '- "constraints": список зафиксированных ограничений и требований;\n'
+            '- "terms": список зафиксированных терминов и их значений '
+            "(формат «термин — значение»);\n"
+            '- "clarifications": список уже внесённых пользователем уточнений '
+            "и принятых решений.\n\n"
+            "Правила:\n"
+            "1. Верни ПОЛНОЕ актуальное состояние памяти, а не только новое.\n"
+            "2. Если пользователь уточнил или изменил ранее сказанное — "
+            "замени устаревшее значение новым.\n"
+            "3. Не дублируй записи и не выдумывай данные, которых нет в диалоге.\n"
+            "4. Сохраняй ранее зафиксированные ограничения и термины, пока "
+            "пользователь их не изменит.\n"
+            f"{profile_context}\n"
+            f"Текущая память (JSON):\n{current_memory}\n\n"
+            f"Диалог для анализа:\n{dialog_text}\n\n"
+            'Верни JSON строго со схемой: {"goal": "...", "constraints": [...], '
+            '"terms": [...], "clarifications": [...]}'
+        )
+
+        response = self._llm_provider.generate(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Обнови память задачи."},
+            ],
+            temperature=0.1,
+            max_tokens=1000,
+            response_format={"type": "json_object"},
+        )
+
+        if response.prompt_tokens is not None:
+            self._token_counters.tech_prompt_tokens += response.prompt_tokens
+        if response.completion_tokens is not None:
+            self._token_counters.tech_completion_tokens += response.completion_tokens
+
+        try:
+            parsed = json.loads(response.content)
+        except (json.JSONDecodeError, TypeError):
+            return
+        if not isinstance(parsed, dict):
+            return
+
+        recognized = {"goal", "constraints", "terms", "clarifications"}
+        if not recognized & parsed.keys():
+            return
+
+        self.task_memory = TaskMemory(
+            goal=(
+                str(parsed["goal"]).strip()
+                if "goal" in parsed
+                else self.task_memory.goal
+            ),
+            constraints=(
+                self._as_str_list(parsed["constraints"])
+                if "constraints" in parsed
+                else self.task_memory.constraints
+            ),
+            terms=(
+                self._as_str_list(parsed["terms"])
+                if "terms" in parsed
+                else self.task_memory.terms
+            ),
+            clarifications=(
+                self._as_str_list(parsed["clarifications"])
+                if "clarifications" in parsed
+                else self.task_memory.clarifications
+            ),
+        )
+        self._save_task_memory()
 
     def save_memory(self) -> None:
         """
@@ -831,6 +1025,10 @@ class Agent:
 
         if not unremembered_prompts:
             return  # Нет новых данных для запоминания
+
+        # Фиксируем память задачи на выходе (перекрывающая семантика).
+        self.update_task_memory()
+        self._turns_since_task_memory = 0
 
         dialog_text = ""
         for msg in unremembered_prompts:

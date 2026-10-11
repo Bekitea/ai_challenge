@@ -76,7 +76,7 @@ class TestUC015_ViewTaskProfileMemory:
             "Test Chat\n"  # Chat name
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
             "1\n"  # DefaultStrategy
             "1\n"  # Привязать профиль №1 (Facts Profile)
             "/menu\n"  # Выход из чата в меню

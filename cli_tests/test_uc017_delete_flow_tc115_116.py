@@ -31,7 +31,6 @@ class TestUC017_DeleteFlow_TC115_116:
         test_input = (
             _QUICK_CHAT  # Новый чат (быстрое создание)
             + "Remember this fact\n"  # Сообщение
-            + "\n"  # Отказ от рассуждений (если запрошен)
             # EOF: stdin закрывается прямо в цикле чата
         )
 

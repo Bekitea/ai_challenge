@@ -55,6 +55,7 @@ class TestUC005_TC084_087_SettingsBranches:
             "-1\n"  # Top P: вне диапазона
             "-5\n"  # Top K: отрицательный -> re-prompt
             "0\n"  # Top K: корректно (отключён)
+            "\n"  # Max Tokens (default: без ограничений)
             "\n"  # Reasoning effort (default)
             "\n"  # Context window (default)
             "/menu\n"

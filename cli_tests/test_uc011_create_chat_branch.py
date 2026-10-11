@@ -25,7 +25,7 @@ class TestUC011_CreateChatBranch:
             "BranchSwitch\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/branch\n"  # Create branch
             "\n"  # Accept default name
@@ -48,7 +48,7 @@ class TestUC011_CreateChatBranch:
             "BranchStay\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/branch\n"  # Create branch
             "\n"  # Accept default name
@@ -70,7 +70,7 @@ class TestUC011_CreateChatBranch:
             "Original\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/branch\n"  # Create branch
             "My Custom Branch\n"  # Custom name
@@ -92,7 +92,7 @@ class TestUC011_CreateChatBranch:
             "BranchStrategy\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "2\n"  # SummarizationStrategy
             "\n" + "\n"  # Default params
             "/branch\n"  # Create branch
@@ -115,7 +115,7 @@ class TestUC011_CreateChatBranch:
             "BranchSliding\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "4\n"  # SlidingWindowStrategy
             "15\n"  # window_size=15
             "/branch\n"  # Create branch

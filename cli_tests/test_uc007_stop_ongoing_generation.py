@@ -28,7 +28,7 @@ class TestUC007_StopOngoingGeneration:
             "StopIdle\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/stop\n"  # Stop when idle
             "4\n"  # Exit
@@ -55,7 +55,7 @@ class TestUC007_StopOngoingGeneration:
             "StopGen\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "Test message\n"  # Send message
             "/stop\n"  # Try to stop
@@ -80,7 +80,7 @@ class TestUC007_StopOngoingGeneration:
             "IdleStop\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/stop\n"  # Stop when idle
             "4\n"  # Exit

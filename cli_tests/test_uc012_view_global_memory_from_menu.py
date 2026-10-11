@@ -64,7 +64,7 @@ class TestUC012_ViewGlobalMemoryFromMenu:
         Steps:
         1. Create a new chat
         2. Send a message (mock provider extracts facts into global memory)
-        3. Answer 'n' to reasoning prompt
+        3. Reasoning is shown automatically before the answer
         4. Use /menu to return to main menu
         5. Select option 3 to view global memory
         6. Verify header is displayed
@@ -77,10 +77,9 @@ class TestUC012_ViewGlobalMemoryFromMenu:
             "FactsMemoryTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n\n\n\n\n"  # Settings (5 times)
+            "\n\n\n\n\n\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "Расскажи о себе\n"  # Send message to trigger memory extraction
-            "n\n"  # Don't show reasoning
             "/menu\n"  # Return to main menu
             "4\n"  # View global memory (should have facts from mock)
             "6\n"  # Exit

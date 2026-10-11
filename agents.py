@@ -94,6 +94,7 @@ class AgentSettings:
     top_k: int | None = None
     top_p: float | None = None
     temperature: float | None = None
+    max_tokens: int | None = None
     reasoning_effort: str | None = None
     context_window_size: int | None = None
     reranker_enabled: bool = True
@@ -108,6 +109,7 @@ class AgentSettings:
                 "top_k": self.top_k,
                 "top_p": self.top_p,
                 "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
                 "reasoning_effort": self.reasoning_effort,
                 "context_window_size": self.context_window_size,
                 "reranker_enabled": self.reranker_enabled,
@@ -124,6 +126,7 @@ class AgentSettings:
                 "top_k": self.top_k,
                 "top_p": self.top_p,
                 "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
                 "reasoning_effort": self.reasoning_effort,
             }.items()
             if v is not None

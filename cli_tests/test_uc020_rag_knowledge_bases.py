@@ -176,7 +176,7 @@ class TestUC020_RagKnowledgeBases:
 
     def test_tc_129_dialog_without_knowledge_base(self):
         """TC-129: Без подключённых баз знаний диалог идёт без RAG-ошибок."""
-        test_input = _QUICK_CHAT + "Обычное сообщение\n\n" + "/menu\n6\n"
+        test_input = _QUICK_CHAT + "Обычное сообщение\n" + "/menu\n6\n"
 
         stdout, _, _ = run_cli_command(test_input)
 

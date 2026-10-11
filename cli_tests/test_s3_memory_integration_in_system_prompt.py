@@ -32,10 +32,9 @@ class TestS3_MemoryIntegrationInSystemPrompt:
             "Global Memory Chat\n"  # Name
             "\n"  # Skip prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
             "1\n"  # Strategy
             "0\n"  # No task profile
-            "n\n"  # No reasoning (промпт после вывода ответа)
             "/menu\n"  # Back to main menu
             # Create task profile
             "3\n"  # Профили задач
@@ -51,12 +50,11 @@ class TestS3_MemoryIntegrationInSystemPrompt:
             "Integration Chat\n"  # Name
             "\n"  # Skip prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
             "1\n"  # Strategy
             # Select the created profile (assuming it's #1)
             "1\n"  # Select profile
             "Send test message\n"  # Message
-            "n\n"  # No reasoning
             "/info\n"  # Проверка привязки профиля и памяти в инфо чата
             "/menu\n"  # Выход в меню
             "4\n"  # Просмотреть глобальную память (шаг 1: факты есть)
@@ -106,11 +104,10 @@ class TestS3_MemoryIntegrationInSystemPrompt:
             "Empty Pref Chat\n"  # Name
             "\n"  # Skip prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
             "1\n"  # Strategy
             "1\n"  # Select profile #1
             "Test message\n"  # Message
-            "n\n"  # No reasoning
             "/menu\n"  # Выход в меню
             "6\n"  # Exit
         )

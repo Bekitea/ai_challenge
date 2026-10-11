@@ -25,7 +25,7 @@ class TestUC001_TC004_008_CreationValidation:
             + "TC004 Chat\n"  # Название (ручной путь стартовал)
             + "\n"  # Системный промпт
             + "1\n"  # Модель
-            + "\n" * 5  # Дефолтные настройки
+            + "\n" * 6  # Дефолтные настройки
             + "1\n"  # DefaultStrategy
             + "0\n"  # Профиль не привязывать
             + "/menu\n"
@@ -62,7 +62,7 @@ class TestUC001_TC004_008_CreationValidation:
             + "\n"  # Пустое имя -> default 'Чат N' (N = 2 + 1 = 3)
             + "\n"  # Системный промпт
             + "1\n"  # Модель
-            + "\n" * 5  # Дефолтные настройки
+            + "\n" * 6  # Дефолтные настройки
             + "1\n"  # DefaultStrategy
             + "0\n"  # Профиль не привязывать
             + "/menu\n"
@@ -99,6 +99,7 @@ class TestUC001_TC004_008_CreationValidation:
             + "\n"  # Температура
             + "\n"  # Top P
             + "\n"  # Top K
+            + "\n"  # Max Tokens
             + "\n"  # Reasoning effort
             + "\n"  # Context window
             + "1\n"  # DefaultStrategy
@@ -142,7 +143,7 @@ class TestUC001_TC004_008_CreationValidation:
             + "TC008\n"
             + "\n"  # Системный промпт
             + "1\n"  # Модель
-            + "\n" * 5  # Дефолтные настройки
+            + "\n" * 6  # Дефолтные настройки
             + "2\n"  # SummarizationStrategy
             + "abc\n"  # Некорректное число несжимаемых сообщений
             + "2\n"  # Повтор выбора стратегии

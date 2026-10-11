@@ -203,6 +203,26 @@ class CLIChat:
             except ValueError:
                 print("Введите корректное число")
 
+        # Max Tokens (без ограничений по умолчанию)
+        max_tokens_input = input(
+            "\nMax Tokens (Enter — без ограничений): "
+        ).strip()
+        if max_tokens_input:
+            try:
+                max_tokens = int(max_tokens_input)
+                if max_tokens <= 0:
+                    print(
+                        "Max Tokens должен быть положительным числом. Используется значение по умолчанию (без ограничений)."
+                    )
+                    max_tokens = None
+            except ValueError:
+                print(
+                    "Некорректное число. Используется значение по умолчанию (без ограничений)."
+                )
+                max_tokens = None
+        else:
+            max_tokens = None
+
         # Reasoning effort
         reasoning_effort = self._select_reasoning_effort()
 
@@ -231,6 +251,7 @@ class CLIChat:
             temperature=temp,
             top_p=top_p,
             top_k=top_k if top_k > 0 else None,
+            max_tokens=max_tokens,
             reasoning_effort=reasoning_effort,
             context_window_size=context_window_size,
             reranker_enabled=(
@@ -499,6 +520,9 @@ class CLIChat:
         )
         print(
             f"  Top K: {settings.top_k if settings.top_k is not None else 'отключено'}"
+        )
+        print(
+            f"  Max Tokens: {settings.max_tokens if settings.max_tokens is not None else 'без ограничений'}"
         )
         print(f"  Reasoning Effort: {settings.reasoning_effort}")
         context_window = (
@@ -904,8 +928,17 @@ class CLIChat:
             # Технические сообщения протокола tool calling не показываем
             if msg.role == "tool" or getattr(msg, "tool_calls", None):
                 continue
-            role_prefix = "[USER]" if msg.role == "user" else "[AGENT]"
-            print(f"{role_prefix}: {msg.content}")
+            if msg.role == "user":
+                print(f"[USER]: {msg.content}")
+                continue
+            # Рассуждения модели показываются перед её ответом.
+            reasoning = getattr(msg, "reasoning", None)
+            if reasoning:
+                print("[Reasoning]:")
+                for line in reasoning.split("\n"):
+                    print(f"  {line}")
+            answer = (msg.content or "").strip() or "(агент ничего не ответил)"
+            print(f"[AGENT]: {answer}")
         print("-" * 40)
 
     def _print_hint(self):
@@ -1562,7 +1595,15 @@ class CLIChat:
                 # Очищаем строку "Агент печатает..."
                 print("\r" + " " * 40 + "\r", end="")
 
-                print(f"\n[AGENT]: {response.content}")
+                # Рассуждения модели отображаются перед ответом и всегда,
+                # без запроса пользователя.
+                if response.reasoning:
+                    print("\n[Reasoning]:")
+                    for line in response.reasoning.split("\n"):
+                        print(f"  {line}")
+
+                answer = response.content.strip() or "(агент ничего не ответил)"
+                print(f"\n[AGENT]: {answer}")
 
                 self._print_rag_sources(response.rag_sources)
 
@@ -1589,15 +1630,6 @@ class CLIChat:
                         print(
                             f"  [Заполненность контекста: {response.prompt_tokens}/{context_window_size} ({fill_percent:.1f}%)]"
                         )
-
-                if response.reasoning:
-                    show_reasoning = (
-                        input("\nПоказать рассуждения модели? (y/n): ").strip().lower()
-                    )
-                    if show_reasoning == "y":
-                        print("\n[Reasoning]:")
-                        for line in response.reasoning.split("\n"):
-                            print(f"  {line}")
 
             except (KeyboardInterrupt, EOFError):
                 print("\n\nПрервано пользователем.")

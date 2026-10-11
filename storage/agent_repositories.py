@@ -483,15 +483,18 @@ class PersistentAgentRepository(AgentRepository):
                 )
                 previews.append(preview)
 
-            # Сортировка: None в конце, остальные по убыванию
-            previews.sort(
-                key=lambda p: (
-                    p.last_message_timestamp
-                    if p.last_message_timestamp
-                    else datetime.min.replace(tzinfo=UTC)
-                ),
-                reverse=True,
-            )
+            # Сортировка: None в конце, остальные по убыванию. SQLite может
+            # вернуть naive datetime, поэтому нормализуем зону к UTC, иначе
+            # сравнение naive и aware (fallback) падает с TypeError.
+            def _sort_key(preview: AgentPreview) -> datetime:
+                ts = preview.last_message_timestamp
+                if ts is None:
+                    return datetime.min.replace(tzinfo=UTC)
+                if ts.tzinfo is None:
+                    return ts.replace(tzinfo=UTC)
+                return ts
+
+            previews.sort(key=_sort_key, reverse=True)
             return previews
 
     def update_agent(self, agent: Agent) -> None:

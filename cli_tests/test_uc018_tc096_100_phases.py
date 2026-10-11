@@ -22,7 +22,6 @@ class TestUC018_TC096_100_Phases:
             + "/execute\n"
             + "/validate\n"
             + "message in validate phase\n"
-            + "\n"  # отказ от рассуждений
             + "/menu\n"
             + "6\n"
         )

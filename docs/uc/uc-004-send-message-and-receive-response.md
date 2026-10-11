@@ -18,11 +18,12 @@
 5. System sends message to backend agent (`send_message` use case)
 6. Backend calls LLM provider
 7. LLM generates response
-8. System displays "[AGENT]: {response}"
-9. System displays token lines if usage was reported: `  [Токены: prompt: {p}, completion: {c}]` and `  [Заполненность контекста: {prompt_tokens}/{context_window_size} ({percent:.1f}%)]` (the fill line is printed only when prompt_tokens is not None)
-10. System saves both messages to history
-11. System re-displays prompt
-12. Use case ends
+8. If the response carries reasoning, system always prints the indented `[Reasoning]:` block first (before the answer, no prompt)
+9. System displays `[AGENT]: {response}`; if the response content is empty/whitespace, it displays `[AGENT]: (агент ничего не ответил)`
+10. System displays token lines if usage was reported: `  [Токены: prompt: {p}, completion: {c}]` and `  [Заполненность контекста: {prompt_tokens}/{context_window_size} ({percent:.1f}%)]` (the fill line is printed only when prompt_tokens is not None)
+11. System saves both messages to history
+12. System re-displays prompt
+13. Use case ends
 
 ## Alternative Flows
 
@@ -60,8 +61,13 @@
   - System wraps text appropriately
 
 - **A9: Reasoning In Response**
-  - After step 9: response carries reasoning content
-  - System asks `Показать рассуждения модели? (y/n):`; on `y` it prints the indented `[Reasoning]:` block, otherwise nothing extra
+  - Before step 9: if the response carries reasoning content
+  - System always prints the indented `[Reasoning]:` block **before** the `[AGENT]:` line — no confirmation prompt is shown
+  - The same behavior applies when replaying history on entering a chat (§4.5.1)
+
+- **A10: Empty Response Content**
+  - Step 9: the response content is empty or whitespace (e.g. the model exhausted its token budget while reasoning)
+  - System displays `[AGENT]: (агент ничего не ответил)` instead of an empty line; any reasoning block is still printed before it per A9
 
 ## Postconditions
 
@@ -150,16 +156,16 @@
 
 ---
 
-### TC-083: Reasoning Display Prompt
+### TC-083: Reasoning Always Displayed Before Answer
 
 **Related UC**: UC-004 A9
 
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | 1    | Configure reasoning effort (e.g. "low"), send a message         | Response carries reasoning content                                                      |
-| 2    | Verify extra prompt                                             | `Показать рассуждения модели? (y/n):` displayed after token lines                        |
-| 3    | Enter "y"                                                       | Indented `[Reasoning]:` block printed                                                    |
-| 4    | Repeat exchange, enter "n"                                      | No reasoning block printed; back to prompt                                               |
+| 2    | Verify display                                                  | Indented `[Reasoning]:` block printed **before** the `[AGENT]:` line; no `Показать рассуждения модели?` prompt |
+| 3    | Send a second message                                           | Reasoning block printed before the answer again (one per exchange)                       |
+| 4    | Re-enter the chat                                               | History replay prints `[Reasoning]:` before each assistant answer that has reasoning     |
 
 ---
 

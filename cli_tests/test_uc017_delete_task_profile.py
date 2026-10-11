@@ -74,7 +74,7 @@ class TestUC017_DeleteTaskProfile:
             "Linked Chat\n"  # Chat name
             "\n"  # Skip prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
             "1\n"  # Strategy
             "1\n"  # Привязать профиль №1 (Linked Profile)
             "/menu\n"  # Выход из чата в меню

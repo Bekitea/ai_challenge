@@ -16,7 +16,7 @@
 3. System displays current settings (`--- ТЕКУЩИЕ НАСТРОЙКИ ---` block)
 4. System prompts: `Изменить настройки? (y/n):`
 5. User enters "y"
-6. System executes `change_settings()`: displays header `--- НАСТРОЙКИ ДЛЯ '{chat_name}' ---` and re-prompts ALL agent settings (provider/model, temperature, top_p, top_k, reasoning effort, context window size — the same prompts as chat creation steps; empty input disables a parameter, except the model prompt where empty input keeps the current provider/model)
+6. System executes `change_settings()`: displays header `--- НАСТРОЙКИ ДЛЯ '{chat_name}' ---` and re-prompts ALL agent settings (provider/model, temperature, top_p, top_k, max_tokens, reasoning effort, context window size — the same prompts as chat creation steps; empty input disables a parameter, except the model prompt where empty input keeps the current provider/model)
 7. User enters new values (e.g. temperature "1.0")
 8. System updates settings via `change_settings` use case
 9. System displays "[OK] Настройки обновлены!" followed by the refreshed `--- ТЕКУЩИЕ НАСТРОЙКИ ---` block
@@ -30,7 +30,7 @@
   - No changes are made; system returns to the chat prompt
 
 - **A2: Invalid Input During Re-Prompting**
-  - Step 6: Each individual setting validates exactly like during chat creation (see UC-001 A7–A10): out-of-range/non-numeric temperature and top_p disable the parameter with a warning; top_k, reasoning effort re-prompt on invalid input; context window falls back to 200k with a warning
+  - Step 6: Each individual setting validates exactly like during chat creation (see UC-001 A7–A10, A14): out-of-range/non-numeric temperature and top_p disable the parameter with a warning; top_k, reasoning effort re-prompt on invalid input; max_tokens falls back to unlimited with a warning; context window falls back to 200k with a warning
 
 - **A3: KeyboardInterrupt / EOFError During Settings Flow**
   - Any step: Ctrl+C or end of input propagates to the chat loop handler
@@ -55,8 +55,8 @@
 | ---- | ----------------------------------- | --------------------------------- |
 | 1    | Enter chat with configured settings | Prompt displayed                  |
 | 2    | Type "/settings"                    | `--- ТЕКУЩИЕ НАСТРОЙКИ ---` block displayed, then prompt `Изменить настройки? (y/n):` |
-| 3    | Verify format                       | All 7 parameters shown: Провайдер, Модель, Температура, Top P, Top K, Reasoning Effort, Размер контекстного окна (§4.6.1) |
-| 4    | Verify disabled display             | Shows "отключена"/"отключен"/"отключено" for None values |
+| 3    | Verify format                       | All 8 parameters shown: Провайдер, Модель, Температура, Top P, Top K, Max Tokens, Reasoning Effort, Размер контекстного окна (§4.6.1) |
+| 4    | Verify disabled display             | Shows "отключена"/"отключен"/"отключено" for None values; Max Tokens shows "без ограничений" |
 | 5    | Enter "n" at change prompt          | Back to chat prompt, no changes (UC-005 A1) |
 
 ---
@@ -84,7 +84,7 @@
 | 1    | Type "/settings"                     | `--- ТЕКУЩИЕ НАСТРОЙКИ ---` block displayed                         |
 | 2    | Prompt: `Изменить настройки? (y/n):` | Displayed                                                           |
 | 3    | Enter "y"                            | Header `--- НАСТРОЙКИ ДЛЯ '{chat_name}' ---`, all settings prompts shown (like creation) |
-| 4    | Enter valid values at ALL prompts (provider/model, temperature, top_p, top_k, reasoning effort, context window) | Values applied; nothing skipped — no "keep as-is" semantics exists, except empty input at the model prompt keeps the current selection (§4.6.2) |
+| 4    | Enter valid values at ALL prompts (provider/model, temperature, top_p, top_k, max_tokens, reasoning effort, context window) | Values applied; nothing skipped — no "keep as-is" semantics exists, except empty input at the model prompt keeps the current selection (§4.6.2) |
 | 5    | Verify update                        | `[OK] Настройки обновлены!` + refreshed `--- ТЕКУЩИЕ НАСТРОЙКИ ---` block |
 | 6    | Verify return                        | Back to chat prompt                                                 |
 

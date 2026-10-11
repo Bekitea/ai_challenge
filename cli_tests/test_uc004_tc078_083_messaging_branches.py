@@ -15,7 +15,6 @@ class TestUC004_TC078_083_MessagingBranches:
         """
         test_input = (
             _QUICK_CHAT + "Hello agent\n"
-            "\n"  # Отказ показать рассуждения
             "/info\n"
             "/menu\n"
             "6\n"
@@ -48,6 +47,7 @@ class TestUC004_TC078_083_MessagingBranches:
             + "\n"  # temp
             + "\n"  # top_p
             + "\n"  # top_k
+            + "\n"  # max_tokens
             + "\n"  # reasoning
             + "1\n"  # Context window = 1 токен
             + "1\n"  # DefaultStrategy
@@ -81,7 +81,7 @@ class TestUC004_TC078_083_MessagingBranches:
         'Прервано пользователем.' — its sibling coverage lives in TC-086.
         """
         test_input = (
-            _QUICK_CHAT + "first message\n\n"  # отказ от рассуждений
+            _QUICK_CHAT + "first message\n"  # сообщение; EOF эмулирует Ctrl+C
             # EOF прямо на промпте ввода чата (эмуляция Ctrl+C на пустом вводе)
         )
 
@@ -103,7 +103,6 @@ class TestUC004_TC078_083_MessagingBranches:
         long_msg = "L" * 3000
         test_input = (
             _QUICK_CHAT + long_msg + "\n"
-            "\n"  # отказ от рассуждений
             "/menu\n"
             "6\n"
         )
@@ -119,19 +118,17 @@ class TestUC004_TC078_083_MessagingBranches:
         )
         assert "Traceback" not in stderr
 
-    def test_tc_083_reasoning_display_prompt(self):
+    def test_tc_083_reasoning_always_displayed_before_answer(self):
         """
-        TC-083: Reasoning Display Prompt (UC-004 A9)
+        TC-083: Reasoning Always Displayed Before Answer (UC-004 A9)
 
-        Mock provider always attaches reasoning content. Entering 'y' prints
-        the [Reasoning] block; entering 'n' prints nothing.
+        Mock provider always attaches reasoning content. Reasoning is printed
+        automatically before the answer, with no confirmation prompt.
         """
         test_input = (
             _manual_chat("ReasonChat")
             + "hello one\n"
-            + "y\n"  # Показать рассуждения
             + "hello two\n"
-            + "n\n"  # Не показывать рассуждения
             + "/menu\n"
             + "6\n"
         )
@@ -139,10 +136,12 @@ class TestUC004_TC078_083_MessagingBranches:
         stdout, stderr, returncode = run_cli_command(test_input)
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "Показать рассуждения модели? (y/n):" in stdout
-        assert "[Reasoning]:" in stdout
+        assert "Показать рассуждения модели? (y/n):" not in stdout
         assert "[MOCK REASONING]" in stdout
-        # Второй обмен с 'n' не печатает блок рассуждений повторно
-        after_second = stdout.split("hello two", 1)[-1]
-        assert "[Reasoning]:" not in after_second
+        assert stdout.count("[Reasoning]:") >= 2
+        # Для каждого ответа блок рассуждений идёт до [AGENT]
+        first_agent = stdout.index("[AGENT]: [MOCK RESPONSE]")
+        second_agent = stdout.index("[AGENT]: [MOCK RESPONSE]", first_agent + 1)
+        assert stdout.index("[Reasoning]:") < first_agent
+        assert stdout.index("[Reasoning]:", first_agent) < second_agent
         assert "Traceback" not in stderr

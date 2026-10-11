@@ -27,25 +27,27 @@
 13. User enters "0.9"
 14. System prompts for Top K
 15. User enters "40"
-16. System prompts for reasoning effort
-17. User selects "2" (low)
-18. System prompts for context window size; user enters "128000"
-19. System prompts for context strategy; user selects "1" (DefaultStrategy)
-20. System prompts for task profile; user selects "0" (no attachment)
-21. System creates chat with all settings
-22. System displays `[OK] Чат '{name}' создан!`
-23. System enters chat loop
-24. Use case ends
+16. System prompts for max tokens
+17. User enters "512"
+18. System prompts for reasoning effort
+19. User selects "2" (low)
+20. System prompts for context window size; user enters "128000"
+21. System prompts for context strategy; user selects "1" (DefaultStrategy)
+22. System prompts for task profile; user selects "0" (no attachment)
+23. System creates chat with all settings
+24. System displays `[OK] Чат '{name}' создан!`
+25. System enters chat loop
+26. Use case ends
 
 ## Alternative Flows
 
 - **A1: Quick Creation With Defaults**
   - Step 3: User enters "n" or presses Enter (default is "n")
-  - System prints `Используются настройки по умолчанию.` and skips steps 4–7 and 10–15, 18–20
+  - System prints `Используются настройки по умолчанию.` and skips steps 4–7 and 10–15, 20–22
   - **The model is still selected interactively (step 8–9) — there is no default model**
-  - **Reasoning effort is still selected interactively (step 16–17) — empty input selects the default "none"**
-  - Other settings default to: temperature/top_p/top_k disabled, context window 200000, DefaultStrategy, no task profile
-  - Continue from step 21
+  - **Reasoning effort is still selected interactively (step 18–19) — empty input selects the default "none"**
+  - Other settings default to: temperature/top_p/top_k/max_tokens disabled (max_tokens = not limited), context window 200000, DefaultStrategy, no task profile
+  - Continue from step 23
 
 - **A2: Invalid Answer To Configure Prompt**
   - Step 3: User enters text other than `y`/`да`/`д`/`n`/`нет`/`н`
@@ -80,22 +82,28 @@
   - Value 0 is stored as `None` (disabled)
 
 - **A9: Invalid Reasoning Effort**
-  - Step 17: Non-integer → `Введите корректное число`; out of range 1–4 → `Выбор должен быть от 1 до 4`; both re-prompt step 17
+  - Step 19: Non-integer → `Введите корректное число`; out of range 1–4 → `Выбор должен быть от 1 до 4`; both re-prompt step 19
   - Empty input selects the default (1 — none)
 
 - **A10: Invalid Context Window Size**
-  - Step 18: Non-integer → warning `Некорректное число. Используется 200k.`, value = 200000, creation continues
-  - Step 18: Zero or negative → warning `Размер должен быть положительным числом. Используется 200k.`, value = 200000, creation continues
+  - Step 20: Non-integer → warning `Некорректное число. Используется 200k.`, value = 200000, creation continues
+  - Step 20: Zero or negative → warning `Размер должен быть положительным числом. Используется 200k.`, value = 200000, creation continues
   - Empty input → 200000 without any warning
 
 - **A11: Invalid Strategy Choice**
-  - Step 19: Input outside "1"–"4" → `Неверный выбор, попробуйте снова.`, re-prompt step 19
+  - Step 21: Input outside "1"–"4" → `Неверный выбор, попробуйте снова.`, re-prompt step 21
 
 - **A12: Invalid Strategy Parameters**
-  - Step 19: After choosing strategy 2/3/4, a non-integer value for its parameters (non-compressible count, buffer size, window size) → `Ошибка: {e}. Попробуйте снова.`; the whole strategy selection (step 19) repeats
+  - Step 21: After choosing strategy 2/3/4, a non-integer value for its parameters (non-compressible count, buffer size, window size) → `Ошибка: {e}. Попробуйте снова.`; the whole strategy selection (step 21) repeats
 
 - **A13: Invalid Task Profile Choice**
-  - Step 20: Non-numeric or out-of-range (not 0…n) input → `[WARN] Некорректный выбор. Профиль не привязан.`, creation continues without profile attachment (no re-prompt)
+  - Step 22: Non-numeric or out-of-range (not 0…n) input → `[WARN] Некорректный выбор. Профиль не привязан.`, creation continues without profile attachment (no re-prompt)
+
+- **A14: Empty Or Invalid Max Tokens**
+  - Step 17: User presses Enter → max_tokens = `None` (response length not limited) without any warning
+  - Step 17: Non-integer → warning `Некорректное число. Используется значение по умолчанию (без ограничений).`, max_tokens = `None`, creation continues
+  - Step 17: Zero or negative → warning `Max Tokens должен быть положительным числом. Используется значение по умолчанию (без ограничений).`, max_tokens = `None`, creation continues
+  - Quick creation (A1) never prompts this option; max_tokens stays unlimited
 
 ## Postconditions
 
@@ -114,14 +122,14 @@
 | 1    | Select option 1 (New Chat)                   | Header `--- СОЗДАНИЕ НОВОГО ЧАТА ---` and prompt `Хотите настроить чат? (y/n, по умолчанию n):` displayed        |
 | 2    | Press Enter (empty input → default "n")      | `Используются настройки по умолчанию.` printed; other settings skipped entirely; the model list is displayed (UC-023) and a model must be selected |
 | 3    | Select a model from the list                 | `[OK] Чат 'Чат {N}' создан!` (auto-generated name), then chat loop entered                                        |
-| 4    | Verify chat settings                         | Provider and model = the selected entry, temperature/top_p/top_k disabled (None), reasoning_effort "none", context window 200000 |
+| 4    | Verify chat settings                         | Provider and model = the selected entry, temperature/top_p/top_k disabled (None), max_tokens unlimited, reasoning_effort "none", context window 200000 |
 | 5    | Verify strategy and profile                  | DefaultStrategy, task_profile_id = null                                                                            |
 
 ---
 
 ### TC-002: Create Chat with Custom Settings
 
-**Related UC**: UC-001 (main success scenario, steps 1–23)
+**Related UC**: UC-001 (main success scenario, steps 1–25)
 
 | Step | Action                             | Expected Result                                          |
 | ---- | ---------------------------------- | -------------------------------------------------------- |
@@ -132,12 +140,13 @@
 | 5    | Select model 2                     | Temperature prompt displayed                             |
 | 6    | Enter "1.5"                        | Valid value (within 0.0–2.0): applied without warning; Top P prompt displayed |
 | 7    | Enter "0.8"                        | Top K prompt displayed                                   |
-| 8    | Enter "50"                         | Reasoning effort prompt displayed                        |
-| 9    | Select "3" (medium)                | Context window prompt displayed                          |
-| 10   | Enter "128000"                     | Strategy selection displayed                             |
-| 11   | Select "1" (DefaultStrategy)       | Task profile selection displayed                         |
-| 12   | Select "0" (no attachment)         | `[OK] Чат 'Test Chat' создан!`, chat loop entered        |
-| 13   | Verify settings                    | All entered values saved correctly: temperature = 1.5, top_p = 0.8, top_k = 50, reasoning_effort = "medium", context window = 128000, DefaultStrategy |
+| 8    | Enter "50"                         | Max Tokens prompt displayed                              |
+| 9    | Enter "512"                        | Reasoning effort prompt displayed                        |
+| 10   | Select "3" (medium)                | Context window prompt displayed                          |
+| 11   | Enter "128000"                     | Strategy selection displayed                             |
+| 12   | Select "1" (DefaultStrategy)       | Task profile selection displayed                         |
+| 13   | Select "0" (no attachment)         | `[OK] Чат 'Test Chat' создан!`, chat loop entered        |
+| 14   | Verify settings                    | All entered values saved correctly: temperature = 1.5, top_p = 0.8, top_k = 50, max_tokens = 512, reasoning_effort = "medium", context window = 128000, DefaultStrategy |
 
 **Note**: The main success scenario of UC-001 uses different sample values (model 1, temperature "0.7", Top P "0.9", Top K "40", reasoning effort "2" — low). This test intentionally exercises the same flow with other valid values; every step of UC-001's main scenario is covered.
 
@@ -344,7 +353,7 @@
 
 ### TC-036: SlidingWindowStrategy Creation
 
-**Related UC**: UC-001 (step 19, §4.4.9)
+**Related UC**: UC-001 (step 21, §4.4.9)
 
 | Step | Action                          | Expected Result                         |
 | ---- | ------------------------------- | --------------------------------------- |
@@ -358,7 +367,7 @@
 
 ### TC-037: SlidingWindowStrategy With Custom Window
 
-**Related UC**: UC-001 (step 19, §4.4.9)
+**Related UC**: UC-001 (step 21, §4.4.9)
 
 | Step | Action                          | Expected Result                         |
 | ---- | ------------------------------- | --------------------------------------- |
@@ -372,7 +381,7 @@
 
 ### TC-038: SummarizationStrategy Creation
 
-**Related UC**: UC-001 (step 19, §4.4.9)
+**Related UC**: UC-001 (step 21, §4.4.9)
 
 | Step | Action                          | Expected Result                              |
 | ---- | ------------------------------- | -------------------------------------------- |
@@ -387,7 +396,7 @@
 
 ### TC-039: SummarizationStrategy With Custom Parameters
 
-**Related UC**: UC-001 (step 19, §4.4.9)
+**Related UC**: UC-001 (step 21, §4.4.9)
 
 | Step | Action                          | Expected Result                             |
 | ---- | ------------------------------- | ------------------------------------------- |
@@ -402,7 +411,7 @@
 
 ### TC-040: KeyValueMemoryStrategy Creation
 
-**Related UC**: UC-001 (step 19, §4.4.9)
+**Related UC**: UC-001 (step 21, §4.4.9)
 
 | Step | Action                           | Expected Result                              |
 | ---- | -------------------------------- | -------------------------------------------- |
@@ -417,7 +426,7 @@
 
 ### TC-041: KeyValueMemoryStrategy With Custom Parameters
 
-**Related UC**: UC-001 (step 19, §4.4.9)
+**Related UC**: UC-001 (step 21, §4.4.9)
 
 | Step | Action                           | Expected Result                             |
 | ---- | -------------------------------- | ------------------------------------------- |
@@ -432,7 +441,7 @@
 
 ### TC-042: DefaultStrategy Creation
 
-**Related UC**: UC-001 (step 19, §4.4.9)
+**Related UC**: UC-001 (step 21, §4.4.9)
 
 | Step | Action                     | Expected Result                                                       |
 | ---- | -------------------------- | --------------------------------------------------------------------- |
@@ -495,7 +504,7 @@
 | 1    | Ensure exactly 2 chats exist in storage                          | Main Menu displayed                                                                    |
 | 2    | Select option 1 (New Chat), press Enter at the configure prompt (default "n") | `Используются настройки по умолчанию.` printed; the model list is displayed (UC-023) |
 | 3    | Select a model from the list                                    | Reasoning effort prompt displayed; press Enter (default "none")                          |
-| 4    | Verify chat settings                                            | `[OK] Чат 'Чат 3' создан!` — auto-generated name uses N = existing chats + 1 (UC-001 A3); selected provider/model applied; disabled temperature/top_p/top_k, reasoning_effort "none", DefaultStrategy, no profile |
+| 4    | Verify chat settings                                            | `[OK] Чат 'Чат 3' создан!` — auto-generated name uses N = existing chats + 1 (UC-001 A3); selected provider/model applied; disabled temperature/top_p/top_k, max_tokens unlimited, reasoning_effort "none", DefaultStrategy, no profile |
 
 ---
 

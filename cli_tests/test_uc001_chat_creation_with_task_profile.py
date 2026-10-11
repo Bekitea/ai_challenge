@@ -37,7 +37,7 @@ class TestUC001_ChatCreationWithTaskProfile:
             "Bound Chat\n"  # Chat name
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # Strategy
             "1\n"  # Select profile 1 (Chat Profile)
             "/info\n"  # Проверка привязки профиля
@@ -68,7 +68,7 @@ class TestUC001_ChatCreationWithTaskProfile:
             "No Profile Chat\n"  # Chat name
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
             "1\n"  # Strategy
             # Профилей нет -> шаг привязки пропускается автоматически (TC-063)
             "/info\n"  # Проверка отсутствия профиля
@@ -108,7 +108,7 @@ class TestUC001_ChatCreationWithTaskProfile:
             "Invalid Select Chat\n"  # Chat name
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings
             "1\n"  # Strategy
             "99\n"  # Некорректный номер профиля (вне диапазона)
             "/menu\n"  # Выход в меню

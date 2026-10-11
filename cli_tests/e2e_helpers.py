@@ -29,7 +29,7 @@ def _manual_chat(name: str) -> str:
         + f"{name}\n"
         + "\n"  # Системный промпт (пропуск)
         + "3\n"  # Модель (Alice AI LLM Flash, yandex)
-        + "\n" * 5  # temp/top_p/top_k/reasoning/context — дефолты
+        + "\n" * 6  # temp/top_p/top_k/max_tokens/reasoning/context — дефолты
         + "1\n"  # DefaultStrategy
         # Профилей нет => блок привязки профиля пропускается без ввода.
     )

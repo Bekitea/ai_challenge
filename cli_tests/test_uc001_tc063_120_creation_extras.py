@@ -63,6 +63,7 @@ class TestUC001_TC063_120_CreationExtras:
         assert "Температура: отключена" in stdout
         assert "Top P: отключен" in stdout
         assert "Top K: отключено" in stdout
+        assert "Max Tokens: без ограничений" in stdout
         assert "Размер контекстного окна: 200000 токенов" in stdout
         assert "Стратегия: DefaultStrategy" in stdout
         assert "Профиль задачи: (не привязан)" in stdout

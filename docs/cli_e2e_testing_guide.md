@@ -628,7 +628,7 @@ def test_tc_013_return_to_chat_with_active_chat(self):
         "Test\n"        # Name
         "\n"            # Skip system prompt
         "1\n"           # Model (required; no default model)
-        "\n\n\n\n\n"    # Defaults: temp/top_p/top_k/reasoning/context
+        "\n\n\n\n\n\n"  # Defaults: temp/top_p/top_k/max_tokens/reasoning/context
         "1\n"           # DefaultStrategy
         "Hello\n"       # Send message
         "/menu\n"       # Go to menu

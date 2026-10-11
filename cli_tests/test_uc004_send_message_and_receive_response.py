@@ -32,14 +32,11 @@ class TestUC004_SendMessageAndReceiveResponse:
             "MultiMessage\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "Message 1\n"  # First message
-            "\n"  # Decline reasoning
             "Message 2\n"  # Second message
-            "\n"  # Decline reasoning
             "Message 3\n"  # Third message
-            "\n"  # Decline reasoning
             "/menu\n"  # Return to menu
             "4\n"  # Exit
         )
@@ -65,12 +62,11 @@ class TestUC004_SendMessageAndReceiveResponse:
             "EmptyMessage\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "\n"  # Empty message (should re-prompt)
             "\n"  # Empty message again
             "Valid message\n"  # Valid message
-            "\n"  # Decline reasoning
             "4\n"  # Exit
         )
 
@@ -93,7 +89,7 @@ class TestUC004_SendMessageAndReceiveResponse:
             "UnknownCmd\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/unknown\n"  # Unknown command
             "4\n"  # Exit
@@ -121,10 +117,9 @@ class TestUC004_SendMessageAndReceiveResponse:
             "SystemPromptTest\n"  # Название
             "You are a helpful assistant\n"  # System prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "Hello\n"  # User message
-            "\n"  # Decline reasoning
             "4\n"  # Exit
         )
 
@@ -149,10 +144,9 @@ class TestUC004_SendMessageAndReceiveResponse:
             "SpecialChars\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             f"{special_message}\n"  # Message with special chars
-            "\n"  # Decline reasoning
             "4\n"  # Exit
         )
 

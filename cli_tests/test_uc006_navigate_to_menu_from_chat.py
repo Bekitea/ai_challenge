@@ -27,7 +27,7 @@ class TestUC006_NavigateToMenuFromChat:
             "MenuNav\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/menu\n"  # Return to menu
             "3\n"  # Return to chat
@@ -57,7 +57,7 @@ class TestUC006_NavigateToMenuFromChat:
             "Chat A\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/menu\n"  # Return to menu
             "1\n"  # Новый чат - создать Chat B
@@ -65,7 +65,7 @@ class TestUC006_NavigateToMenuFromChat:
             "Chat B\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/menu\n"  # Return to menu
             "2\n"  # Выбрать чат - показать список

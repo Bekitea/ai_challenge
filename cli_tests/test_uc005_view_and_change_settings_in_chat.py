@@ -29,7 +29,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "ViewSettings\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/settings\n"  # View settings
             "n\n"  # Don't change
@@ -57,7 +57,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "PartialSettings\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/settings\n"  # View settings
             "y\n"  # Change settings
@@ -65,6 +65,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "0.8\n"  # Новая температура
             "\n"  # Top P (пусто -> отключён)
             "\n"  # Top K (пусто -> 0/отключено)
+            "\n"  # Max Tokens (пусто -> без ограничений)
             "\n"  # Reasoning effort (пусто -> default 1)
             "\n"  # Context window (пусто -> 200k)
             "/menu\n"  # Выход в меню
@@ -91,7 +92,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "ConfirmSettings\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/settings\n"  # View settings
             "y\n"  # Подтверждение изменения
@@ -99,6 +100,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "0.8\n"  # Новая температура
             "\n"  # Top P (пусто -> отключён)
             "\n"  # Top K (пусто -> отключено)
+            "\n"  # Max Tokens (пусто -> без ограничений)
             "\n"  # Reasoning effort (default)
             "\n"  # Context window (default)
             "/menu\n"  # Выход в меню
@@ -125,7 +127,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "CancelSettings\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/settings\n"  # View settings
             "n\n"  # Cancel change

@@ -21,10 +21,9 @@ class TestUC001_Alternatives_TC070_075:
             "NoSysPrompt\n"  # Название
             "\n"  # Пустой системный промпт (пропуск)
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings defaults
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings defaults
             "1\n"  # Strategy
             "Hello\n"  # Сообщение в чат (генерация ответа модели)
-            "n\n"  # Показать рассуждения модели? -> нет
             "/menu\n"  # Выход в меню
             "6\n"  # Exit
         )
@@ -54,7 +53,7 @@ class TestUC001_Alternatives_TC070_075:
             "1\n"  # Model 1
             "\n"  # Temperature: Enter -> disabled
             "\n"  # Top P: Enter -> disabled
-            "\n" + "\n" + "\n" + "\n"  # Top K / Reasoning / Context
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Top K / Max Tokens / Reasoning / Context
             "1\n"  # Strategy
             "/settings\n"  # Просмотр настроек
             "n\n"  # Не изменять
@@ -85,7 +84,7 @@ class TestUC001_Alternatives_TC070_075:
             "-5\n"  # Top K invalid (negative)
             "abc\n"  # Top K non-numeric
             "0\n"  # Top K zero -> disabled
-            "\n" + "\n"  # Reasoning / Context
+            "\n" + "\n" + "\n"  # Max Tokens / Reasoning / Context
             "1\n"  # Strategy
             "/menu\n"
             "6\n"  # Exit
@@ -108,7 +107,7 @@ class TestUC001_Alternatives_TC070_075:
             "ReasonTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n"  # Temp/TopP/TopK defaults
+            "\n" + "\n" + "\n" + "\n"  # Temp/TopP/TopK/MaxTokens defaults
             "abc\n"  # Non-numeric choice
             "5\n"  # Out of range 1-4
             "\n"  # Empty -> default (1st option)
@@ -163,7 +162,7 @@ class TestUC001_Alternatives_TC070_075:
             "CtxAbc\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n"  # Temp/TopP/TopK/Reasoning
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Temp/TopP/TopK/MaxTokens/Reasoning
             "abc\n"  # Invalid context -> fallback 200k
             "1\n"  # Strategy
             "/menu\n"  # Выход в меню (профилей нет — шаг привязки пропущен)
@@ -172,7 +171,7 @@ class TestUC001_Alternatives_TC070_075:
             "CtxZero\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n"  # Temp/TopP/TopK/Reasoning
+            "\n" + "\n" + "\n" + "\n" + "\n"  # Temp/TopP/TopK/MaxTokens/Reasoning
             "0\n"  # Zero context -> fallback 200k
             "1\n"  # Strategy
             "/menu\n"
@@ -196,7 +195,7 @@ class TestUC001_Alternatives_TC070_075:
             "StratTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings defaults
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings defaults
             "5\n"  # Стратегия вне диапазона 1-4
             "abc\n"  # Стратегия нечисловая
             "1\n"  # Корректный выбор DefaultStrategy

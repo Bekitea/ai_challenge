@@ -170,7 +170,7 @@ Visible messages exclude role="system", role="tool" and assistant messages carry
 ```
 
 - Accepted affirmative answers: `y`, `да`, `д`; negative: `n`, `нет`, `н`; empty → `n`; anything else → re-prompt with `Введите 'y' (да) или 'n' (нет)`
-- **Quick path (n)**: prints `Используются настройки по умолчанию.`; name is auto-generated, system prompt skipped, other settings default (temperature/top_p/top_k disabled, context window 200k), strategy = DefaultStrategy, no task profile. **The model is still chosen interactively in step 3 — there is no default model** — and **reasoning effort is also chosen interactively (step 7 prompt, empty → `none` after the model list)**, so the quick path stops at the model list and the reasoning effort prompt, then enters the chat loop. Steps 1–2 and 4–6 and 8–10 are skipped.
+- **Quick path (n)**: prints `Используются настройки по умолчанию.`; name is auto-generated, system prompt skipped, other settings default (temperature/top_p/top_k disabled, max_tokens unlimited, context window 200k), strategy = DefaultStrategy, no task profile. **The model is still chosen interactively in step 3 — there is no default model** — and **reasoning effort is also chosen interactively (step 8 prompt, empty → `none` after the model list)**, so the quick path stops at the model list and the reasoning effort prompt, then enters the chat loop. Steps 1–2, 4–7 and 9–11 are skipped.
 - **Manual path (y)**: steps 1–10 below
 
 #### 4.4.1 Step 1: Name Input
@@ -252,7 +252,19 @@ Top K (0 для отключения, по умолчанию 0):
 - Valid: integer >= 0, re-prompt loop on negative (`Top K должен быть >= 0`) or non-integer (`Введите корректное число`)
 - Value 0 is stored as `None` (disabled); values > 0 stored as int
 
-#### 4.4.7 Step 7: Reasoning Effort
+#### 4.4.7 Step 7: Max Tokens
+
+```
+Max Tokens (Enter — без ограничений):
+```
+
+- Empty input: `None` (response length not limited)
+- Valid: positive integer
+- Non-integer: `None` with warning `Некорректное число. Используется значение по умолчанию (без ограничений).`
+- Zero or negative: `None` with warning `Max Tokens должен быть положительным числом. Используется значение по умолчанию (без ограничений).`
+- Prompted only in the manual path; quick creation leaves it unlimited
+
+#### 4.4.8 Step 8: Reasoning Effort
 
 ```
 Reasoning Effort:
@@ -267,7 +279,7 @@ Reasoning Effort:
 - Default: 1 (none); empty input → 1
 - Invalid/out-of-range: re-prompt (`Введите корректное число` / `Выбор должен быть от 1 до 4`)
 
-#### 4.4.8 Step 8: Context Window Size
+#### 4.4.9 Step 9: Context Window Size
 
 ```
 Размер контекстного окна (в токенах):
@@ -280,7 +292,7 @@ Reasoning Effort:
 - Invalid number: Default to 200000 with warning `Некорректное число. Используется 200k.`
 - Non-positive: Default to 200000 with warning `Размер должен быть положительным числом. Используется 200k.`
 
-#### 4.4.9 Step 9: Context Strategy Selection
+#### 4.4.10 Step 10: Context Strategy Selection
 
 ```
 --- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---
@@ -300,7 +312,7 @@ Reasoning Effort:
   - `Размер скользящего окна N (по умолчанию 10):`
 - Non-integer parameter: `Ошибка: {e}. Попробуйте снова.` → strategy selection repeats
 
-#### 4.4.10 Step 10: Task Profile Selection (Optional)
+#### 4.4.11 Step 11: Task Profile Selection (Optional)
 
 ```
 --- ПРИВЯЗКА ПРОФИЛЯ ЗАДАЧИ ---
@@ -319,7 +331,7 @@ Reasoning Effort:
 - Invalid/out-of-range input: `[WARN] Некорректный выбор. Профиль не привязан.` → continue without attachment
 - **Note**: Once set, `task_profile_id` cannot be changed for this chat
 
-#### 4.4.11 Completion Message
+#### 4.4.12 Completion Message
 
 ```
 [OK] Чат '{name}' создан!
@@ -343,7 +355,7 @@ Then the chat loop starts immediately (history is displayed in its header). The 
 ----------------------------------------
 ```
 
-- Full visible history is replayed on entering the loop (system and technical tool-calling messages hidden; roles mapped to `[USER]`/`[AGENT]`)
+- Full visible history is replayed on entering the loop (system and technical tool-calling messages hidden; roles mapped to `[USER]`/`[AGENT]`). Assistant messages that carry reasoning print an indented `[Reasoning]:` block before the corresponding `[AGENT]:` line; an empty response is shown as `[AGENT]: (агент ничего не ответил)`
 - Input prompt for each iteration: `\n[USER]: `
 
 #### 4.5.2 Message Flow
@@ -354,13 +366,13 @@ Then the chat loop starts immediately (history is displayed in its header). The 
 4. If plain text:
    - Display `[AGENT] печатает...` (cleared once the response arrives)
    - Send to backend agent via `send_message` use case
-   - Display `[AGENT]: {response.content}`
+   - If the response contains reasoning, always print the indented `[Reasoning]:` block **before** the answer (no prompt is shown)
+   - Display `[AGENT]: {response.content}`; if the content is empty/whitespace, display `[AGENT]: (агент ничего не ответил)`
    - If token usage reported, display two lines:
      ```
        [Токены: prompt: {p}, completion: {c}]
        [Заполненность контекста: {prompt_tokens}/{context_window_size} ({percent:.1f}%)]
      ```
-   - If the response contains reasoning, ask `Показать рассуждения модели? (y/n):`; on `y` print indented `[Reasoning]:` block
    - Save to history (automatic per-message save), repeat
 5. On chat loop exit (any path that saves memory: `/menu`, KeyboardInterrupt, EOF, backend exception): the system MUST save the agent memory via the `save_agent_memory` use case before returning to the Main Menu — unsaved memory must never be lost when leaving a chat. The system prints `[INFO] Сохранение памяти чата '{name}'...` before and `[OK] Память чата '{name}' сохранена за {seconds:.2f} с.` (or `[ERROR] ... за {seconds:.2f} с: {error}`) after the save (see UC-024)
 
@@ -553,6 +565,7 @@ Error handling in the chat loop is not centralized in a separate matrix: every e
   Температура: {value}|отключена
   Top P: {value}|отключен
   Top K: {value}|отключено
+  Max Tokens: {value}|без ограничений
   Reasoning Effort: {effort}
   Размер контекстного окна: {context_window_size} токенов
 ----------------------------------------
@@ -564,7 +577,7 @@ shown by its identifier (not display name). Missing `context_window_size` is dis
 
 #### 4.6.2 Change Settings (`change_settings`)
 
-Same prompts as creation workflow (§4.4.3–§4.4.8) applied sequentially; each answer fully replaces the previous value (empty input disables the parameter). Exception: for the model/provider prompt (step 3) empty input keeps the current selection. Strategy, task profile and phase cannot be changed for existing chats. Confirmation: `[OK] Настройки обновлены!` followed by the refreshed settings block.
+Same prompts as creation workflow (§4.4.3–§4.4.9) applied sequentially; each answer fully replaces the previous value (empty input disables the parameter). Exception: for the model/provider prompt (step 3) empty input keeps the current selection. Strategy, task profile and phase cannot be changed for existing chats. Confirmation: `[OK] Настройки обновлены!` followed by the refreshed settings block.
 
 ### 4.7 Task Profiles Menu
 

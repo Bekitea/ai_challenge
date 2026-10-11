@@ -13,7 +13,7 @@ class TestUC024_MemorySaveFeedback:
 
     def test_tc_146_memory_save_feedback_on_chat_exit(self):
         """TC-146: при выходе из чата видно начало, конец и время сохранения."""
-        test_input = _QUICK_CHAT + "Привет\n\n" + "/menu\n6\n"
+        test_input = _QUICK_CHAT + "Привет\n" + "/menu\n6\n"
 
         stdout, _, _ = run_cli_command(test_input)
 

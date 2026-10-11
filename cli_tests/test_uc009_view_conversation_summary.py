@@ -22,7 +22,7 @@ class TestUC009_ViewConversationSummary:
             "SummaryTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "2\n"  # SummarizationStrategy
             "\n" + "\n"  # Default params
             "/summary\n"  # View summary
@@ -43,7 +43,7 @@ class TestUC009_ViewConversationSummary:
             "NoSummary\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/summary\n"  # View summary
             "4\n"  # Exit

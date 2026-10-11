@@ -60,6 +60,7 @@ class TestUC001_CreateChatWithAllSettings:
         assert "Температура: отключена" in stdout
         assert "Top P: отключен" in stdout
         assert "Top K: отключено" in stdout
+        assert "Max Tokens: без ограничений" in stdout
         assert "Размер контекстного окна: 200000 токенов" in stdout
         # TC-001 step 5: DefaultStrategy and no task profile via /info
         assert "--- ИНФОРМАЦИЯ О ЧАТЕ ---" in stdout
@@ -90,6 +91,7 @@ class TestUC001_CreateChatWithAllSettings:
             "1.5\n"  # Temperature
             "0.8\n"  # Top P
             "50\n"  # Top K
+            "512\n"  # Max Tokens
             "3\n"  # Reasoning effort: medium
             "128000\n"  # Context window
             "1\n"  # DefaultStrategy
@@ -108,6 +110,7 @@ class TestUC001_CreateChatWithAllSettings:
         assert "Температура: 1.5" in stdout
         assert "Top P: 0.8" in stdout
         assert "Top K: 50" in stdout
+        assert "Max Tokens: 512" in stdout
         assert "Reasoning Effort: medium" in stdout
         assert "Размер контекстного окна: 128000 токенов" in stdout
 
@@ -129,6 +132,7 @@ class TestUC001_CreateChatWithAllSettings:
             "abc\n"  # Invalid temperature
             "\n"  # Top P disabled
             "\n"  # Top K disabled
+            "\n"  # Max Tokens (без ограничений)
             "\n"  # Reasoning effort
             "\n"  # Context window
             "1\n"  # DefaultStrategy
@@ -158,7 +162,7 @@ class TestUC001_CreateChatWithAllSettings:
                 "\n"  # Skip system prompt
                 "1\n"  # Model 1
                 f"{bad_value}\n"  # Out-of-range temperature
-                "\n" + "\n" + "\n" + "\n"  # Top P / Top K / Reasoning / Context
+                "\n" + "\n" + "\n" + "\n" + "\n"  # Top P / Top K / Max Tokens / Reasoning / Context
                 "1\n"  # DefaultStrategy
                 "0\n"  # Нет профиля
                 "/menu\n"
@@ -187,7 +191,7 @@ class TestUC001_CreateChatWithAllSettings:
             f"{long_name}\n"  # Long name (no truncation expected)
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "0\n"  # Нет профиля задачи
             "/menu\n"  # Выход в меню
@@ -222,7 +226,7 @@ class TestUC001_CreateChatWithAllSettings:
             "SlidingWindow Test\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "4\n"  # SlidingWindowStrategy
             "0\n"  # Нет профиля задачи
             "/menu\n"  # Выход в меню
@@ -249,7 +253,7 @@ class TestUC001_CreateChatWithAllSettings:
             "SlidingWindow Custom\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "4\n"  # SlidingWindowStrategy
             "20\n"  # Custom window_size
             "0\n"  # Нет профиля задачи
@@ -278,7 +282,7 @@ class TestUC001_CreateChatWithAllSettings:
             "Summarization Test\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "2\n"  # SummarizationStrategy
             "\n"  # non_compressible_count=2
             "\n"  # buffer_size=3
@@ -308,7 +312,7 @@ class TestUC001_CreateChatWithAllSettings:
             "Summarization Custom\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "2\n"  # SummarizationStrategy
             "5\n"  # non_compressible_count=5
             "4\n"  # buffer_size=4
@@ -338,7 +342,7 @@ class TestUC001_CreateChatWithAllSettings:
             "KeyValueMemory Test\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "3\n"  # KeyValueMemoryStrategy
             "\n"  # non_compressible_count=2
             "\n"  # buffer_size=3
@@ -368,7 +372,7 @@ class TestUC001_CreateChatWithAllSettings:
             "KeyValueMemory Custom\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "3\n"  # KeyValueMemoryStrategy
             "3\n"  # non_compressible_count=3
             "5\n"  # buffer_size=5
@@ -397,7 +401,7 @@ class TestUC001_CreateChatWithAllSettings:
             "DefaultStrategy Test\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "0\n"  # Нет профиля задачи
             "/menu\n"  # Выход в меню

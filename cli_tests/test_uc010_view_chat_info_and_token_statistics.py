@@ -22,7 +22,7 @@ class TestUC010_ViewChatInfoAndTokenStatistics:
             "InfoTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/info\n"  # View info
             "4\n"  # Exit
@@ -42,7 +42,7 @@ class TestUC010_ViewChatInfoAndTokenStatistics:
             "DefaultInfo\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/info\n"  # View info
             "/menu\n"  # Выход в меню

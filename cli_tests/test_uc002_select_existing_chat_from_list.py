@@ -52,7 +52,7 @@ class TestUC002_SelectExistingChatFromList:
             "SystemPromptOnly\n"  # Название
             "You are helpful\n"  # System prompt only
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/menu\n"  # Return to main menu (NOT "4" which would be sent as a message)
             "4\n"  # Exit app
@@ -84,10 +84,9 @@ class TestUC002_SelectExistingChatFromList:
             "PreviewTest\n"  # Название
             "\n"  # Skip system prompt
             "1\n"  # Model 1
-            "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (5 times)
+            "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "Hello world\n"  # Message
-            "\n"  # Decline reasoning view
             "4\n"  # Exit
         )
         run_cli_command(create_input)

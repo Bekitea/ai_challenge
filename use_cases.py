@@ -14,6 +14,8 @@ from agents import (
 )
 from chunking import chunk_text
 from config import (
+    DEFAULT_REPORT_MODEL,
+    DEFAULT_REPORT_PROVIDER,
     RAG_CHUNK_OVERLAP,
     RAG_CHUNK_SIZE,
     RAG_FILE_EXTENSIONS,
@@ -28,7 +30,7 @@ from context_strategies import (
     SummarizationStrategy,
 )
 from file_extractor import extract_from_path
-from llm_providers import LlmProvider, LlmResponse
+from llm_providers import LlmProviderRegistry, LlmResponse
 from rag_errors import (
     DocumentIndexingError,
     EmbeddingDimensionMismatchError,
@@ -62,6 +64,7 @@ class UseCasesBundle:
     view_settings: ViewSettingsUseCase
     change_settings: ChangeSettingsUseCase
     set_reranker_enabled: SetRerankerEnabledUseCase
+    list_models: ListModelsUseCase
     show_history: ShowHistoryUseCase
     show_summary: ShowSummaryUseCase
     show_chat_info: ShowChatInfoUseCase
@@ -146,17 +149,28 @@ class InvariantInfo:
     created_at: datetime
 
 
+@dataclass
+class AvailableModel:
+    """Доступная для выбора модель с указанием провайдера.
+
+    Одна и та же модель может предоставляться разными провайдерами, поэтому
+    в списке для UI она представлена отдельной записью на каждого провайдера.
+    """
+
+    provider: str
+    model_id: str
+    display_name: str
+
+
 class CreateChatUseCase:
     """Use case для создания нового чата."""
 
     def __init__(
         self,
         repository: AgentRepository,
-        llm_provider: LlmProvider,
         task_profile_repository=None,
     ):
         self.repository = repository
-        self.llm_provider = llm_provider
         self.task_profile_repository = task_profile_repository
 
     def execute(
@@ -276,6 +290,29 @@ class SetRerankerEnabledUseCase:
         current = agent.get_settings()
         agent.update_settings(replace(current, reranker_enabled=bool(enabled)))
         return bool(enabled)
+
+
+class ListModelsUseCase:
+    """Use case получения списка доступных моделей всех провайдеров.
+
+    Опрашивает провайдеров динамически (Yandex Cloud и Ollama), поэтому
+    хардкода моделей в приложении больше нет. Недоступный провайдер просто
+    не попадает в результат.
+    """
+
+    def __init__(self, registry: LlmProviderRegistry):
+        self._registry = registry
+
+    def execute(self) -> list[AvailableModel]:
+        """Возвращает список доступных моделей с указанием провайдера."""
+        return [
+            AvailableModel(
+                provider=provider_name,
+                model_id=info.model_id,
+                display_name=info.display_name,
+            )
+            for provider_name, info in self._registry.list_models()
+        ]
 
 
 class ShowHistoryUseCase:
@@ -834,7 +871,10 @@ class RunScheduledAgentTaskUseCase:
         agent = self.create_chat.execute(
             name=self._run_chat_name(chat_name),
             system_prompt=system_prompt,
-            settings=AgentSettings(),
+            settings=AgentSettings(
+                provider=DEFAULT_REPORT_PROVIDER,
+                model_id=DEFAULT_REPORT_MODEL,
+            ),
             strategy=DefaultStrategy(),
             initial_phase=AgentPhase.EXECUTE,
         )

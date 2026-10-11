@@ -12,9 +12,9 @@ from pathlib import Path
 os.environ["APPLICATION_MODE"] = "TEST"
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agents import Agent, GlobalMemory, Prompt, TaskMemory
+from agents import Agent, AgentSettings, GlobalMemory, Prompt, TaskMemory
 from context_strategies import SlidingWindowStrategy
-from llm_providers import LlmResponse
+from llm_providers import LlmProviderRegistry, LlmResponse
 from prompt_builder import PromptBuilder, PromptSources
 from storage.task_memory_repository import FileTaskMemoryRepository
 
@@ -23,10 +23,12 @@ class _StubLlmProvider:
     def __init__(self, content: str):
         self.content = content
         self.json_calls = 0
+        self.last_model_id = None
 
     def generate(self, messages, **kwargs):
         if kwargs.get("response_format"):
             self.json_calls += 1
+        self.last_model_id = kwargs.get("model_id")
         return LlmResponse(content=self.content, prompt_tokens=5, completion_tokens=3)
 
 
@@ -50,7 +52,10 @@ def _make_agent(tmp_path, llm_content, conversation_id="conv-1"):
         agent_id=1,
         conversation_id=conversation_id,
         name="Test",
-        llm_provider=_StubLlmProvider(llm_content),
+        llm_provider_registry=LlmProviderRegistry(
+            {"yandex": _StubLlmProvider(llm_content)}
+        ),
+        initial_settings=AgentSettings(model_id="test-model", provider="yandex"),
         history_storage=_Dummy(),
         global_memory_repository=_FakeGlobalMemoryRepository(),
         task_profile_repository=_Dummy(),
@@ -85,6 +90,9 @@ def test_update_task_memory_replaces_old_values(tmp_path):
     agent.update_task_memory()
     assert agent.task_memory.goal == "первая цель"
     assert agent.task_memory.constraints == ["old"]
+    # Служебный запрос обязан использовать модель чата, иначе провайдер
+    # с обязательным model_id упадёт (регрессия пустого model_id).
+    assert agent._llm_provider.last_model_id == "test-model"
 
     agent._llm_provider.content = (
         '{"goal": "новая цель", "constraints": ["new"], '
@@ -127,7 +135,9 @@ def test_task_memory_persisted_across_agents(tmp_path):
         agent_id=1,
         conversation_id="conv-1",
         name="Test",
-        llm_provider=_StubLlmProvider("{}"),
+        llm_provider_registry=LlmProviderRegistry(
+            {"yandex": _StubLlmProvider("{}")}
+        ),
         history_storage=_Dummy(),
         global_memory_repository=_FakeGlobalMemoryRepository(),
         task_profile_repository=_Dummy(),

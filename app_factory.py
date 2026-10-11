@@ -22,7 +22,12 @@ from config import (
     YANDEX_FOLDER_ID,
 )
 from embedding_providers import OllamaEmbeddingProvider
-from llm_providers import MockLlmProvider, YandexCloudLlmProvider
+from llm_providers import (
+    LlmProviderRegistry,
+    MockLlmProvider,
+    OllamaLlmProvider,
+    YandexCloudLlmProvider,
+)
 from rag_service import RagModelService, RagService
 from reranker_providers import HttpRerankerProvider, MockRerankerProvider
 from storage.agent_repositories import PersistentAgentRepository
@@ -62,6 +67,7 @@ from use_cases import (
     ListDocumentsUseCase,
     ListInvariantsUseCase,
     ListKnowledgeBasesUseCase,
+    ListModelsUseCase,
     ListTaskProfilesUseCase,
     RefreshAgentMemoryUseCase,
     RemoveInvariantUseCase,
@@ -92,6 +98,7 @@ class UseCasesBundle:
     view_settings: ViewSettingsUseCase
     change_settings: ChangeSettingsUseCase
     set_reranker_enabled: SetRerankerEnabledUseCase
+    list_models: ListModelsUseCase
     show_history: ShowHistoryUseCase
     show_summary: ShowSummaryUseCase
     show_chat_info: ShowChatInfoUseCase
@@ -153,13 +160,25 @@ def initialize_application() -> UseCasesBundle:
 
         validate_production_env(YANDEX_API_KEY, YANDEX_FOLDER_ID)
 
-    # Create LLM provider based on mode
+    # Create LLM provider registry. В тестовом режиме — детерминированные
+    # моки (yandex + ollama), в проде — реальные провайдеры. Провайдер для
+    # конкретного чата выбирается по AgentSettings.provider.
     if mode_config.use_mock_provider:
-        llm_provider = MockLlmProvider()
+        provider_registry = LlmProviderRegistry(
+            {
+                "yandex": MockLlmProvider("yandex"),
+                "ollama": MockLlmProvider("ollama"),
+            }
+        )
     else:
-        llm_provider = YandexCloudLlmProvider(
-            api_key=YANDEX_API_KEY,
-            folder_id=YANDEX_FOLDER_ID,
+        provider_registry = LlmProviderRegistry(
+            {
+                "yandex": YandexCloudLlmProvider(
+                    api_key=YANDEX_API_KEY,
+                    folder_id=YANDEX_FOLDER_ID,
+                ),
+                "ollama": OllamaLlmProvider(),
+            }
         )
 
     # Initialize database connection and tables
@@ -230,7 +249,7 @@ def initialize_application() -> UseCasesBundle:
 
     # Initialize repository with session factory
     repository = PersistentAgentRepository(
-        llm_provider=llm_provider,
+        llm_provider_registry=provider_registry,
         session_factory=db_connection.get_session,
         global_memory_repository=memory_repository,
         task_profile_repository=task_profile_repository,
@@ -239,7 +258,7 @@ def initialize_application() -> UseCasesBundle:
     )
 
     # Create and return all use cases
-    create_chat = CreateChatUseCase(repository, llm_provider, task_profile_repository)
+    create_chat = CreateChatUseCase(repository, task_profile_repository)
     send_message = SendMessageUseCase(repository)
     connect_mcp = ConnectMcpUseCase()
 
@@ -250,6 +269,7 @@ def initialize_application() -> UseCasesBundle:
         view_settings=ViewSettingsUseCase(),
         change_settings=ChangeSettingsUseCase(repository),
         set_reranker_enabled=SetRerankerEnabledUseCase(),
+        list_models=ListModelsUseCase(provider_registry),
         show_history=ShowHistoryUseCase(),
         show_summary=ShowSummaryUseCase(),
         show_chat_info=ShowChatInfoUseCase(),

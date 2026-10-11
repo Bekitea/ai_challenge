@@ -301,7 +301,7 @@ class TestUC019_TC101_110_McpMenu:
         outer '[ERROR] Ошибка'/'Прервано' paths).
         """
         # Прогон 1: EOF ровно на промпте 'Подключить новые MCP?'
-        run1 = "1\n\n/mcp\n"
+        run1 = _QUICK_CHAT + "/mcp\n"
         stdout1, stderr1, rc1 = run_cli_command(run1)
         assert rc1 == 0, f"App failed with stderr: {stderr1}"
         assert "--- MCP-СЕРВЕРЫ ЧАТА: Чат 1 ---" in stdout1
@@ -309,7 +309,7 @@ class TestUC019_TC101_110_McpMenu:
         assert "EOFError" not in stderr1
 
         # Прогон 2: EOF на промпте выбора сервера (y уже введён)
-        run2 = "1\n\n/mcp\ny\n"
+        run2 = _QUICK_CHAT + "/mcp\ny\n"
         stdout2, stderr2, rc2 = run_cli_command(run2)
         assert rc2 == 0, f"App failed with stderr: {stderr2}"
         assert "--- ДОСТУПНЫЕ ДЛЯ ПОДКЛЮЧЕНИЯ MCP ---" in stdout2

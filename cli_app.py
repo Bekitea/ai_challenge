@@ -2,11 +2,10 @@ import os
 
 from agents import Agent, AgentSettings, ContextWindowExceededError
 from config import (
-    AVAILABLE_MODELS,
+    DEFAULT_PROVIDER,
     RAG_FILE_EXTENSIONS,
     RAG_RELEVANCE_THRESHOLD,
     REASONING_EFFORTS,
-    YANDEX_DEFAULT_MODEL,
 )
 from context_strategies import (
     ContextWindowStrategy,
@@ -95,27 +94,63 @@ class CLIChat:
             print(f"   ID: {preview.agent_id}")
         print("-" * 40)
 
+    def _select_model(
+        self, current_settings: AgentSettings | None = None
+    ) -> tuple[str, str] | None:
+        """Запрашивает у пользователя модель и провайдера.
+
+        Список моделей опрашивается у провайдеров динамически. Возвращает
+        кортеж ``(provider, model_id)`` или ``None``, если доступных моделей
+        нет (тогда создать/изменить чат нельзя). Пустой ввод оставляет текущую
+        модель, если она задана.
+        """
+        models = self.use_cases.list_models.execute()
+        print("\nВыберите модель:")
+        if not models:
+            print("  (нет доступных моделей)")
+            print(
+                "Проверьте доступность провайдеров (Yandex Cloud / Ollama) "
+                "и повторите попытку."
+            )
+            return None
+
+        for i, model in enumerate(models, 1):
+            if model.display_name and model.display_name != model.model_id:
+                label = f"{model.display_name} ({model.model_id})"
+            else:
+                label = model.model_id
+            print(f"  {i}. [{model.provider}] {label}")
+
+        keep_current = bool(current_settings and current_settings.model_id)
+        if keep_current:
+            print("  Enter — оставить текущую модель")
+
+        while True:
+            choice = input(f"\nВаш выбор (1-{len(models)}): ").strip()
+            if not choice:
+                if keep_current:
+                    return (
+                        current_settings.provider or DEFAULT_PROVIDER,
+                        current_settings.model_id,
+                    )
+                print("Выбор обязателен: введите номер модели.")
+                continue
+            if choice.isdigit() and 1 <= int(choice) <= len(models):
+                selected = models[int(choice) - 1]
+                return selected.provider, selected.model_id
+            print("Неверный выбор, попробуйте снова.")
+
     def get_agent_settings(
         self, current_settings: AgentSettings | None = None
-    ) -> AgentSettings:
+    ) -> AgentSettings | None:
         """Запрашивает настройки у пользователя."""
         print("\n--- НАСТРОЙКИ АГЕНТА ---")
 
-        # Выбор модели
-        print("\nВыберите модель:")
-        for key, (model_id, name) in AVAILABLE_MODELS.items():
-            print(f"  {key}. {name} ({model_id})")
-        print("  Enter — модель по умолчанию")
-
-        while True:
-            model_choice = input("\nВаш выбор (1-3): ").strip()
-            if not model_choice:
-                model_id = YANDEX_DEFAULT_MODEL
-                break
-            if model_choice in AVAILABLE_MODELS:
-                model_id = AVAILABLE_MODELS[model_choice][0]
-                break
-            print("Неверный выбор, попробуйте снова.")
+        # Выбор модели и провайдера (обязателен, дефолтной модели нет)
+        selection = self._select_model(current_settings)
+        if selection is None:
+            return None
+        provider, model_id = selection
 
         # Температура (отключена по умолчанию)
         temp_input = input("\nТемпература (0.0 - 2.0, Enter для отключения): ").strip()
@@ -207,6 +242,7 @@ class CLIChat:
 
         return AgentSettings(
             model_id=model_id,
+            provider=provider,
             temperature=temp,
             top_p=top_p,
             top_k=top_k if top_k > 0 else None,
@@ -217,17 +253,6 @@ class CLIChat:
                 if current_settings is not None
                 else True
             ),
-        )
-
-    def get_default_agent_settings(self) -> AgentSettings:
-        """Возвращает настройки агента по умолчанию без ручного опроса."""
-        return AgentSettings(
-            model_id=YANDEX_DEFAULT_MODEL,
-            temperature=None,
-            top_p=None,
-            top_k=None,
-            reasoning_effort=REASONING_EFFORTS[0],
-            context_window_size=200_000,
         )
 
     def _ask_configure_chat(self) -> bool:
@@ -258,6 +283,9 @@ class CLIChat:
             ).strip()
 
             settings = self.get_agent_settings()
+            if settings is None:
+                print("\n[WARN] Чат не создан: нет доступных моделей.")
+                return
 
             # Выбор стратегии управления контекстным окном
             strategy = self._select_context_strategy()
@@ -265,11 +293,25 @@ class CLIChat:
             # Выбор профиля задачи
             task_profile_id = self._select_task_profile()
         else:
-            # Быстрое создание чата с настройками по умолчанию
+            # Быстрое создание чата: прочие настройки по умолчанию,
+            # но модель пользователь выбирает всегда (дефолтной модели нет).
             print("Используются настройки по умолчанию.")
             name = ""
             system_prompt = ""
-            settings = self.get_default_agent_settings()
+            selection = self._select_model()
+            if selection is None:
+                print("\n[WARN] Чат не создан: нет доступных моделей.")
+                return
+            provider, model_id = selection
+            settings = AgentSettings(
+                model_id=model_id,
+                provider=provider,
+                temperature=None,
+                top_p=None,
+                top_k=None,
+                reasoning_effort=REASONING_EFFORTS[0],
+                context_window_size=200_000,
+            )
             strategy = DefaultStrategy()
             task_profile_id = None
 
@@ -441,6 +483,7 @@ class CLIChat:
             return
 
         print("\n--- ТЕКУЩИЕ НАСТРОЙКИ ---")
+        print(f"  Провайдер: {settings.provider or DEFAULT_PROVIDER}")
         print(f"  Модель: {settings.model_id}")
         print(
             f"  Температура: {settings.temperature if settings.temperature is not None else 'отключена'}"
@@ -477,6 +520,9 @@ class CLIChat:
 
         print(f"\n--- НАСТРОЙКИ ДЛЯ '{self.current_agent.name}' ---")
         new_settings = self.get_agent_settings(self.current_agent.get_settings())
+        if new_settings is None:
+            print("\n[WARN] Настройки не изменены: нет доступных моделей.")
+            return
         self.use_cases.change_settings.execute(self.current_agent, new_settings)
         print("\n[OK] Настройки обновлены!")
         self._print_current_settings()
@@ -1426,7 +1472,12 @@ class CLIChat:
                     print("\nВозврат в меню...")
                     # При выходе из чата сохраняем память через use case
                     if self.current_agent:
-                        self.use_cases.save_agent_memory.execute(self.current_agent)
+                        try:
+                            self.use_cases.save_agent_memory.execute(
+                                self.current_agent
+                            )
+                        except Exception as e:  # noqa: BLE001
+                            print(f"[WARN] Не удалось сохранить память: {e}")
                     break
 
                 if user_input.lower() == "/stop":
@@ -1543,7 +1594,10 @@ class CLIChat:
             except (KeyboardInterrupt, EOFError):
                 print("\n\nПрервано пользователем.")
                 if self.current_agent:
-                    self.use_cases.save_agent_memory.execute(self.current_agent)
+                    try:
+                        self.use_cases.save_agent_memory.execute(self.current_agent)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"[WARN] Не удалось сохранить память: {e}")
                 break
             except Exception as e:  # noqa: BLE001
                 print(f"\n[ERROR] Ошибка: {e}")
@@ -1556,7 +1610,10 @@ class CLIChat:
 
         # При старте приложения достаем все агенты с несохраненными промптами
         # и у них последовательно вызываем save_memory через use case
-        self.use_cases.save_unsaved_memories.execute()
+        try:
+            self.use_cases.save_unsaved_memories.execute()
+        except Exception as e:  # noqa: BLE001
+            print(f"[WARN] Не удалось сохранить память при старте: {e}")
 
         while True:
             self.print_menu()

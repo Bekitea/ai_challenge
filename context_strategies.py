@@ -203,12 +203,14 @@ class ContextWindowStrategy(ABC):
         self,
         dialogue: list[Any],  # Список Prompt объектов (без system)
         llm_provider: LlmProvider | None = None,
+        model_id: str | None = None,
     ) -> WindowResult:
         """Применяет стратегию к диалоговым сообщениям.
 
         Args:
             dialogue: Сообщения диалога в хронологическом порядке.
             llm_provider: Провайдер LLM для выполнения суммаризации.
+            model_id: Идентификатор модели чата для служебных запросов.
 
         Returns:
             WindowResult: выбранные сообщения, саммари и токены суммаризации.
@@ -239,6 +241,7 @@ class DefaultStrategy(ContextWindowStrategy):
         self,
         dialogue: list[Any],
         llm_provider: LlmProvider | None = None,
+        model_id: str | None = None,
     ) -> WindowResult:
         """Возвращает все диалоговые сообщения как есть."""
         return WindowResult(dialogue=list(dialogue))
@@ -303,6 +306,7 @@ class BaseCompressionStrategy(ContextWindowStrategy):
         self,
         dialogue: list[Any],
         llm_provider: LlmProvider | None = None,
+        model_id: str | None = None,
     ) -> WindowResult:
         """Сжимает старую часть диалога, сохраняя последние сообщения."""
         total = len(dialogue)
@@ -315,7 +319,7 @@ class BaseCompressionStrategy(ContextWindowStrategy):
 
             if count > 0:
                 new_summary, tech_tokens = self._perform_summarization(
-                    dialogue[:count], llm_provider
+                    dialogue[:count], llm_provider, model_id
                 )
                 self._summary = new_summary
                 return WindowResult(
@@ -330,6 +334,7 @@ class BaseCompressionStrategy(ContextWindowStrategy):
         self,
         messages_to_summarize: list[Any],
         llm_provider: LlmProvider,
+        model_id: str | None = None,
     ) -> tuple[str, tuple[int, int]]:
         """Выполняет суммаризацию указанных сообщений через LLM.
 
@@ -350,12 +355,16 @@ class BaseCompressionStrategy(ContextWindowStrategy):
                 {"role": msg.role, "content": msg.content}
             )
 
-        response = llm_provider.generate(
-            messages=summarization_messages,
-            temperature=0.3,
-            max_tokens=500,
+        kwargs: dict[str, Any] = {
+            "messages": summarization_messages,
+            "temperature": 0.3,
+            "max_tokens": 500,
             **self._summarization_kwargs(),
-        )
+        }
+        if model_id is not None:
+            kwargs["model_id"] = model_id
+
+        response = llm_provider.generate(**kwargs)
 
         prompt_tokens = response.prompt_tokens or 0
         completion_tokens = response.completion_tokens or 0
@@ -457,6 +466,7 @@ class SlidingWindowStrategy(ContextWindowStrategy):
         self,
         dialogue: list[Any],
         llm_provider: LlmProvider | None = None,
+        model_id: str | None = None,
     ) -> WindowResult:
         """Возвращает последние window_size сообщений (с выравниванием)."""
         start = max(0, len(dialogue) - self.window_size)

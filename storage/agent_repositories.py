@@ -16,7 +16,7 @@ from context_strategies import (
     DefaultStrategy,
     create_strategy_from_dict,
 )
-from llm_providers import LlmProvider
+from llm_providers import LlmProviderRegistry
 from storage.conversation_repository import ConversationRepository
 from storage.orm_models import AgentORM
 
@@ -117,7 +117,7 @@ class PersistentAgentRepository(AgentRepository):
 
     def __init__(
         self,
-        llm_provider: LlmProvider,
+        llm_provider_registry: LlmProviderRegistry,
         session_factory: Callable[[], Session],
         global_memory_repository=None,
         task_profile_repository=None,
@@ -128,14 +128,15 @@ class PersistentAgentRepository(AgentRepository):
         Инициализирует репозиторий.
 
         Args:
-            llm_provider: Провайдер LLM для запросов.
+            llm_provider_registry: Реестр LLM-провайдеров. Провайдер для
+                            конкретного чата выбирается по AgentSettings.provider.
             session_factory: Фабрика сессий БД. Внешняя зависимость,
                             предоставляемая слоем инфраструктуры.
             global_memory_repository: Репозиторий глобальной памяти (опционально).
             task_profile_repository: Репозиторий профилей задач (опционально).
         """
         self._session_factory = session_factory
-        self._llm_provider = llm_provider
+        self._llm_provider_registry = llm_provider_registry
         self._chat_storage = ConversationRepository()
         self._global_memory_repository = global_memory_repository
         self._task_profile_repository = task_profile_repository
@@ -211,7 +212,7 @@ class PersistentAgentRepository(AgentRepository):
             agent_id=orm.id,
             conversation_id=orm.conversation_id,
             name=orm.name,
-            llm_provider=self._llm_provider,
+            llm_provider_registry=self._llm_provider_registry,
             initial_settings=settings,
             system_prompt=orm.system_prompt,
             history_storage=self._chat_storage,
@@ -366,7 +367,7 @@ class PersistentAgentRepository(AgentRepository):
             agent_id=None,  # Будет установлен после сохранения в БД
             conversation_id=temp_conversation_id,  # Временный ID, заменится после commit
             name=name,
-            llm_provider=self._llm_provider,
+            llm_provider_registry=self._llm_provider_registry,
             initial_settings=initial_settings,
             system_prompt=system_prompt,
             history_storage=self._chat_storage,

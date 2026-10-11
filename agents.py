@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any
 
 from config import (
+    DEFAULT_PROVIDER,
     TASK_MEMORY_ENABLED,
     TASK_MEMORY_UPDATE_EVERY_N_MESSAGES,
     TASK_MEMORY_WINDOW_MESSAGES,
@@ -16,7 +17,7 @@ from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
 )
-from llm_providers import LlmProvider, LlmResponse
+from llm_providers import LlmProvider, LlmProviderRegistry, LlmResponse
 from prompt_builder import PromptBuilder, PromptSources
 from rag_models import RagRetrievalResult
 
@@ -81,6 +82,7 @@ class AgentSettings:
     """Настройки агента для взаимодействия с LLM."""
 
     model_id: str | None = None
+    provider: str | None = None
     top_k: int | None = None
     top_p: float | None = None
     temperature: float | None = None
@@ -94,6 +96,7 @@ class AgentSettings:
             k: v
             for k, v in {
                 "model_id": self.model_id,
+                "provider": self.provider,
                 "top_k": self.top_k,
                 "top_p": self.top_p,
                 "temperature": self.temperature,
@@ -233,7 +236,7 @@ class Agent:
         self,
         agent_id: int | None,
         name: str,
-        llm_provider: LlmProvider,
+        llm_provider_registry: LlmProviderRegistry,
         initial_settings: AgentSettings | None = None,
         system_prompt: str | None = None,
         history_storage: Any | None = None,
@@ -250,8 +253,8 @@ class Agent:
         rag_service: Any | None = None,
         task_memory_repository: Any | None = None,
     ):
-        if llm_provider is None:
-            raise ValueError("llm_provider is required")
+        if llm_provider_registry is None:
+            raise ValueError("llm_provider_registry is required")
         if global_memory_repository is None:
             raise ValueError("global_memory_repository is required")
         if task_profile_repository is None:
@@ -261,7 +264,7 @@ class Agent:
         if history_storage is None:
             raise ValueError("history_storage is required")
 
-        self._llm_provider = llm_provider
+        self._llm_provider_registry = llm_provider_registry
         self._repository = None  # Устанавливается при регистрации в репозитории
         self._global_memory_repository = global_memory_repository
         self._task_profile_repository = task_profile_repository
@@ -327,6 +330,35 @@ class Agent:
     def get_settings(self) -> AgentSettings:
         """Возвращает текущие настройки агента."""
         return self._settings
+
+    @property
+    def _llm_provider(self) -> LlmProvider:
+        """Возвращает провайдера, выбранного в настройках чата.
+
+        Если провайдер не задан (старые чаты, созданные до появления выбора),
+        используется ``DEFAULT_PROVIDER``.
+        """
+        provider_name = self._settings.provider or DEFAULT_PROVIDER
+        provider = self._llm_provider_registry.get(provider_name)
+        if provider is None:
+            raise ValueError(
+                f"Провайдер '{provider_name}' недоступен. "
+                f"Доступные провайдеры: {', '.join(self._llm_provider_registry.all()) or 'нет'}."
+            )
+        return provider
+
+    def _technical_model_id(self) -> str | None:
+        """Модель для служебных запросов к LLM (память, факты, суммаризация).
+
+        Служебные запросы используют ту же модель, что выбрана для чата.
+        Если модель не задана, запрос выполнять нельзя — вернётся ``None``.
+        """
+        model_id = self._settings.model_id
+        if model_id is None:
+            logger.warning(
+                "Служебный запрос к LLM пропущен: у чата не выбрана модель."
+            )
+        return model_id
 
     def update_settings(self, new_settings: AgentSettings) -> None:
         """Обновляет настройки агента."""
@@ -546,6 +578,7 @@ class Agent:
             sources=sources,
             strategy=self._strategy,
             llm_provider=self._llm_provider,
+            model_id=self._settings.model_id,
         )
 
         messages_for_llm = prepared.messages
@@ -687,6 +720,7 @@ class Agent:
             completion_tokens=response.completion_tokens,
             settings=AgentSettings(
                 model_id=settings.model_id,
+                provider=settings.provider,
                 top_k=settings.top_k,
                 top_p=settings.top_p,
                 temperature=settings.temperature,
@@ -783,7 +817,7 @@ class Agent:
             agent_id=None,
             conversation_id=str(uuid4()),
             name=new_name,
-            llm_provider=self._llm_provider,
+            llm_provider_registry=self._llm_provider_registry,
             initial_settings=current_settings,
             system_prompt=None,
             history_storage=self._history_storage,
@@ -899,6 +933,10 @@ class Agent:
         if not window:
             return
 
+        model_id = self._technical_model_id()
+        if model_id is None:
+            return
+
         import json
 
         dialog_text = ""
@@ -954,6 +992,7 @@ class Agent:
             temperature=0.1,
             max_tokens=1000,
             response_format={"type": "json_object"},
+            model_id=model_id,
         )
 
         if response.prompt_tokens is not None:
@@ -1026,6 +1065,10 @@ class Agent:
         if not unremembered_prompts:
             return  # Нет новых данных для запоминания
 
+        model_id = self._technical_model_id()
+        if model_id is None:
+            return
+
         # Фиксируем память задачи на выходе (перекрывающая семантика).
         self.update_task_memory()
         self._turns_since_task_memory = 0
@@ -1070,6 +1113,7 @@ class Agent:
             temperature=0.1,
             max_tokens=1000,
             response_format={"type": "json_object"},
+            model_id=model_id,
         )
 
         # Обновляем счетчики технических токенов
@@ -1128,6 +1172,7 @@ class Agent:
                 temperature=0.1,
                 max_tokens=1000,
                 response_format={"type": "json_object"},
+                model_id=model_id,
             )
 
             # Обновляем счетчики технических токенов

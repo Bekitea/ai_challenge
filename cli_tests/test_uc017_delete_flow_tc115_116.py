@@ -1,6 +1,6 @@
 """E2E tests: TestUC017_DeleteFlow_TC115_116."""
 
-from e2e_helpers import run_cli_command
+from e2e_helpers import _QUICK_CHAT, run_cli_command
 
 
 class TestUC017_DeleteFlow_TC115_116:
@@ -29,10 +29,9 @@ class TestUC017_DeleteFlow_TC115_116:
            shows the exchange intact).
         """
         test_input = (
-            "1\n"  # Новый чат (быстрое создание)
-            "\n"  # По умолчанию
-            "Remember this fact\n"  # Сообщение
-            "\n"  # Отказ от рассуждений (если запрошен)
+            _QUICK_CHAT  # Новый чат (быстрое создание)
+            + "Remember this fact\n"  # Сообщение
+            + "\n"  # Отказ от рассуждений (если запрошен)
             # EOF: stdin закрывается прямо в цикле чата
         )
 

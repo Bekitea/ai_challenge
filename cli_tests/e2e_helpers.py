@@ -10,8 +10,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Быстрое создание чата: меню -> 1 -> Enter (default "n") -> цикл чата.
-_QUICK_CHAT = "1\n\n"
+# Быстрое создание чата: меню -> 1 -> Enter (default "n") -> выбор модели (3).
+# Модель обязательна, поэтому её номер всегда присутствует в вводе.
+_QUICK_CHAT = "1\n\n3\n"
 
 # Ручное создание с дефолтными настройками и DefaultStrategy.
 _MANUAL_DEFAULTS = (
@@ -26,7 +27,8 @@ def _manual_chat(name: str) -> str:
         _MANUAL_DEFAULTS
         + f"{name}\n"
         + "\n"  # Системный промпт (пропуск)
-        + "\n" * 6  # Модель/temp/top_p/top_k/reasoning/context — дефолты
+        + "3\n"  # Модель (Alice AI LLM Flash, yandex)
+        + "\n" * 5  # temp/top_p/top_k/reasoning/context — дефолты
         + "1\n"  # DefaultStrategy
         # Профилей нет => блок привязки профиля пропускается без ввода.
     )

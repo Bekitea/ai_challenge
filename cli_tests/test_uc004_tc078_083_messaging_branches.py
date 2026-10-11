@@ -44,7 +44,7 @@ class TestUC004_TC078_083_MessagingBranches:
             + "y\n"
             + "TinyCtx\n"
             + "\n"  # Системный промпт
-            + "\n"  # Модель
+            + "1\n"  # Модель
             + "\n"  # temp
             + "\n"  # top_p
             + "\n"  # top_k

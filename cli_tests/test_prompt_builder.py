@@ -30,7 +30,11 @@ from rag_models import RagContextChunk
 class _StubLlmProvider:
     """Провайдер-заглушка, всегда возвращающий фиксированное саммари."""
 
+    def __init__(self):
+        self.last_model_id = None
+
     def generate(self, messages, **kwargs):
+        self.last_model_id = kwargs.get("model_id")
         return LlmResponse(
             content="SUMMARY",
             prompt_tokens=11,
@@ -101,13 +105,16 @@ def test_context_sources_survive_summarization():
         phase_description="Фаза: EXECUTE",
     )
     strategy = SummarizationStrategy(non_compressible_count=1, buffer_size=1)
+    provider = _StubLlmProvider()
 
     prepared = PromptBuilder().build(
-        _history(5), sources, strategy, _StubLlmProvider()
+        _history(5), sources, strategy, provider, model_id="chat-model"
     )
 
     assert prepared.summary == "SUMMARY"
     assert prepared.summarization_tokens == (11, 7)
+    # Служебный запрос суммаризации обязан пробрасывать model_id чата.
+    assert provider.last_model_id == "chat-model"
     assert any(
         m["role"] == "system" and "История диалога: SUMMARY" in m["content"]
         for m in prepared.messages
@@ -117,6 +124,19 @@ def test_context_sources_survive_summarization():
     assert "task-fact" in base_system["content"]
     assert "rule-1" in base_system["content"]
     assert "Фаза: EXECUTE" in base_system["content"]
+
+
+def test_summarization_skipped_without_model_id():
+    """Без model_id суммаризация не запускается (провайдер звать нельзя)."""
+    strategy = SummarizationStrategy(non_compressible_count=1, buffer_size=1)
+    provider = _StubLlmProvider()
+
+    prepared = PromptBuilder().build(
+        _history(5), PromptSources(), strategy, provider
+    )
+
+    assert prepared.summary is None
+    assert provider.last_model_id is None
 
 
 def test_rag_context_injected_into_system_prompt():

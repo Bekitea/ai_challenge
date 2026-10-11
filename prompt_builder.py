@@ -60,6 +60,7 @@ class PromptBuilder:
         sources: PromptSources,
         strategy: ContextWindowStrategy,
         llm_provider: LlmProvider | None = None,
+        model_id: str | None = None,
     ) -> PreparedMessages:
         """Собирает сообщения для LLM из истории и источников контекста.
 
@@ -69,6 +70,8 @@ class PromptBuilder:
             strategy: Стратегия управления контекстным окном (работает только
                 с диалоговыми сообщениями).
             llm_provider: Провайдер LLM для суммаризации (если требуется).
+            model_id: Идентификатор модели чата для служебных запросов
+                (суммаризация). Без него суммаризация не выполняется.
 
         Returns:
             PreparedMessages: итоговые сообщения и метаданные суммаризации.
@@ -82,7 +85,8 @@ class PromptBuilder:
                 continue
             dialogue.append(msg)
 
-        window = strategy.apply(dialogue, llm_provider)
+        active_provider = llm_provider if model_id is not None else None
+        window = strategy.apply(dialogue, active_provider, model_id=model_id)
 
         messages: list[dict[str, Any]] = [
             {

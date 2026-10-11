@@ -24,7 +24,8 @@ class TestUC001_TC004_008_CreationValidation:
             + "да\n"  # Русская аффирмация принимается (§4.4.0)
             + "TC004 Chat\n"  # Название (ручной путь стартовал)
             + "\n"  # Системный промпт
-            + "\n" * 6  # Дефолтные настройки
+            + "1\n"  # Модель
+            + "\n" * 5  # Дефолтные настройки
             + "1\n"  # DefaultStrategy
             + "0\n"  # Профиль не привязывать
             + "/menu\n"
@@ -54,13 +55,14 @@ class TestUC001_TC004_008_CreationValidation:
         4. Verify chat list contains 'Чат 3'.
         """
         test_input = (
-            "1\n\n/menu\n"  # Чат 1 (быстрый путь)
-            + "1\n\n/menu\n"  # Чат 2 (быстрый путь)
+            "1\n\n3\n/menu\n"  # Чат 1 (быстрый путь)
+            + "1\n\n3\n/menu\n"  # Чат 2 (быстрый путь)
             + "1\n"  # Новый чат
             + "y\n"  # Ручная настройка
             + "\n"  # Пустое имя -> default 'Чат N' (N = 2 + 1 = 3)
             + "\n"  # Системный промпт
-            + "\n" * 6  # Дефолтные настройки
+            + "1\n"  # Модель
+            + "\n" * 5  # Дефолтные настройки
             + "1\n"  # DefaultStrategy
             + "0\n"  # Профиль не привязывать
             + "/menu\n"
@@ -82,18 +84,18 @@ class TestUC001_TC004_008_CreationValidation:
 
         Steps:
         1. Start manual creation, pass name/system prompt.
-        2. Enter "5" -> 'Неверный выбор, попробуйте снова.' + re-prompt.
+        2. Enter "9" -> 'Неверный выбор, попробуйте снова.' + re-prompt.
         3. Enter "abc" -> same warning + re-prompt again.
-        4. Press Enter -> default model selected, temperature prompt shown.
+        4. Enter "3" -> Alice AI LLM Flash selected, temperature prompt shown.
         """
         test_input = (
             "1\n"
             + "y\n"
             + "TC006\n"
             + "\n"  # Системный промпт
-            + "5\n"  # Вне диапазона 1-3
+            + "9\n"  # Вне диапазона
             + "abc\n"  # Нечисловой ввод
-            + "\n"  # Enter -> модель по умолчанию
+            + "3\n"  # Alice AI LLM Flash (yandex)
             + "\n"  # Температура
             + "\n"  # Top P
             + "\n"  # Top K
@@ -113,13 +115,13 @@ class TestUC001_TC004_008_CreationValidation:
         assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "--- НАСТРОЙКИ АГЕНТА ---" in stdout
         assert stdout.count("Неверный выбор, попробуйте снова.") >= 2, (
-            "'5' and 'abc' must each re-prompt the model selection (UC-001 A5)"
+            "'9' and 'abc' must each re-prompt the model selection (UC-001 A5)"
         )
         assert "Температура (0.0 - 2.0, Enter для отключения):" in stdout
         assert "(нет доступных профилей)" in stdout
         assert "[OK] Чат 'TC006' создан!" in stdout
         assert "Модель: aliceai-llm-flash/latest" in stdout, (
-            "Empty input must select the default model"
+            "Selected model must be shown in the chat settings"
         )
 
     def test_tc_008_non_integer_strategy_param_repeats_selection(self):
@@ -139,7 +141,8 @@ class TestUC001_TC004_008_CreationValidation:
             + "y\n"
             + "TC008\n"
             + "\n"  # Системный промпт
-            + "\n" * 6  # Дефолтные настройки
+            + "1\n"  # Модель
+            + "\n" * 5  # Дефолтные настройки
             + "2\n"  # SummarizationStrategy
             + "abc\n"  # Некорректное число несжимаемых сообщений
             + "2\n"  # Повтор выбора стратегии

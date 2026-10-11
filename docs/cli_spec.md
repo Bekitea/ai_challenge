@@ -170,7 +170,7 @@ Visible messages exclude role="system", role="tool" and assistant messages carry
 ```
 
 - Accepted affirmative answers: `y`, `да`, `д`; negative: `n`, `нет`, `н`; empty → `n`; anything else → re-prompt with `Введите 'y' (да) или 'n' (нет)`
-- **Quick path (n)**: prints `Используются настройки по умолчанию.`; name is auto-generated, system prompt skipped, default settings (`get_default_agent_settings`: model = Alice AI LLM Flash (`aliceai-llm-flash/latest`), temperature/top_p/top_k disabled, reasoning_effort "none", context window 200k), strategy = DefaultStrategy, no task profile — steps 1–10 are skipped entirely
+- **Quick path (n)**: prints `Используются настройки по умолчанию.`; name is auto-generated, system prompt skipped, other settings default (temperature/top_p/top_k disabled, reasoning_effort "none", context window 200k), strategy = DefaultStrategy, no task profile. **The model is still chosen interactively in step 3 — there is no default model**, so the quick path stops at the model list and then enters the chat loop. Steps 1–2 and 4–10 are skipped.
 - **Manual path (y)**: steps 1–10 below
 
 #### 4.4.1 Step 1: Name Input
@@ -192,22 +192,36 @@ Visible messages exclude role="system", role="tool" and assistant messages carry
 - Non-empty: stored as message `{"role": "system", "content": "{input}"}`
 - Multi-line: Not supported (single line only)
 
-#### 4.4.3 Step 3: Model Selection
+#### 4.4.3 Step 3: Model And Provider Selection
+
+The model list is **not hardcoded**: it is fetched dynamically from all
+configured LLM providers (Yandex Cloud and Ollama). Each entry is labelled with
+its provider, because the same model can be served by different providers:
 
 ```
 --- НАСТРОЙКИ АГЕНТА ---
 
 Выберите модель:
-  1. GPT OSS 120B (gpt-oss-120b/latest)
-  2. Qwen3.6-35B (qwen3.6-35b-a3b/latest)
-  3. Alice AI LLM Flash (aliceai-llm-flash/latest)
-  Enter — модель по умолчанию
+  1. [yandex] GPT OSS 120B (gpt-oss-120b/latest)
+  2. [yandex] Qwen3.6-35B (qwen3.6-35b-a3b/latest)
+  3. [yandex] Alice AI LLM Flash (aliceai-llm-flash/latest)
+  4. [ollama] llama3.2:latest
+  5. [ollama] qwen2.5:7b
 
-Ваш выбор (1-3):
+Ваш выбор (1-5):
 ```
 
+- List format: `{n}. [{provider}] {display_name} ({model_id})`; when the display
+  name equals the model id (e.g. Ollama models) the parenthesised id is omitted.
 - Invalid input: Re-prompt with `Неверный выбор, попробуйте снова.`
-- Empty input: default model `aliceai-llm-flash/latest`
+- **There is no default model** — at chat creation an explicit number is
+  required; empty input prints `Выбор обязателен: введите номер модели.` and
+  re-prompts.
+- When changing settings (UC-005), the current model is offered as a fallback:
+  empty input keeps the current provider/model.
+- If no provider returns any model, the CLI prints `(нет доступных моделей)` and
+  aborts creation with `[WARN] Чат не создан: нет доступных моделей.`
+- Embedding-only Ollama models (e.g. `bge-m3`) are filtered out of the list.
 
 #### 4.4.4 Step 4: Temperature
 
@@ -534,6 +548,7 @@ Error handling in the chat loop is not centralized in a separate matrix: every e
 
 ```
 --- ТЕКУЩИЕ НАСТРОЙКИ ---
+  Провайдер: {provider}
   Модель: {model_id}
   Температура: {value}|отключена
   Top P: {value}|отключен
@@ -543,11 +558,13 @@ Error handling in the chat loop is not centralized in a separate matrix: every e
 ----------------------------------------
 ```
 
-Model is shown by its identifier (not display name). Missing `context_window_size` is displayed as 200000. Unlike temperature/top_p/top_k, `Reasoning Effort` has no disable placeholder: the raw value is printed as-is, so when the effort is `None` the line reads `Reasoning Effort: None` (default effort values such as `low`/`medium`/`high` are printed verbatim).
+Provider is shown by its key (`yandex`/`ollama`); chats created before provider
+selection existed (stored `provider=None`) are displayed as `yandex`. Model is
+shown by its identifier (not display name). Missing `context_window_size` is displayed as 200000. Unlike temperature/top_p/top_k, `Reasoning Effort` has no disable placeholder: the raw value is printed as-is, so when the effort is `None` the line reads `Reasoning Effort: None` (default effort values such as `low`/`medium`/`high` are printed verbatim).
 
 #### 4.6.2 Change Settings (`change_settings`)
 
-Same prompts as creation workflow (§4.4.3–§4.4.8) applied sequentially; each answer fully replaces the previous value (empty input disables the parameter — there is no "keep current value" semantics). Strategy, task profile and phase cannot be changed for existing chats. Confirmation: `[OK] Настройки обновлены!` followed by the refreshed settings block.
+Same prompts as creation workflow (§4.4.3–§4.4.8) applied sequentially; each answer fully replaces the previous value (empty input disables the parameter). Exception: for the model/provider prompt (step 3) empty input keeps the current selection. Strategy, task profile and phase cannot be changed for existing chats. Confirmation: `[OK] Настройки обновлены!` followed by the refreshed settings block.
 
 ### 4.7 Task Profiles Menu
 
@@ -745,3 +762,4 @@ this document.
 | UC-020 | Manage Knowledge Bases And RAG (/rag, menu 7) | Create bases, index .txt/.md/.py documents, attach bases to a chat and search. | [uc-020-rag-knowledge-bases.md](uc/uc-020-rag-knowledge-bases.md) |
 | UC-021 | RAG Sources, Citations And Relevance Threshold | Show used sources/quotes after an answer and refuse below-threshold answers with «Не знаю». | [uc-021-rag-sources-and-relevance-threshold.md](uc/uc-021-rag-sources-and-relevance-threshold.md) |
 | UC-022 | Task Memory Of The Dialogue | Keep goal, constraints, terms and clarifications per chat and inject them every turn. | [uc-022-task-memory.md](uc/uc-022-task-memory.md) |
+| UC-023 | List Available Models And Providers | Fetch models dynamically from Yandex Cloud and Ollama, label each with its provider and let the user pick one. | [uc-023-list-available-models-and-providers.md](uc/uc-023-list-available-models-and-providers.md) |

@@ -12,7 +12,7 @@ AI Chat CLI — консольное приложение для взаимод�
 - Run app: `poetry run python main_cli.py`
 - Lint: `poetry run ruff check --fix` (only `target-version = "py313"` configured).
 - Tests (all are e2e; there is no unit test suite):
-  - `poetry run pytest cli_tests/ -v`
+  - **NEVER run the full suite (`poetry run pytest cli_tests/`).** Its performance is unacceptable and the issue is unresolved. Always run only the specific test(s) relevant to the change.
   - Single case: `poetry run pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -v`
   - E2E tests are split one file per test class (`cli_tests/test_ucXXX_*.py`); shared helpers live in `cli_tests/e2e_helpers.py`, the autouse cleanup fixture in `cli_tests/conftest.py`. `run_cli_command` itself asserts `returncode == 0` and empty `stderr`, so tests must not duplicate those checks and should discard unused tuple parts with `_` (avoids Ruff `RUF059`).
   - Smoke: `poetry run python cli_tests/smoke_test.py`

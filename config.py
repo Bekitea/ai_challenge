@@ -9,15 +9,24 @@ load_dotenv()
 YANDEX_BASE_URL = "https://ai.api.cloud.yandex.net/v1"
 YANDEX_API_KEY = os.getenv("YANDEX_CLOUD_API_KEY")
 YANDEX_FOLDER_ID = os.getenv("YANDEX_CLOUD_FOLDER")
-YANDEX_DEFAULT_MODEL = "aliceai-llm-flash/latest"
-
-AVAILABLE_MODELS = {
-    "1": ("gpt-oss-120b/latest", "GPT OSS 120B"),
-    "2": ("qwen3.6-35b-a3b/latest", "Qwen3.6-35B"),
-    "3": ("aliceai-llm-flash/latest", "Alice AI LLM Flash"),
-}
 
 REASONING_EFFORTS = ["none", "low", "medium", "high"]
+
+# --- Провайдеры LLM ---
+# Имена провайдеров, которые хранятся в AgentSettings.provider.
+LLM_PROVIDER_YANDEX = "yandex"
+LLM_PROVIDER_OLLAMA = "ollama"
+# Провайдер для чатов, созданных до появления выбора (provider=None).
+DEFAULT_PROVIDER = LLM_PROVIDER_YANDEX
+
+# Периодические отчёты Celery неинтерактивны, поэтому для них нужен явный
+# провайдер и модель по умолчанию (в обычных чатах дефолтной модели нет —
+# пользователь всегда выбирает сам).
+DEFAULT_REPORT_PROVIDER = os.getenv("DEFAULT_REPORT_PROVIDER", LLM_PROVIDER_YANDEX)
+DEFAULT_REPORT_MODEL = os.getenv("DEFAULT_REPORT_MODEL", "aliceai-llm-flash/latest")
+
+# Таймаут опроса списка моделей у провайдеров.
+MODEL_LIST_TIMEOUT = int(os.getenv("MODEL_LIST_TIMEOUT", "10"))
 
 # --- Настройки Ollama (Локальные модели и Эмбеддинги) ---
 # Автоматически определяем, запущен ли код внутри Docker-контейнера.
@@ -31,6 +40,10 @@ DEFAULT_OLLAMA_URL = (
 )
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_URL)
+# OpenAI-совместимый эндпоинт Ollama для чата (tool calling, usage-токены).
+OLLAMA_OPENAI_BASE_URL = os.getenv(
+    "OLLAMA_OPENAI_BASE_URL", f"{OLLAMA_BASE_URL.rstrip('/')}/v1"
+)
 OLLAMA_DEFAULT_EMBEDDING_MODEL = os.getenv("OLLAMA_DEFAULT_EMBEDDING_MODEL", "bge-m3")
 
 AVAILABLE_EMBEDDING_MODELS = {

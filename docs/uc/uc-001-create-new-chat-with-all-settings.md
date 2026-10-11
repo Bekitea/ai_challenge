@@ -19,8 +19,8 @@
 5. User enters "My Test Chat"
 6. System displays system prompt input
 7. User enters "You are a helpful assistant"
-8. System displays model selection
-9. User selects model 1
+8. System displays model selection (list fetched dynamically from all providers, each labelled with its provider — see UC-023)
+9. User selects a model (e.g. option 1)
 10. System prompts for temperature
 11. User enters "0.7"
 12. System prompts for Top P
@@ -41,8 +41,9 @@
 
 - **A1: Quick Creation With Defaults**
   - Step 3: User enters "n" or presses Enter (default is "n")
-  - System prints `Используются настройки по умолчанию.` and skips steps 4–20 entirely
-  - Chat is created with auto-generated name and `get_default_agent_settings()` (model = Alice AI LLM Flash `aliceai-llm-flash/latest`, temperature/top_p/top_k disabled, reasoning_effort "none", context window 200000), DefaultStrategy, no task profile
+  - System prints `Используются настройки по умолчанию.` and skips steps 4–7 and 10–20
+  - **The model is still selected interactively (step 8–9) — there is no default model**
+  - Other settings default to: temperature/top_p/top_k disabled, reasoning_effort "none", context window 200000, DefaultStrategy, no task profile
   - Continue from step 21
 
 - **A2: Invalid Answer To Configure Prompt**
@@ -58,9 +59,10 @@
   - No system message added to history
 
 - **A5: Invalid Model Selection**
-  - Step 9: User enters "5"
+  - Step 9: User enters an out-of-range or non-numeric value
   - System displays `Неверный выбор, попробуйте снова.` and re-prompts step 9
-  - Empty input at step 9 selects the default model (`aliceai-llm-flash/latest`)
+  - Empty input at chat creation prints `Выбор обязателен: введите номер модели.` and re-prompts — there is no default model
+  - If no provider returns models, `(нет доступных моделей)` is shown and creation is aborted with `[WARN] Чат не создан: нет доступных моделей.`
 
 - **A6: Disable Temperature / Top P**
   - Step 11/13: User presses Enter
@@ -109,9 +111,9 @@
 | Step | Action                                       | Expected Result                                                                                                   |
 | ---- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | 1    | Select option 1 (New Chat)                   | Header `--- СОЗДАНИЕ НОВОГО ЧАТА ---` and prompt `Хотите настроить чат? (y/n, по умолчанию n):` displayed        |
-| 2    | Press Enter (empty input → default "n")      | `Используются настройки по умолчанию.` printed; steps 4–20 of UC-001 skipped entirely; creation continues from UC-001 step 21 |
-| 3    | Verify completion message                    | `[OK] Чат 'Чат {N}' создан!` (auto-generated name), then chat loop entered                                        |
-| 4    | Verify chat settings                         | Model = `aliceai-llm-flash/latest`, temperature/top_p/top_k disabled (None), reasoning_effort "none", context window 200000 |
+| 2    | Press Enter (empty input → default "n")      | `Используются настройки по умолчанию.` printed; other settings skipped entirely; the model list is displayed (UC-023) and a model must be selected |
+| 3    | Select a model from the list                 | `[OK] Чат 'Чат {N}' создан!` (auto-generated name), then chat loop entered                                        |
+| 4    | Verify chat settings                         | Provider and model = the selected entry, temperature/top_p/top_k disabled (None), reasoning_effort "none", context window 200000 |
 | 5    | Verify strategy and profile                  | DefaultStrategy, task_profile_id = null                                                                            |
 
 ---
@@ -187,9 +189,10 @@
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | 1    | Start manual creation, pass name/system prompt                  | Model selection block `--- НАСТРОЙКИ АГЕНТА ---` displayed                             |
-| 2    | Enter "5" (outside 1–3)                                         | `Неверный выбор, попробуйте снова.` displayed; model selection re-prompted (UC-001 A5)|
+| 2    | Enter "9" (outside the displayed range)                         | `Неверный выбор, попробуйте снова.` displayed; model selection re-prompted (UC-001 A5)|
 | 3    | Enter "abc" (non-numeric)                                       | Same warning; model selection re-prompted again                                        |
-| 4    | Press Enter (empty input)                                       | Default model `aliceai-llm-flash/latest` selected; temperature prompt displayed (§4.4.3)|
+| 4    | Enter a valid number (e.g. "3")                                 | Model selected; temperature prompt displayed (§4.4.3)                                  |
+| 5    | Press Enter (empty input)                                       | `Выбор обязателен: введите номер модели.` displayed; model selection re-prompted (no default model) |
 
 ---
 
@@ -489,8 +492,8 @@
 | Step | Action                                                          | Expected Result                                                                       |
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | 1    | Ensure exactly 2 chats exist in storage                          | Main Menu displayed                                                                    |
-| 2    | Select option 1 (New Chat), press Enter at the configure prompt (default "n") | `Используются настройки по умолчанию.` printed (UC-001 A1)                  |
-| 3    | Verify completion message                                       | `[OK] Чат 'Чат 3' создан!` — auto-generated name uses N = existing chats + 1 (UC-001 A3) |
-| 4    | Verify chat settings                                            | Defaults applied (`aliceai-llm-flash/latest`, disabled temperature/top_p/top_k, DefaultStrategy, no profile) |
+| 2    | Select option 1 (New Chat), press Enter at the configure prompt (default "n") | `Используются настройки по умолчанию.` printed; the model list is displayed (UC-023) |
+| 3    | Select a model from the list                                    | `[OK] Чат 'Чат 3' создан!` — auto-generated name uses N = existing chats + 1 (UC-001 A3) |
+| 4    | Verify chat settings                                            | Selected provider/model applied; disabled temperature/top_p/top_k, DefaultStrategy, no profile |
 
 ---

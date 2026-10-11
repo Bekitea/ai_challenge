@@ -39,6 +39,7 @@ class TestUC001_CreateChatWithAllSettings:
         test_input = (
             "1\n"  # Новый чат
             "\n"  # Пустой ответ на "Хотите настроить?" -> default "n", быстрый путь
+            "3\n"  # Модель: Alice AI LLM Flash (yandex)
             "/settings\n"  # Проверка настроек созданного чата (§4.4.7)
             "n\n"  # Не изменять настройки
             "/info\n"  # Проверка стратегии и профиля созданного чата

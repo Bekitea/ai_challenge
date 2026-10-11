@@ -1,6 +1,6 @@
 """E2E tests: TestUC003_TC095_119_MenuInterrupt."""
 
-from e2e_helpers import run_cli_command
+from e2e_helpers import _QUICK_CHAT, run_cli_command
 
 
 class TestUC003_TC095_119_MenuInterrupt:
@@ -14,8 +14,7 @@ class TestUC003_TC095_119_MenuInterrupt:
         termination, no traceback.
         """
         test_input = (
-            "1\n"  # Создать чат быстрым путём
-            + "\n"
+            _QUICK_CHAT  # Создать чат быстрым путём
             + "/menu\n"  # Вернуться в главное меню
             # EOF на промпте меню
         )
@@ -37,8 +36,7 @@ class TestUC003_TC095_119_MenuInterrupt:
         3. Restart -> the chat is still present and selectable via option 2.
         """
         first_run = (
-            "1\n"  # Новый чат (быстрый путь)
-            + "\n"
+            _QUICK_CHAT  # Новый чат (быстрый путь)
             + "/menu\n"  # В главное меню
             + "5\n"  # Шаг 1: возврат в чат через опцию 5
             + "/menu\n"

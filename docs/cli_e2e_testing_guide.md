@@ -349,11 +349,9 @@ class TestUC001_CreateChatWithAllSettings:
         \"\"\"
         test_input = (
             "1\\n"           # Новый чат
-            "\\n"            # Default name
-            "\\n"            # Skip system prompt
-            "1\\n"           # Model 1
-            "\\n"            # Temperature disabled
-            "4\\n"           # Exit
+            "\\n"            # Configure prompt → quick path (default "n")
+            "3\\n"           # Model selection (required; no default model)
+            "/menu\\n6\\n"   # Leave the chat loop and exit
         )
         stdout, _, _ = run_cli_command(test_input)
 
@@ -626,17 +624,20 @@ def test_tc_013_return_to_chat_with_active_chat(self):
     # Step 4: Use "Return to chat"
     test_input = (
         "1\n"           # New chat
+        "y\n"           # Configure the chat manually
         "Test\n"        # Name
-        "\n"            # Skip prompt
-        "1\n"           # Model
-        "\n\n\n\n\n"    # Defaults
+        "\n"            # Skip system prompt
+        "1\n"           # Model (required; no default model)
+        "\n\n\n\n\n"    # Defaults: temp/top_p/top_k/reasoning/context
+        "1\n"           # DefaultStrategy
         "Hello\n"       # Send message
         "/menu\n"       # Go to menu
-        "3\n"           # Return to chat
-        "4\n"           # Exit
+        "5\n"           # Return to chat
+        "/menu\n"       # Go to menu again
+        "6\n"           # Exit
     )
     stdout, _, _ = run_cli_command(test_input)
-    assert "Активный чат" in stdout
+    assert "Вернуться в чат" in stdout
 ```
 
 ## Common Patterns

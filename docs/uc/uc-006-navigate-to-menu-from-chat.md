@@ -12,9 +12,10 @@
 
 1. User types "/menu"
 2. System displays `Возврат в меню...`
-3. System saves chat memory via `save_agent_memory` use case (LLM fact extraction into global and task-profile memory)
-4. System exits the chat loop and displays Main Menu
-5. Use case ends
+3. System displays `[INFO] Сохранение памяти чата '{name}'...` and saves chat memory via `save_agent_memory` use case (LLM fact extraction into global and task-profile memory), timed
+4. System displays `[OK] Память чата '{name}' сохранена за {seconds:.2f} с.` (or an `[ERROR]` line on failure — see UC-024)
+5. System exits the chat loop and displays Main Menu
+6. Use case ends
 
 ## Postconditions
 
@@ -31,7 +32,7 @@
 | Step | Action                  | Expected Result              |
 | ---- | ----------------------- | ---------------------------- |
 | 1    | Enter chat              | Chat loop                    |
-| 2    | Type "/menu"            | `Возврат в меню...`, memory saved via `save_agent_memory`, Main Menu displayed |
+| 2    | Type "/menu"            | `Возврат в меню...`, `[INFO] Сохранение памяти чата '{name}'...`, `[OK] Память чата '{name}' сохранена за {seconds:.2f} с.`, Main Menu displayed (UC-024) |
 | 3    | Verify chat preserved   | Chat still exists in storage |
 | 4    | Select option 5 (Return to Chat) | Same chat reloaded        |
 

@@ -1,4 +1,5 @@
 import os
+import time
 
 from agents import Agent, AgentSettings, ContextWindowExceededError
 from config import (
@@ -15,6 +16,7 @@ from context_strategies import (
     SummarizationStrategy,
 )
 from use_cases import (
+    MemorySaveResult,
     RagError,
     UseCasesBundle,
 )
@@ -1476,12 +1478,12 @@ class CLIChat:
                     print("\nВозврат в меню...")
                     # При выходе из чата сохраняем память через use case
                     if self.current_agent:
-                        try:
-                            self.use_cases.save_agent_memory.execute(
-                                self.current_agent
-                            )
-                        except Exception as e:  # noqa: BLE001
-                            print(f"[WARN] Не удалось сохранить память: {e}")
+                        self._print_memory_save_start(self.current_agent.name)
+                        result = self.use_cases.save_agent_memory.execute(
+                            self.current_agent,
+                            on_warning=self._print_memory_warning,
+                        )
+                        self._print_memory_save_result(result)
                     break
 
                 if user_input.lower() == "/stop":
@@ -1544,7 +1546,9 @@ class CLIChat:
 
                 try:
                     response, _ = self.use_cases.send_message.execute(
-                        self.current_agent, user_input
+                        self.current_agent,
+                        user_input,
+                        on_memory_warning=self._print_memory_warning,
                     )
                 except ContextWindowExceededError as e:
                     # Очищаем строку "Агент печатает..."
@@ -1598,26 +1602,84 @@ class CLIChat:
             except (KeyboardInterrupt, EOFError):
                 print("\n\nПрервано пользователем.")
                 if self.current_agent:
-                    try:
-                        self.use_cases.save_agent_memory.execute(self.current_agent)
-                    except Exception as e:  # noqa: BLE001
-                        print(f"[WARN] Не удалось сохранить память: {e}")
+                    self._print_memory_save_start(self.current_agent.name)
+                    result = self.use_cases.save_agent_memory.execute(
+                        self.current_agent,
+                        on_warning=self._print_memory_warning,
+                    )
+                    self._print_memory_save_result(result)
                 break
             except Exception as e:  # noqa: BLE001
                 print(f"\n[ERROR] Ошибка: {e}")
                 break
 
+    def _print_memory_save_start(self, chat_name: str) -> None:
+        """Выводит уведомление о начале заполнения памяти чата."""
+        print(f"[INFO] Сохранение памяти чата '{chat_name}'...")
+
+    def _print_memory_warning(self, message: str) -> None:
+        """Выводит предупреждение о сбое обновления памяти (диалог не прерывается)."""
+        print(f"[WARN] {message}")
+
+    def _print_memory_save_result(
+        self, result: MemorySaveResult, per_chat: bool = False
+    ) -> None:
+        """Выводит результат заполнения памяти чата.
+
+        Args:
+            result: Результат сохранения памяти.
+            per_chat: Если True, выводит компактную строку для списка чатов
+                (используется при старте приложения).
+        """
+        if result.success:
+            if per_chat:
+                print(
+                    f"[OK] '{result.chat_name}': сохранено за "
+                    f"{result.duration_seconds:.2f} с."
+                )
+            else:
+                print(
+                    f"[OK] Память чата '{result.chat_name}' сохранена за "
+                    f"{result.duration_seconds:.2f} с."
+                )
+        elif per_chat:
+            print(
+                f"[ERROR] '{result.chat_name}': не удалось за "
+                f"{result.duration_seconds:.2f} с: {result.error}"
+            )
+        else:
+            print(
+                f"[ERROR] Не удалось сохранить память чата '{result.chat_name}' "
+                f"за {result.duration_seconds:.2f} с: {result.error}"
+            )
+
     def run(self):
         """Запускает CLI приложение."""
         self.clear_screen()
-        self.print_header()
 
         # При старте приложения достаем все агенты с несохраненными промптами
-        # и у них последовательно вызываем save_memory через use case
+        # и у них последовательно вызываем save_memory через use case.
+        # Блок памяти печатается до заголовка, чтобы прогресс был виден сразу.
+        print("[INFO] Проверка несохранённой памяти...")
+        memory_start = time.perf_counter()
         try:
-            self.use_cases.save_unsaved_memories.execute()
+            results = self.use_cases.save_unsaved_memories.execute(
+                on_agent_start=self._print_memory_save_start,
+                on_result=lambda result: self._print_memory_save_result(
+                    result, per_chat=True
+                ),
+                on_warning=self._print_memory_warning,
+            )
+            if not results:
+                print("[INFO] Несохранённой памяти нет.")
         except Exception as e:  # noqa: BLE001
-            print(f"[WARN] Не удалось сохранить память при старте: {e}")
+            print(f"[ERROR] Не удалось сохранить память при старте: {e}")
+        print(
+            f"[INFO] Проверка памяти завершена за "
+            f"{time.perf_counter() - memory_start:.2f} с."
+        )
+
+        self.print_header()
 
         while True:
             self.print_menu()

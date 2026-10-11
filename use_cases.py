@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -30,7 +32,7 @@ from context_strategies import (
     SummarizationStrategy,
 )
 from file_extractor import extract_from_path
-from llm_providers import LlmProviderRegistry, LlmResponse
+from llm_providers import LlmProviderRegistry, LlmResponse, LlmTimeoutError
 from rag_errors import (
     DocumentIndexingError,
     EmbeddingDimensionMismatchError,
@@ -237,13 +239,20 @@ class SendMessageUseCase:
     def __init__(self, repository: AgentRepository):
         self.repository = repository
 
-    def execute(self, agent: Agent, user_message: str) -> tuple[LlmResponse, Agent]:
+    def execute(
+        self,
+        agent: Agent,
+        user_message: str,
+        on_memory_warning: Callable[[str], None] | None = None,
+    ) -> tuple[LlmResponse, Agent]:
         """
         Отправляет сообщение агенту и получает ответ.
 
         Args:
             agent: Агент для общения.
             user_message: Текст сообщения пользователя.
+            on_memory_warning: Необязательный колбэк для сообщений о сбое
+                обновления памяти задачи диалога.
 
         Returns:
             Tuple of (LlmResponse, updated Agent).
@@ -251,7 +260,9 @@ class SendMessageUseCase:
         Raises:
             ContextWindowExceededError: Если превышен лимит контекстного окна.
         """
-        response = agent.continue_dialog(user_message)
+        response = agent.continue_dialog(
+            user_message, on_memory_warning=on_memory_warning
+        )
         return response, agent
 
 
@@ -490,20 +501,69 @@ class RefreshAgentMemoryUseCase:
         agent.refresh_memory()
 
 
+@dataclass
+class MemorySaveResult:
+    """Результат заполнения долговременной памяти одного чата.
+
+    Attributes:
+        chat_name: Имя чата, для которого сохранялась память.
+        success: Успешно ли выполнено сохранение.
+        duration_seconds: Сколько времени заняло заполнение памяти.
+        error: Текст ошибки при неудаче (иначе None).
+        timed_out: True, если ошибка вызвана таймаутом запроса к модели.
+    """
+
+    chat_name: str
+    success: bool
+    duration_seconds: float
+    error: str | None = None
+    timed_out: bool = False
+
+
+def _save_agent_memory(
+    agent: Agent, on_warning: Callable[[str], None] | None = None
+) -> MemorySaveResult:
+    """Заполняет глобальную и профильную память агента с замером времени."""
+    start = time.perf_counter()
+    try:
+        agent.save_memory(on_warning=on_warning)
+    except Exception as e:  # noqa: BLE001
+        return MemorySaveResult(
+            chat_name=agent.name,
+            success=False,
+            duration_seconds=time.perf_counter() - start,
+            error=str(e),
+            timed_out=isinstance(e, LlmTimeoutError),
+        )
+    return MemorySaveResult(
+        chat_name=agent.name,
+        success=True,
+        duration_seconds=time.perf_counter() - start,
+    )
+
+
 class SaveAgentMemoryUseCase:
     """Use case для сохранения памяти агента при выходе из чата."""
 
     def __init__(self, global_memory_repository):
         self.global_memory_repository = global_memory_repository
 
-    def execute(self, agent: Agent) -> None:
+    def execute(
+        self,
+        agent: Agent,
+        on_warning: Callable[[str], None] | None = None,
+    ) -> MemorySaveResult:
         """
-        Сохраняет общесистемную память о пользователе.
+        Сохраняет общесистемную память о пользователе и память профиля задачи.
 
         Args:
             agent: Агент, для которого нужно сохранить память.
+            on_warning: Необязательный колбэк для сообщений о сбое памяти задачи.
+
+        Returns:
+            Результат заполнения памяти чата (успех, длительность, ошибка).
         """
-        agent.save_memory()
+        return _save_agent_memory(agent, on_warning=on_warning)
 
 
 class SaveUnsavedMemoriesUseCase:
@@ -512,18 +572,52 @@ class SaveUnsavedMemoriesUseCase:
     def __init__(self, repository: AgentRepository):
         self.repository = repository
 
-    def execute(self) -> None:
+    def execute(
+        self,
+        on_agent_start: Callable[[str], None] | None = None,
+        on_result: Callable[[MemorySaveResult], None] | None = None,
+        on_warning: Callable[[str], None] | None = None,
+    ) -> list[MemorySaveResult]:
         """
-        Находит все агенты с несохранёнными промптами и вызывает у них save_memory.
+        Находит все агенты с несохранёнными промптами и сохраняет их память.
 
         Агент считается имеющим несохранённые промпты, если:
         - is_dialog_remembered == False
         - Есть сообщения с is_remembered == False
+
+        Если сохранение одного чата падает по таймауту модели, обработка серии
+        прерывается (circuit breaker), оставшиеся чаты пропускаются с
+        предупреждением через ``on_warning``.
+
+        Args:
+            on_agent_start: Необязательный колбэк(chat_name), вызывается перед
+                сохранением памяти каждого чата.
+            on_result: Необязательный колбэк(MemorySaveResult), вызывается
+                сразу после сохранения памяти каждого чата.
+            on_warning: Необязательный колбэк(сообщение) для сбоев памяти задачи.
+
+        Returns:
+            Список результатов по каждому чату (успех, длительность, ошибка).
         """
         agents = self.repository.get_agents_with_unsaved_memory()
 
-        for agent in agents:
-            agent.save_memory()
+        results: list[MemorySaveResult] = []
+        for index, agent in enumerate(agents):
+            if on_agent_start is not None:
+                on_agent_start(agent.name)
+            result = _save_agent_memory(agent, on_warning=on_warning)
+            results.append(result)
+            if on_result is not None:
+                on_result(result)
+            if result.timed_out:
+                skipped = len(agents) - index - 1
+                if on_warning is not None and skipped:
+                    on_warning(
+                        "Сохранение памяти прервано из-за таймаута модели; "
+                        f"пропущено чатов: {skipped}."
+                    )
+                break
+        return results
 
 
 class ListTaskProfilesUseCase:

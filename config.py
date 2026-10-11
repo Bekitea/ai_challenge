@@ -28,6 +28,13 @@ DEFAULT_REPORT_MODEL = os.getenv("DEFAULT_REPORT_MODEL", "aliceai-llm-flash/late
 # Таймаут опроса списка моделей у провайдеров.
 MODEL_LIST_TIMEOUT = int(os.getenv("MODEL_LIST_TIMEOUT", "10"))
 
+# Таймаут LLM-вызовов извлечения памяти (глобальной, профиля задачи и памяти
+# задачи диалога). Короткий, чтобы сбои модели не блокировали работу.
+MEMORY_LLM_TIMEOUT = int(os.getenv("MEMORY_LLM_TIMEOUT", "5"))
+# Число повторов SDK для вызовов памяти. 0 — без повторов, чтобы таймаут
+# MEMORY_LLM_TIMEOUT не умножался на количество попыток.
+MEMORY_LLM_MAX_RETRIES = int(os.getenv("MEMORY_LLM_MAX_RETRIES", "0"))
+
 # --- Настройки Ollama (Локальные модели и Эмбеддинги) ---
 # Автоматически определяем, запущен ли код внутри Docker-контейнера.
 # На хосте Ollama доступна как localhost, из контейнера — через

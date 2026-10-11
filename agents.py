@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -9,6 +10,8 @@ from typing import Any
 
 from config import (
     DEFAULT_PROVIDER,
+    MEMORY_LLM_MAX_RETRIES,
+    MEMORY_LLM_TIMEOUT,
     TASK_MEMORY_ENABLED,
     TASK_MEMORY_UPDATE_EVERY_N_MESSAGES,
     TASK_MEMORY_WINDOW_MESSAGES,
@@ -17,7 +20,12 @@ from context_strategies import (
     ContextWindowStrategy,
     DefaultStrategy,
 )
-from llm_providers import LlmProvider, LlmProviderRegistry, LlmResponse
+from llm_providers import (
+    LlmProvider,
+    LlmProviderRegistry,
+    LlmResponse,
+    LlmTimeoutError,
+)
 from prompt_builder import PromptBuilder, PromptSources
 from rag_models import RagRetrievalResult
 
@@ -536,12 +544,18 @@ class Agent:
             )
             return RagRetrievalResult(chunks=[], has_knowledge_bases=False)
 
-    def continue_dialog(self, user_prompt: str) -> LlmResponse:
+    def continue_dialog(
+        self,
+        user_prompt: str,
+        on_memory_warning: Callable[[str], None] | None = None,
+    ) -> LlmResponse:
         """
         Продолжает диалог: добавляет сообщение пользователя, делает запрос к LLM,
         сохраняет ответ и возвращает результат.
         Args:
             user_prompt: Текст сообщения от пользователя.
+            on_memory_warning: Необязательный колбэк для сообщений о сбое
+                обновления памяти задачи диалога (не прерывает диалог).
         Returns:
             LlmResponse: Ответ от LLM с контентом и reasoning.
         Raises:
@@ -737,7 +751,8 @@ class Agent:
         # Память задачи: обновляем по счётчику ходов или сразу после сжатия
         # контекста, чтобы цель диалога не терялась на длинных диалогах.
         self._maybe_update_task_memory(
-            compressed=bool(prepared.summarization_tokens)
+            compressed=bool(prepared.summarization_tokens),
+            on_warning=on_memory_warning,
         )
 
         # Автосохранение после каждого сообщения
@@ -904,7 +919,11 @@ class Agent:
             return []
         return [str(item).strip() for item in value if str(item).strip()]
 
-    def _maybe_update_task_memory(self, compressed: bool) -> None:
+    def _maybe_update_task_memory(
+        self,
+        compressed: bool,
+        on_warning: Callable[[str], None] | None = None,
+    ) -> None:
         """Триггерит обновление памяти задачи по счётчику или при сжатии."""
         if not TASK_MEMORY_ENABLED:
             return
@@ -913,29 +932,38 @@ class Agent:
             compressed
             or self._turns_since_task_memory >= TASK_MEMORY_UPDATE_EVERY_N_MESSAGES
         ):
-            self.update_task_memory()
+            self.update_task_memory(on_warning=on_warning)
             self._turns_since_task_memory = 0
 
-    def update_task_memory(self) -> None:
+    def update_task_memory(
+        self, on_warning: Callable[[str], None] | None = None
+    ) -> bool:
         """Обновляет память задачи текущего диалога через LLM.
 
         Отправляет ограниченное окно последних сообщений вместе с текущей
         памятью и просит вернуть полное актуальное состояние: новые
         уточнения пользователя заменяют устаревшие. Расход токенов пишется
         в ``tech_prompt_tokens``/``tech_completion_tokens``.
+
+        При сбое запроса к модели (включая таймаут) память не меняется, а
+        сообщение об ошибке передаётся в ``on_warning`` (если задан) — диалог
+        не прерывается.
+
+        Returns:
+            True, если обновление прервано таймаутом модели; иначе False.
         """
         if not TASK_MEMORY_ENABLED or self._task_memory_repository is None:
-            return
+            return False
 
         window = [
             msg for msg in self._messages if msg.role in ("user", "assistant")
         ][-TASK_MEMORY_WINDOW_MESSAGES:]
         if not window:
-            return
+            return False
 
         model_id = self._technical_model_id()
         if model_id is None:
-            return
+            return False
 
         import json
 
@@ -984,16 +1012,27 @@ class Agent:
             '"terms": [...], "clarifications": [...]}'
         )
 
-        response = self._llm_provider.generate(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "Обнови память задачи."},
-            ],
-            temperature=0.1,
-            max_tokens=1000,
-            response_format={"type": "json_object"},
-            model_id=model_id,
-        )
+        try:
+            response = self._llm_provider.generate(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "Обнови память задачи."},
+                ],
+                temperature=0.1,
+                max_tokens=1000,
+                timeout=MEMORY_LLM_TIMEOUT,
+                max_retries=MEMORY_LLM_MAX_RETRIES,
+                response_format={"type": "json_object"},
+                model_id=model_id,
+            )
+        except LlmTimeoutError as e:
+            if on_warning is not None:
+                on_warning(f"Не удалось обновить память задачи: {e}")
+            return True
+        except Exception as e:  # noqa: BLE001 — сбой модели не прерывает диалог
+            if on_warning is not None:
+                on_warning(f"Не удалось обновить память задачи: {e}")
+            return False
 
         if response.prompt_tokens is not None:
             self._token_counters.tech_prompt_tokens += response.prompt_tokens
@@ -1003,13 +1042,13 @@ class Agent:
         try:
             parsed = json.loads(response.content)
         except (json.JSONDecodeError, TypeError):
-            return
+            return False
         if not isinstance(parsed, dict):
-            return
+            return False
 
         recognized = {"goal", "constraints", "terms", "clarifications"}
         if not recognized & parsed.keys():
-            return
+            return False
 
         self.task_memory = TaskMemory(
             goal=(
@@ -1034,8 +1073,11 @@ class Agent:
             ),
         )
         self._save_task_memory()
+        return False
 
-    def save_memory(self) -> None:
+    def save_memory(
+        self, on_warning: Callable[[str], None] | None = None
+    ) -> None:
         """
         Сохраняет общесистемную память о пользователе и память задачи.
 
@@ -1049,6 +1091,8 @@ class Agent:
         5. Помечает все промпты и агент как remembered
 
         Расход токенов записывается в tech_prompt_tokens и tech_completion_tokens.
+        Сбой обновления памяти задачи диалога передаётся в ``on_warning`` и не
+        прерывает извлечение глобальной и профильной памяти.
         """
         import json
 
@@ -1070,8 +1114,12 @@ class Agent:
             return
 
         # Фиксируем память задачи на выходе (перекрывающая семантика).
-        self.update_task_memory()
+        # Если этот вызов упал по таймауту, остальные вызовы памяти для чата
+        # не выполняем — прерываем сохранение, чтобы не ждать ещё раз.
+        task_memory_timed_out = self.update_task_memory(on_warning=on_warning)
         self._turns_since_task_memory = 0
+        if task_memory_timed_out:
+            raise LlmTimeoutError("Таймаут обновления памяти задачи.")
 
         dialog_text = ""
         for msg in unremembered_prompts:
@@ -1112,6 +1160,8 @@ class Agent:
             messages=messages_for_llm,
             temperature=0.1,
             max_tokens=1000,
+            timeout=MEMORY_LLM_TIMEOUT,
+            max_retries=MEMORY_LLM_MAX_RETRIES,
             response_format={"type": "json_object"},
             model_id=model_id,
         )
@@ -1171,6 +1221,8 @@ class Agent:
                 messages=messages_for_task_llm,
                 temperature=0.1,
                 max_tokens=1000,
+                timeout=MEMORY_LLM_TIMEOUT,
+                max_retries=MEMORY_LLM_MAX_RETRIES,
                 response_format={"type": "json_object"},
                 model_id=model_id,
             )

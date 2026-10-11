@@ -10,6 +10,7 @@ from agents import (
     AgentPhase,
     AgentPreview,
     AgentSettings,
+    Prompt,
 )
 from context_strategies import (
     ContextWindowStrategy,
@@ -174,12 +175,22 @@ class PersistentAgentRepository(AgentRepository):
             if connection.connected:
                 MCP_MANAGER.add_connection(agent.agent_id, connection)
 
-    def _agent_orm_to_agent(self, orm: AgentORM) -> Agent:
+    def _agent_orm_to_agent(
+        self,
+        orm: AgentORM,
+        *,
+        restore_mcp: bool = True,
+        history: list[Prompt] | None = None,
+    ) -> Agent:
         """
         Преобразует ORM объект в Agent, загружая историю из файла.
 
         Args:
             orm: ORM объект агента.
+            restore_mcp: Восстанавливать ли живые MCP-подключения. Отключается
+                при загрузке агентов только ради сохранения памяти, чтобы не
+                запускать MCP-серверы на старте приложения.
+            history: Заранее загруженная история (чтобы не читать файл дважды).
 
         Returns:
             Agent: Экземпляр агента с загруженной историей.
@@ -196,7 +207,8 @@ class PersistentAgentRepository(AgentRepository):
             strategy = DefaultStrategy()
 
         # Загружаем историю из файла по conversation_id (UUID)
-        history = self._chat_storage.load_history(orm.conversation_id)
+        if history is None:
+            history = self._chat_storage.load_history(orm.conversation_id)
 
         # Загружаем профиль задачи, если он привязан
         task_profile = None
@@ -228,7 +240,8 @@ class PersistentAgentRepository(AgentRepository):
         )
 
         # Восстанавливаем живые MCP-подключения (если серверы есть в реестре)
-        self._restore_mcp_connections(agent)
+        if restore_mcp:
+            self._restore_mcp_connections(agent)
 
         # Устанавливаем ссылку на репозиторий для автосохранения
         agent._repository = self
@@ -535,7 +548,9 @@ class PersistentAgentRepository(AgentRepository):
 
         Сначала делаем SQL запрос для получения агентов с is_dialog_remembered == False,
         затем загружаем их историю из файлового хранилища и фильтруем тех,
-        у кого есть сообщения с is_remembered == False.
+        у кого есть сообщения с is_remembered == False. Агенты, у которых нет
+        несохранённых сообщений, не гидратируются и не восстанавливают
+        MCP-подключения (это ускоряет старт приложения).
 
         Returns:
             Список агентов с несохранённой памятью.
@@ -545,17 +560,21 @@ class PersistentAgentRepository(AgentRepository):
             stmt = select(AgentORM).where(AgentORM.is_dialog_remembered == False)
             orms = session.execute(stmt).scalars().all()
 
-            # Загружаем агентов и проверяем их историю из файлового хранилища
+            # Проверяем историю до гидратации: строим Agent только для тех,
+            # у кого действительно есть несохранённые сообщения
             agents_with_unsaved = []
             for orm in orms:
-                agent = self._agent_orm_to_agent(orm)
-                # Проверяем, есть ли непромптированные сообщения
+                history = self._chat_storage.load_history(orm.conversation_id)
                 unremembered_prompts = [
                     msg
-                    for msg in agent.get_history()
+                    for msg in history
                     if not msg.is_remembered and msg.role in ("user", "assistant")
                 ]
                 if unremembered_prompts:
-                    agents_with_unsaved.append(agent)
+                    agents_with_unsaved.append(
+                        self._agent_orm_to_agent(
+                            orm, restore_mcp=False, history=history
+                        )
+                    )
 
             return agents_with_unsaved

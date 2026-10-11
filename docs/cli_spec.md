@@ -107,7 +107,7 @@ Prompt line: `Ваш выбор (1-7):`
 - Accept only strings "1".."7" (exact match after strip)
 - Any other input: `[WARN] Неверный выбор, попробуйте снова.` and re-prompt
 - `KeyboardInterrupt` / `EOFError` at the menu prompt: print `До свидания!` and exit cleanly
-- On application start (before the menu loop) the system executes `save_unsaved_memories` use case: for every agent with unremembered prompts it extracts facts into global/task memory (technical token counters).
+- On application start, before the application header and the menu loop, the system prints `[INFO] Проверка несохранённой памяти...` and executes the `save_unsaved_memories` use case: for every agent with unremembered prompts it extracts facts into global/task memory (technical token counters). The scan does not restore MCP connections and does not hydrate agents without unremembered prompts. If there are none, the system prints `[INFO] Несохранённой памяти нет.`; otherwise, for each such agent it prints `[INFO] Сохранение памяти чата '{name}'...` followed by `[OK] '{name}': сохранено за {seconds:.2f} с.` or `[ERROR] '{name}': не удалось за {seconds:.2f} с: {error}` (see UC-024); a failure of one chat does not stop the others. It finally prints `[INFO] Проверка памяти завершена за {seconds:.2f} с.`, then the header. All memory-extraction LLM calls use `MEMORY_LLM_TIMEOUT` (5 s) with `MEMORY_LLM_MAX_RETRIES=0` (no SDK retries, so the limit is not multiplied); if any memory call for a chat times out, the remaining memory calls for that chat are skipped. A task-memory timeout prints `[WARN] Не удалось обновить память задачи: {error}` and does not interrupt the program, while a timeout during global/profile extraction at startup aborts the remaining chats with `[WARN] Сохранение памяти прервано из-за таймаута модели; пропущено чатов: {n}.` (see §3 Memory Integration).
 
 #### 4.2.4 State Model Overview
 
@@ -362,7 +362,7 @@ Then the chat loop starts immediately (history is displayed in its header). The 
      ```
    - If the response contains reasoning, ask `Показать рассуждения модели? (y/n):`; on `y` print indented `[Reasoning]:` block
    - Save to history (automatic per-message save), repeat
-5. On chat loop exit (any path: `/menu`, `ContextWindowExceededError`, backend exception, KeyboardInterrupt): the system MUST save the agent memory via the `save_agent_memory` use case before returning to the Main Menu — unsaved memory must never be lost when leaving a chat
+5. On chat loop exit (any path that saves memory: `/menu`, KeyboardInterrupt, EOF, backend exception): the system MUST save the agent memory via the `save_agent_memory` use case before returning to the Main Menu — unsaved memory must never be lost when leaving a chat. The system prints `[INFO] Сохранение памяти чата '{name}'...` before and `[OK] Память чата '{name}' сохранена за {seconds:.2f} с.` (or `[ERROR] ... за {seconds:.2f} с: {error}`) after the save (see UC-024)
 
 #### 4.5.3 Commands Specification
 
@@ -378,7 +378,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
 ##### `/menu`
 
 - **Action**: Save agent memory via `save_agent_memory` use case (LLM fact extraction into global and task-profile memory), then return to Main Menu
-- **Output**: `Возврат в меню...`
+- **Output**: `Возврат в меню...`, then `[INFO] Сохранение памяти чата '{name}'...` and `[OK] Память чата '{name}' сохранена за {seconds:.2f} с.` (or `[ERROR] Не удалось сохранить память чата '{name}' за {seconds:.2f} с: {error}`)
 - **Side Effects**: Active chat reference is preserved (option 5 can return to it)
 
 ##### `/stop`
@@ -763,3 +763,4 @@ this document.
 | UC-021 | RAG Sources, Citations And Relevance Threshold | Show used sources/quotes after an answer and refuse below-threshold answers with «Не знаю». | [uc-021-rag-sources-and-relevance-threshold.md](uc/uc-021-rag-sources-and-relevance-threshold.md) |
 | UC-022 | Task Memory Of The Dialogue | Keep goal, constraints, terms and clarifications per chat and inject them every turn. | [uc-022-task-memory.md](uc/uc-022-task-memory.md) |
 | UC-023 | List Available Models And Providers | Fetch models dynamically from Yandex Cloud and Ollama, label each with its provider and let the user pick one. | [uc-023-list-available-models-and-providers.md](uc/uc-023-list-available-models-and-providers.md) |
+| UC-024 | Memory Save Feedback | Show a start notice and a timed finish/error notice when global and task-profile memory is filled; per-chat feedback at application start. | [uc-024-memory-save-feedback.md](uc/uc-024-memory-save-feedback.md) |

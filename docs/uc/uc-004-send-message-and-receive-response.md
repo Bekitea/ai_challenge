@@ -41,21 +41,19 @@
 - **A4: Context Window Exceeded**
   - Step 6: Backend raises `ContextWindowExceededError`
   - System clears the "печатает..." line, displays `[ERROR] {message}` followed by `Необходимо очистить историю сообщений или создать новый чат.`
-  - System saves the agent memory via the `save_agent_memory` use case (memory must not be lost on abnormal exit)
-  - System exits the chat loop and returns to Main Menu (the chat remains active for option 5)
+  - System exits the chat loop and returns to Main Menu (the chat remains active for option 5); the unsaved memory is picked up by `save_unsaved_memories` on the next application start (UC-024)
 
 - **A5: Any Other Backend Error**
   - Step 6: Any other exception is raised while sending/processing
-  - System displays `[ERROR] Ошибка: {message}`
-  - System saves the agent memory via the `save_agent_memory` use case, then exits the chat loop and returns to Main Menu
+  - System displays `[ERROR] Ошибка: {message}`, then exits the chat loop and returns to Main Menu; the unsaved memory is picked up by `save_unsaved_memories` on the next application start (UC-024)
 
 - **A6: KeyboardInterrupt During Exchange**
   - Any step: User presses Ctrl+C at the input prompt or during processing
-  - System displays `Прервано пользователем.`, saves the agent memory via the `save_agent_memory` use case and exits the chat loop back to Main Menu
+  - System displays `Прервано пользователем.`, `[INFO] Сохранение памяти чата '{name}'...` and `[OK] Память чата '{name}' сохранена за {seconds:.2f} с.` (or an `[ERROR]` line — see UC-024), then exits the chat loop back to Main Menu
 
 - **A7: EOFError (End Of Input)**
   - Step 1/2: The input stream ends (piped input exhausted or Ctrl+D)
-  - The chat loop terminates gracefully without a traceback; the agent memory is saved before exit (same rule as A6)
+  - The chat loop terminates gracefully without a traceback; the agent memory is saved with the same feedback before exit (same rule as A6)
 
 - **A8: Long Response**
   - Step 8: Response exceeds terminal width
@@ -69,7 +67,7 @@
 
 - Two new messages in history (user + assistant)
 - Chat preview updated with last message
-- On any exit from the chat loop (`/menu`, A4, A5, A6, A7) the agent memory is saved before returning to the Main Menu
+- On any exit from the chat loop the agent memory is eventually saved: immediately with feedback on `/menu`, A6, A7 (UC-024), or at the next application start via `save_unsaved_memories` for A4/A5
 
 ## Related Test Cases
 

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import requests
-from openai import OpenAI
+from openai import APITimeoutError, OpenAI
 
 from config import (
     AVAILABLE_EMBEDDING_MODELS,
@@ -20,6 +20,14 @@ if TYPE_CHECKING:
     from rag_models import RagContextChunk
 
 logger = logging.getLogger(__name__)
+
+
+class LlmTimeoutError(Exception):
+    """Таймаут запроса к LLM-провайдеру.
+
+    Доменная обёртка над ``openai.APITimeoutError``, чтобы верхние слои могли
+    отличать таймаут от прочих ошибок, не завися от SDK.
+    """
 
 # Базовые имена embedding-моделей Ollama, которые не должны попадать в список
 # чат-моделей (это модели для RAG, а не для генерации ответов).
@@ -132,11 +140,12 @@ class LlmProvider(ABC):
         max_tokens: int | None = None,
         timeout: int = 20,
         top_p: float | None = None,
-        top_k: int | None = None,
+        top_k: float | None = None,
         response_format: dict | None = None,
         reasoning_effort: str | None = None,
         model_id: str | None = None,
         tools: list[dict] | None = None,
+        max_retries: int | None = None,
     ) -> LlmResponse:
         """Генерирует ответ от LLM.
 
@@ -151,6 +160,7 @@ class LlmProvider(ABC):
             reasoning_effort: Уровень усилий рассуждений ("low", "medium", "high", "none").
             model_id: Идентификатор модели (обязателен: дефолтной модели нет).
             tools: Список инструментов (OpenAI-compatible) для function calling (MCP).
+            max_retries: Число повторов запроса в SDK (None — дефолт клиента).
 
         Returns:
             LlmResponse: Объект с содержимым ответа и текстом рассуждений.
@@ -203,11 +213,12 @@ class YandexCloudLlmProvider(LlmProvider):
         max_tokens: int | None = None,
         timeout: int = 20,
         top_p: float | None = None,
-        top_k: int | None = None,
+        top_k: float | None = None,
         response_format: dict | None = None,
         reasoning_effort: str | None = None,
         model_id: str | None = None,
         tools: list[dict] | None = None,
+        max_retries: int | None = None,
     ) -> LlmResponse:
         """Генерирует ответ от Yandex Cloud LLM.
 
@@ -222,12 +233,14 @@ class YandexCloudLlmProvider(LlmProvider):
             reasoning_effort: Уровень усилий рассуждений ("low", "medium", "high", "none").
             model_id: Идентификатор модели (обязателен: дефолтной модели нет).
             tools: Список инструментов (OpenAI-compatible) для function calling (MCP).
+            max_retries: Число повторов запроса в SDK (None — дефолт клиента).
 
         Returns:
             LlmResponse: Объект с содержимым ответа и текстом рассуждений.
 
         Raises:
             ValueError: Если ``model_id`` не указан.
+            LlmTimeoutError: При таймауте запроса.
             openai.APIError: При ошибке запроса к API.
         """
         if model_id is None:
@@ -255,7 +268,14 @@ class YandexCloudLlmProvider(LlmProvider):
         if tools:
             kwargs["tools"] = tools
 
-        response = self.client.chat.completions.create(**kwargs)
+        client = self.client
+        if max_retries is not None:
+            client = client.with_options(max_retries=max_retries)
+
+        try:
+            response = client.chat.completions.create(**kwargs)
+        except APITimeoutError as e:
+            raise LlmTimeoutError(str(e)) from e
         return _parse_openai_response(response)
 
 
@@ -317,11 +337,12 @@ class OllamaLlmProvider(LlmProvider):
         max_tokens: int | None = None,
         timeout: int = 20,
         top_p: float | None = None,
-        top_k: int | None = None,
+        top_k: float | None = None,
         response_format: dict | None = None,
         reasoning_effort: str | None = None,
         model_id: str | None = None,
         tools: list[dict] | None = None,
+        max_retries: int | None = None,
     ) -> LlmResponse:
         """Генерирует ответ от локальной модели Ollama.
 
@@ -332,6 +353,7 @@ class OllamaLlmProvider(LlmProvider):
 
         Raises:
             ValueError: Если ``model_id`` не указан.
+            LlmTimeoutError: При таймауте запроса.
         """
         if model_id is None:
             raise ValueError("OllamaLlmProvider: model_id обязателен")
@@ -354,7 +376,14 @@ class OllamaLlmProvider(LlmProvider):
         if tools:
             kwargs["tools"] = tools
 
-        response = self.client.chat.completions.create(**kwargs)
+        client = self.client
+        if max_retries is not None:
+            client = client.with_options(max_retries=max_retries)
+
+        try:
+            response = client.chat.completions.create(**kwargs)
+        except APITimeoutError as e:
+            raise LlmTimeoutError(str(e)) from e
         return _parse_openai_response(response)
 
 
@@ -418,6 +447,7 @@ class MockLlmProvider(LlmProvider):
         reasoning_effort: str | None = None,
         model_id: str | None = None,
         tools: list[dict] | None = None,
+        max_retries: int | None = None,
     ) -> LlmResponse:
         """Генерирует mock-ответ для тестирования.
 
@@ -432,6 +462,7 @@ class MockLlmProvider(LlmProvider):
             reasoning_effort: Уровень усилий рассуждений (игнорируется).
             model_id: Идентификатор модели (игнорируется).
             tools: Список инструментов MCP (игнорируется).
+            max_retries: Число повторов SDK (игнорируется).
 
         Returns:
             LlmResponse: Mock-объект с содержимым ответа.

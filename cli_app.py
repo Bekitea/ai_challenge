@@ -202,24 +202,7 @@ class CLIChat:
                 print("Введите корректное число")
 
         # Reasoning effort
-        print("\nReasoning Effort:")
-        for i, effort in enumerate(REASONING_EFFORTS, 1):
-            print(f"  {i}. {effort}")
-
-        while True:
-            try:
-                re_choice = int(
-                    input(
-                        f"\nВаш выбор (1-{len(REASONING_EFFORTS)}, по умолчанию 1): "
-                    ).strip()
-                    or "1"
-                )
-                if 1 <= re_choice <= len(REASONING_EFFORTS):
-                    reasoning_effort = REASONING_EFFORTS[re_choice - 1]
-                    break
-                print(f"Выбор должен быть от 1 до {len(REASONING_EFFORTS)}")
-            except ValueError:
-                print("Введите корректное число")
+        reasoning_effort = self._select_reasoning_effort()
 
         # Размер контекстного окна
         print("\nРазмер контекстного окна (в токенах):")
@@ -254,6 +237,26 @@ class CLIChat:
                 else True
             ),
         )
+
+    def _select_reasoning_effort(self) -> str:
+        """Запрашивает уровень reasoning effort; пустой ввод -> 'none'."""
+        print("\nReasoning Effort:")
+        for i, effort in enumerate(REASONING_EFFORTS, 1):
+            print(f"  {i}. {effort}")
+
+        while True:
+            try:
+                re_choice = int(
+                    input(
+                        f"\nВаш выбор (1-{len(REASONING_EFFORTS)}, по умолчанию 1): "
+                    ).strip()
+                    or "1"
+                )
+                if 1 <= re_choice <= len(REASONING_EFFORTS):
+                    return REASONING_EFFORTS[re_choice - 1]
+                print(f"Выбор должен быть от 1 до {len(REASONING_EFFORTS)}")
+            except ValueError:
+                print("Введите корректное число")
 
     def _ask_configure_chat(self) -> bool:
         """Спрашивает, хочет ли пользователь настраивать чат вручную."""
@@ -294,7 +297,7 @@ class CLIChat:
             task_profile_id = self._select_task_profile()
         else:
             # Быстрое создание чата: прочие настройки по умолчанию,
-            # но модель пользователь выбирает всегда (дефолтной модели нет).
+            # но модель и reasoning effort пользователь выбирает всегда.
             print("Используются настройки по умолчанию.")
             name = ""
             system_prompt = ""
@@ -303,13 +306,14 @@ class CLIChat:
                 print("\n[WARN] Чат не создан: нет доступных моделей.")
                 return
             provider, model_id = selection
+            reasoning_effort = self._select_reasoning_effort()
             settings = AgentSettings(
                 model_id=model_id,
                 provider=provider,
                 temperature=None,
                 top_p=None,
                 top_k=None,
-                reasoning_effort=REASONING_EFFORTS[0],
+                reasoning_effort=reasoning_effort,
                 context_window_size=200_000,
             )
             strategy = DefaultStrategy()

@@ -41,9 +41,10 @@
 
 - **A1: Quick Creation With Defaults**
   - Step 3: User enters "n" or presses Enter (default is "n")
-  - System prints `Используются настройки по умолчанию.` and skips steps 4–7 and 10–20
+  - System prints `Используются настройки по умолчанию.` and skips steps 4–7 and 10–15, 18–20
   - **The model is still selected interactively (step 8–9) — there is no default model**
-  - Other settings default to: temperature/top_p/top_k disabled, reasoning_effort "none", context window 200000, DefaultStrategy, no task profile
+  - **Reasoning effort is still selected interactively (step 16–17) — empty input selects the default "none"**
+  - Other settings default to: temperature/top_p/top_k disabled, context window 200000, DefaultStrategy, no task profile
   - Continue from step 21
 
 - **A2: Invalid Answer To Configure Prompt**
@@ -493,7 +494,20 @@
 | ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | 1    | Ensure exactly 2 chats exist in storage                          | Main Menu displayed                                                                    |
 | 2    | Select option 1 (New Chat), press Enter at the configure prompt (default "n") | `Используются настройки по умолчанию.` printed; the model list is displayed (UC-023) |
-| 3    | Select a model from the list                                    | `[OK] Чат 'Чат 3' создан!` — auto-generated name uses N = existing chats + 1 (UC-001 A3) |
-| 4    | Verify chat settings                                            | Selected provider/model applied; disabled temperature/top_p/top_k, DefaultStrategy, no profile |
+| 3    | Select a model from the list                                    | Reasoning effort prompt displayed; press Enter (default "none")                          |
+| 4    | Verify chat settings                                            | `[OK] Чат 'Чат 3' создан!` — auto-generated name uses N = existing chats + 1 (UC-001 A3); selected provider/model applied; disabled temperature/top_p/top_k, reasoning_effort "none", DefaultStrategy, no profile |
+
+---
+
+### TC-145: Quick Chat Prompts Reasoning Effort
+
+**Related UC**: UC-001 A1
+
+| Step | Action                                                          | Expected Result                                                                       |
+| ---- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | Select option 1 (New Chat), press Enter at the configure prompt (default "n") | `Используются настройки по умолчанию.` printed; the model list is displayed (UC-023) |
+| 2    | Select a model from the list                                    | Reasoning effort prompt (numbered options 1–4) displayed                                |
+| 3    | Enter "2" (low)                                                 | Choice accepted; chat created                                                            |
+| 4    | Run `/settings`                                                 | `Reasoning Effort: low` shown                                                           |
 
 ---

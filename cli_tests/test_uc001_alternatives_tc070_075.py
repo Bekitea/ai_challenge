@@ -125,6 +125,30 @@ class TestUC001_Alternatives_TC070_075:
         assert "Выбор должен быть от 1 до 4" in stdout
         assert "[OK] Чат 'ReasonTest' создан!" in stdout
 
+    def test_tc_145_quick_chat_prompts_reasoning_effort(self):
+        """
+        TC-145: Quick Chat Prompts Reasoning Effort (UC-001 A1)
+
+        Quick creation still asks for the model, then also asks for reasoning
+        effort; the explicit choice is persisted and shown by /settings.
+        """
+        test_input = (
+            "1\n"  # Новый чат
+            "\n"  # Хотите настроить? -> нет (быстрый путь)
+            "3\n"  # Model 3
+            "2\n"  # Reasoning effort -> low
+            "/settings\n"  # Просмотр настроек
+            "n\n"  # Не изменять
+            "/menu\n"
+            "6\n"  # Exit
+        )
+
+        stdout, stderr, returncode = run_cli_command(test_input)
+
+        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert "Reasoning Effort:" in stdout
+        assert "Reasoning Effort: low" in stdout
+
     def test_tc_074_invalid_context_window_falls_back_to_200k(self):
         """
         TC-074: Invalid Context Window Falls Back To 200k (UC-001 A10)

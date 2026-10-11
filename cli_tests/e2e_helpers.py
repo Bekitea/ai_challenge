@@ -10,9 +10,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Быстрое создание чата: меню -> 1 -> Enter (default "n") -> выбор модели (3).
-# Модель обязательна, поэтому её номер всегда присутствует в вводе.
-_QUICK_CHAT = "1\n\n3\n"
+# Быстрое создание чата: меню -> 1 -> Enter (default "n") -> выбор модели (3)
+# -> Enter (reasoning effort, default "none").
+# Модель и reasoning effort обязательны, поэтому их ввод всегда присутствует.
+_QUICK_CHAT = "1\n\n3\n\n"
 
 # Ручное создание с дефолтными настройками и DefaultStrategy.
 _MANUAL_DEFAULTS = (

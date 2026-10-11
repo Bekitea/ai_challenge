@@ -41,11 +41,12 @@ class TestUC001_TC063_120_CreationExtras:
         4. Defaults applied (model, disabled params, DefaultStrategy, no profile).
         """
         test_input = (
-            "1\n\n3\n/menu\n"  # Чат 1
-            + "1\n\n3\n/menu\n"  # Чат 2
+            "1\n\n3\n\n/menu\n"  # Чат 1 (модель + reasoning effort по умолчанию)
+            + "1\n\n3\n\n/menu\n"  # Чат 2
             + "1\n"  # Третий чат
             + "\n"  # Enter на 'Хотите настроить?' -> быстрый путь
             + "3\n"  # Модель: Alice AI LLM Flash
+            + "\n"  # Reasoning effort: default "none"
             + "/settings\n"
             + "n\n"
             + "/info\n"

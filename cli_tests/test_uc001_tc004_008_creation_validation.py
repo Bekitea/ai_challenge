@@ -55,8 +55,8 @@ class TestUC001_TC004_008_CreationValidation:
         4. Verify chat list contains 'Чат 3'.
         """
         test_input = (
-            "1\n\n3\n/menu\n"  # Чат 1 (быстрый путь)
-            + "1\n\n3\n/menu\n"  # Чат 2 (быстрый путь)
+            "1\n\n3\n\n/menu\n"  # Чат 1 (быстрый путь: модель + reasoning)
+            + "1\n\n3\n\n/menu\n"  # Чат 2 (быстрый путь: модель + reasoning)
             + "1\n"  # Новый чат
             + "y\n"  # Ручная настройка
             + "\n"  # Пустое имя -> default 'Чат N' (N = 2 + 1 = 3)

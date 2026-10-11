@@ -170,7 +170,7 @@ Visible messages exclude role="system", role="tool" and assistant messages carry
 ```
 
 - Accepted affirmative answers: `y`, `да`, `д`; negative: `n`, `нет`, `н`; empty → `n`; anything else → re-prompt with `Введите 'y' (да) или 'n' (нет)`
-- **Quick path (n)**: prints `Используются настройки по умолчанию.`; name is auto-generated, system prompt skipped, other settings default (temperature/top_p/top_k disabled, reasoning_effort "none", context window 200k), strategy = DefaultStrategy, no task profile. **The model is still chosen interactively in step 3 — there is no default model**, so the quick path stops at the model list and then enters the chat loop. Steps 1–2 and 4–10 are skipped.
+- **Quick path (n)**: prints `Используются настройки по умолчанию.`; name is auto-generated, system prompt skipped, other settings default (temperature/top_p/top_k disabled, context window 200k), strategy = DefaultStrategy, no task profile. **The model is still chosen interactively in step 3 — there is no default model** — and **reasoning effort is also chosen interactively (step 7 prompt, empty → `none` after the model list)**, so the quick path stops at the model list and the reasoning effort prompt, then enters the chat loop. Steps 1–2 and 4–6 and 8–10 are skipped.
 - **Manual path (y)**: steps 1–10 below
 
 #### 4.4.1 Step 1: Name Input

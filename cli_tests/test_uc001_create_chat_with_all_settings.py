@@ -27,20 +27,17 @@ class TestUC001_CreateChatWithAllSettings:
 
         Steps:
         1. Select "New Chat"
-        2. Press Enter (default name)
-        3. Press Enter (skip prompt)
-        4. Select model 1
-        5. Press Enter (disable temp)
-        6. Press Enter (disable top_p)
-        7. Press Enter (default 0)
-        8. Press Enter (default none)
-        9. Verify chat created
+        2. Press Enter (default "n" -> quick path)
+        3. Select model 3 (Alice AI LLM Flash)
+        4. Press Enter (reasoning effort default "none")
+        5. Verify chat created and default settings
         """
         test_input = (
             "1\n"  # Новый чат
             "\n"  # Пустой ответ на "Хотите настроить?" -> default "n", быстрый путь
             "3\n"  # Модель: Alice AI LLM Flash (yandex)
-            "/settings\n"  # Проверка настроек созданного чата (§4.4.7)
+            "\n"  # Reasoning effort: default "none"
+            "/settings\n"  # Проверка настроек созданного чата
             "n\n"  # Не изменять настройки
             "/info\n"  # Проверка стратегии и профиля созданного чата
             "/menu\n"  # Выход из цикла чата в меню
@@ -54,10 +51,12 @@ class TestUC001_CreateChatWithAllSettings:
         assert "Используются настройки по умолчанию." in stdout, (
             "Quick path must announce default settings (UC-001 A1)"
         )
-        # TC-001 step 4: defaults via /settings — model aliceai-llm-flash/latest,
-        # temperature/top_p/top_k disabled (None), context window 200000
+        # TC-001: defaults via /settings — model aliceai-llm-flash/latest,
+        # reasoning effort "none", temperature/top_p/top_k disabled (None),
+        # context window 200000
         assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout
         assert "Модель: aliceai-llm-flash/latest" in stdout
+        assert "Reasoning Effort: none" in stdout
         assert "Температура: отключена" in stdout
         assert "Top P: отключен" in stdout
         assert "Top K: отключено" in stdout

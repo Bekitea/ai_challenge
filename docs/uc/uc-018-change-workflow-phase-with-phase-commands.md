@@ -12,7 +12,7 @@
 ## Main Success Scenario
 
 1. User types `/execute` while the agent is in phase PLAN
-2. System transitions the phase via `Agent.handle_phase_command` (§4.5.3)
+2. System transitions the phase via the `change_phase` use case (§4.5.3)
 3. System displays `[INFO] Фаза изменена: PLAN -> EXECUTE`
 4. System displays the updated header line `--- ЧАТ: {name} [Фаза: EXECUTE] ---`
 5. System returns to the chat prompt; subsequent messages are processed in the new phase

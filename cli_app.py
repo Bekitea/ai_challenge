@@ -1,23 +1,19 @@
 import os
 import time
 
-from agents import Agent, AgentSettings, ContextWindowExceededError
 from config import (
     DEFAULT_PROVIDER,
     RAG_FILE_EXTENSIONS,
     RAG_RELEVANCE_THRESHOLD,
     REASONING_EFFORTS,
 )
-from context_strategies import (
-    ContextWindowStrategy,
-    DefaultStrategy,
-    KeyValueMemoryStrategy,
-    SlidingWindowStrategy,
-    SummarizationStrategy,
-)
 from use_cases import (
+    ChatDTO,
+    ContextWindowExceededError,
     MemorySaveResult,
     RagError,
+    SettingsDTO,
+    StrategySelection,
     UseCasesBundle,
 )
 
@@ -44,7 +40,12 @@ class CLIChat:
 
     def __init__(self, use_cases: UseCasesBundle):
         self.use_cases = use_cases
-        self.current_agent: Agent | None = None
+        self.current_chat: ChatDTO | None = None
+
+    @property
+    def current_chat_id(self) -> int | None:
+        """ID активного чата (или None, если чат не выбран)."""
+        return self.current_chat.agent_id if self.current_chat else None
 
     def clear_screen(self):
         """Очищает экран консоли."""
@@ -63,8 +64,8 @@ class CLIChat:
         print("2. Выбрать чат")
         print("3. Профили задач")
         print("4. Просмотреть глобальную память")
-        if self.current_agent:
-            print(f"5. Вернуться в чат: {self.current_agent.name}")
+        if self.current_chat:
+            print(f"5. Вернуться в чат: {self.current_chat.name}")
         else:
             print("5. Вернуться в чат (нет активного чата)")
         print("6. Выход")
@@ -97,7 +98,7 @@ class CLIChat:
         print("-" * 40)
 
     def _select_model(
-        self, current_settings: AgentSettings | None = None
+        self, current_settings: SettingsDTO | None = None
     ) -> tuple[str, str] | None:
         """Запрашивает у пользователя модель и провайдера.
 
@@ -143,8 +144,8 @@ class CLIChat:
             print("Неверный выбор, попробуйте снова.")
 
     def get_agent_settings(
-        self, current_settings: AgentSettings | None = None
-    ) -> AgentSettings | None:
+        self, current_settings: SettingsDTO | None = None
+    ) -> SettingsDTO | None:
         """Запрашивает настройки у пользователя."""
         print("\n--- НАСТРОЙКИ АГЕНТА ---")
 
@@ -245,7 +246,7 @@ class CLIChat:
         else:
             context_window_size = 200_000
 
-        return AgentSettings(
+        return SettingsDTO(
             model_id=model_id,
             provider=provider,
             temperature=temp,
@@ -314,7 +315,7 @@ class CLIChat:
                 return
 
             # Выбор стратегии управления контекстным окном
-            strategy = self._select_context_strategy()
+            strategy_selection = self._select_context_strategy()
 
             # Выбор профиля задачи
             task_profile_id = self._select_task_profile()
@@ -330,7 +331,7 @@ class CLIChat:
                 return
             provider, model_id = selection
             reasoning_effort = self._select_reasoning_effort()
-            settings = AgentSettings(
+            settings = SettingsDTO(
                 model_id=model_id,
                 provider=provider,
                 temperature=None,
@@ -339,30 +340,24 @@ class CLIChat:
                 reasoning_effort=reasoning_effort,
                 context_window_size=200_000,
             )
-            strategy = DefaultStrategy()
+            strategy_selection = StrategySelection(strategy_type="DefaultStrategy")
             task_profile_id = None
 
-        # Генерируем имя если пустое
-        if not name:
-            previews = self.use_cases.select_chat.get_all_previews()
-            chat_count = len(previews)
-            name = f"Чат {chat_count + 1}"
-
-        agent = self.use_cases.create_chat.execute(
+        chat = self.use_cases.create_chat.execute(
             name=name,
             system_prompt=system_prompt if system_prompt else None,
             settings=settings,
-            strategy=strategy,
+            strategy_selection=strategy_selection,
             task_profile_id=task_profile_id,
         )
-        self.current_agent = agent
+        self.current_chat = chat
 
-        print(f"\n[OK] Чат '{name}' создан!")
+        print(f"\n[OK] Чат '{chat.name}' создан!")
 
         # Переходим к общению (история показывается в заголовке чата)
         self.chat_loop()
 
-    def _select_context_strategy(self) -> ContextWindowStrategy:
+    def _select_context_strategy(self) -> StrategySelection:
         """Запрашивает у пользователя выбор стратегии управления контекстным окном."""
         while True:
             print("\n--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---")
@@ -377,7 +372,7 @@ class CLIChat:
                 input("\nВыберите стратегию (1-4, по умолчанию 1): ").strip() or "1"
             )
             if choice == "1":
-                return DefaultStrategy()
+                return StrategySelection(strategy_type="DefaultStrategy")
             elif choice == "2":
                 # Запрашиваем параметры для SummarizationStrategy
                 try:
@@ -393,7 +388,8 @@ class CLIChat:
                         ).strip()
                         or "3"
                     )
-                    return SummarizationStrategy(
+                    return StrategySelection(
+                        strategy_type="SummarizationStrategy",
                         non_compressible_count=non_compressible,
                         buffer_size=buffer_size,
                     )
@@ -414,7 +410,8 @@ class CLIChat:
                         ).strip()
                         or "3"
                     )
-                    return KeyValueMemoryStrategy(
+                    return StrategySelection(
+                        strategy_type="KeyValueMemoryStrategy",
                         non_compressible_count=non_compressible,
                         buffer_size=buffer_size,
                     )
@@ -427,7 +424,10 @@ class CLIChat:
                         input("Размер скользящего окна N (по умолчанию 10): ").strip()
                         or "10"
                     )
-                    return SlidingWindowStrategy(window_size=window_size)
+                    return StrategySelection(
+                        strategy_type="SlidingWindowStrategy",
+                        window_size=window_size,
+                    )
                 except ValueError as e:
                     print(f"Ошибка: {e}. Попробуйте снова.")
             else:
@@ -486,12 +486,9 @@ class CLIChat:
                 choice = int(input(f"\nВыберите чат (1-{len(previews)}): ").strip())
                 if 1 <= choice <= len(previews):
                     selected_id = previews[choice - 1].agent_id
-                    self.current_agent = self.use_cases.select_chat.get_agent(
-                        selected_id
-                    )
-                    # При выборе чата загружаем память через use case
-                    self.use_cases.refresh_agent_memory.execute(self.current_agent)
-                    print(f"\n[OK] Выбран чат: {self.current_agent.name}")
+                    self.current_chat = self.use_cases.select_chat.get_chat(selected_id)
+                    # Память перезагружается внутри use case при загрузке агента
+                    print(f"\n[OK] Выбран чат: {self.current_chat.name}")
 
                     # Переходим к общению (история показывается в заголовке чата)
                     self.chat_loop()
@@ -502,10 +499,10 @@ class CLIChat:
 
     def _print_current_settings(self):
         """Выводит текущие настройки агента."""
-        if not self.current_agent:
+        if not self.current_chat:
             return
 
-        settings = self.use_cases.view_settings.execute(self.current_agent)
+        settings = self.use_cases.view_settings.execute(self.current_chat_id)
         if not settings:
             return
 
@@ -536,34 +533,35 @@ class CLIChat:
 
     def print_settings(self):
         """Показывает текущие настройки чата."""
-        if not self.current_agent:
+        if not self.current_chat:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
         self._print_current_settings()
 
     def change_settings(self):
-        """Изменяет настройки текущего агента."""
-        if not self.current_agent:
+        """Изменяет настройки текущего чата."""
+        if not self.current_chat:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
-        print(f"\n--- НАСТРОЙКИ ДЛЯ '{self.current_agent.name}' ---")
-        new_settings = self.get_agent_settings(self.current_agent.get_settings())
+        print(f"\n--- НАСТРОЙКИ ДЛЯ '{self.current_chat.name}' ---")
+        current_settings = self.use_cases.view_settings.execute(self.current_chat_id)
+        new_settings = self.get_agent_settings(current_settings)
         if new_settings is None:
             print("\n[WARN] Настройки не изменены: нет доступных моделей.")
             return
-        self.use_cases.change_settings.execute(self.current_agent, new_settings)
+        self.use_cases.change_settings.execute(self.current_chat_id, new_settings)
         print("\n[OK] Настройки обновлены!")
         self._print_current_settings()
 
     def print_summary(self):
         """Показывает саммари диалога."""
-        if not self.current_agent:
+        if not self.current_chat:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
-        summary = self.use_cases.show_summary.execute(self.current_agent)
+        summary = self.use_cases.show_summary.execute(self.current_chat_id)
         if summary:
             print("\n--- САММАРИ ДИАЛОГА ---")
             print(summary)
@@ -573,11 +571,11 @@ class CLIChat:
 
     def print_info(self):
         """Показывает информацию о чате (счетчики токенов)."""
-        if not self.current_agent:
+        if not self.current_chat:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
-        info = self.use_cases.show_chat_info.execute(self.current_agent)
+        info = self.use_cases.show_chat_info.execute(self.current_chat_id)
         if not info:
             return
 
@@ -615,20 +613,20 @@ class CLIChat:
 
     def create_branch(self):
         """Создаёт ветку текущего чата."""
-        if not self.current_agent:
+        if not self.current_chat:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
-        print(f"\n--- СОЗДАНИЕ ВЕТКИ ОТ '{self.current_agent.name}' ---")
+        print(f"\n--- СОЗДАНИЕ ВЕТКИ ОТ '{self.current_chat.name}' ---")
         new_name = input("Введите название ветки (Enter для автогенерации): ").strip()
 
         try:
-            branched_agent = self.use_cases.create_branch.execute(
-                self.current_agent, new_name if new_name else None
+            branch = self.use_cases.create_branch.execute(
+                self.current_chat_id, new_name if new_name else None
             )
 
             # Переключаемся на новую ветку
-            self.current_agent = branched_agent
+            self.current_chat = branch
 
             # Предлагаем продолжить общение в новой ветке
             continue_in_branch = (
@@ -888,9 +886,7 @@ class CLIChat:
         profile_info = profiles[choice - 1]
 
         # Проверка привязки к агентам
-        if self.use_cases.delete_task_profile.task_profile_repository.is_profile_linked_to_agents(
-            profile_info.id
-        ):
+        if self.use_cases.delete_task_profile.is_linked(profile_info.id):
             print(
                 f"\n[WARN] Невозможно удалить профиль '{profile_info.name}': он привязан к одному или нескольким агентам."
             )
@@ -911,8 +907,8 @@ class CLIChat:
             print("\n[INFO] Удаление отменено.")
             return
 
-        success = self.use_cases.delete_task_profile.execute(profile_info.id)
-        if success:
+        result = self.use_cases.delete_task_profile.execute(profile_info.id)
+        if result.deleted:
             print(f"\n[OK] Профиль '{profile_info.name}' успешно удалён.")
         else:
             print(f"\n[ERROR] Не удалось удалить профиль '{profile_info.name}'.")
@@ -920,22 +916,21 @@ class CLIChat:
 
     def _print_chat_header(self):
         """Отображает заголовок чата с текущей фазой и историей сообщений."""
-        phase_name = self.current_agent.current_phase.name
-        print(f"\n--- ЧАТ: {self.current_agent.name} [Фаза: {phase_name}] ---")
+        phase_name = self.current_chat.current_phase
+        print(f"\n--- ЧАТ: {self.current_chat.name} [Фаза: {phase_name}] ---")
 
-        all_messages = self.use_cases.show_history.execute(self.current_agent)
+        all_messages = self.use_cases.show_history.execute(self.current_chat_id)
         for msg in all_messages:
             # Технические сообщения протокола tool calling не показываем
-            if msg.role == "tool" or getattr(msg, "tool_calls", None):
+            if msg.role == "tool" or msg.has_tool_calls:
                 continue
             if msg.role == "user":
                 print(f"[USER]: {msg.content}")
                 continue
             # Рассуждения модели показываются перед её ответом.
-            reasoning = getattr(msg, "reasoning", None)
-            if reasoning:
+            if msg.reasoning:
                 print("[Reasoning]:")
-                for line in reasoning.split("\n"):
+                for line in msg.reasoning.split("\n"):
                     print(f"  {line}")
             answer = (msg.content or "").strip() or "(агент ничего не ответил)"
             print(f"[AGENT]: {answer}")
@@ -954,14 +949,13 @@ class CLIChat:
         подключить новые. При согласии выводит список ещё не подключённых
         MCP-серверов из реестра и подключает выбранный пользователем.
         """
-        agent = self.current_agent
-        if not agent:
+        if not self.current_chat:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
-        print(f"\n--- MCP-СЕРВЕРЫ ЧАТА: {agent.name} ---")
+        print(f"\n--- MCP-СЕРВЕРЫ ЧАТА: {self.current_chat.name} ---")
 
-        connected = self.use_cases.list_connected_mcp.execute(agent)
+        connected = self.use_cases.list_connected_mcp.execute(self.current_chat_id)
         if connected:
             for status in connected:
                 if status.connected:
@@ -987,7 +981,7 @@ class CLIChat:
         if connect_new != "y":
             return
 
-        available = self.use_cases.list_available_mcp.execute(agent)
+        available = self.use_cases.list_available_mcp.execute(self.current_chat_id)
         if not available:
             print("\n[INFO] Все доступные MCP-серверы уже подключены к этому чату.")
             return
@@ -1019,7 +1013,9 @@ class CLIChat:
             server_name = choice
 
         print(f"\n[INFO] Подключаю MCP '{server_name}'...", flush=True)
-        success, message = self.use_cases.connect_mcp.execute(agent, server_name)
+        success, message = self.use_cases.connect_mcp.execute(
+            self.current_chat_id, server_name
+        )
         prefix = "[OK]" if success else "[ERROR]"
         print(f"\n{prefix} {message}")
 
@@ -1077,9 +1073,10 @@ class CLIChat:
         print("[WARN] Неверный номер документа.")
         return None
 
-    def _print_rerank_state(self, agent):
+    def _print_rerank_state(self, settings: SettingsDTO | None):
         """Печатает текущее состояние реранкинга для чата."""
-        state = "включён" if agent.get_settings().reranker_enabled else "отключён"
+        enabled = bool(settings and settings.reranker_enabled)
+        state = "включён" if enabled else "отключён"
         print(f"[INFO] Реранкинг: {state}.")
 
     def _print_rag_sources(self, sources):
@@ -1113,33 +1110,36 @@ class CLIChat:
 
     def rerank_command(self, argument: str):
         """Обрабатывает команду /rerank on|off (без аргумента — показать)."""
-        agent = self.current_agent
-        if not agent:
+        if not self.current_chat:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
         arg = argument.strip().lower()
         if arg == "on":
-            self.use_cases.set_reranker_enabled.execute(agent, True)
+            self.use_cases.set_reranker_enabled.execute(self.current_chat_id, True)
             print("\n[OK] Реранкинг включён.")
         elif arg == "off":
-            self.use_cases.set_reranker_enabled.execute(agent, False)
+            self.use_cases.set_reranker_enabled.execute(self.current_chat_id, False)
             print("\n[OK] Реранкинг отключён.")
         elif arg == "":
-            self._print_rerank_state(agent)
+            settings = self.use_cases.view_settings.execute(self.current_chat_id)
+            self._print_rerank_state(settings)
         else:
             print("\n[WARN] Использование: /rerank on|off")
 
     def rag_menu(self):
         """Обрабатывает команду /rag: подключение/отключение баз знаний чата."""
-        agent = self.current_agent
-        if not agent:
+        if not self.current_chat:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
-        print(f"\n--- БАЗЫ ЗНАНИЙ ЧАТА: {agent.name} ---")
-        self._print_rerank_state(agent)
-        attached = self.use_cases.list_agent_knowledge_bases.execute(agent)
+        print(f"\n--- БАЗЫ ЗНАНИЙ ЧАТА: {self.current_chat.name} ---")
+        self._print_rerank_state(
+            self.use_cases.view_settings.execute(self.current_chat_id)
+        )
+        attached = self.use_cases.list_agent_knowledge_bases.execute(
+            self.current_chat_id
+        )
         if attached:
             for index, kb in enumerate(attached, 1):
                 print(
@@ -1161,11 +1161,11 @@ class CLIChat:
             return
 
         if action == "1":
-            self._attach_knowledge_base_to_chat(agent, attached)
+            self._attach_knowledge_base_to_chat(attached)
         elif action == "2":
-            self._detach_knowledge_base_from_chat(agent, attached)
+            self._detach_knowledge_base_from_chat(attached)
 
-    def _attach_knowledge_base_to_chat(self, agent, attached: list):
+    def _attach_knowledge_base_to_chat(self, attached: list):
         attached_ids = {kb.id for kb in attached}
         all_kbs = self.use_cases.list_knowledge_bases.execute()
         available = [kb for kb in all_kbs if kb.id not in attached_ids]
@@ -1184,7 +1184,7 @@ class CLIChat:
 
         try:
             success, message = self.use_cases.attach_knowledge_base.execute(
-                agent, kb.id
+                self.current_chat_id, kb.id
             )
         except RagError as exc:
             print(f"\n[ERROR] {exc}")
@@ -1192,7 +1192,7 @@ class CLIChat:
         prefix = "[OK]" if success else "[ERROR]"
         print(f"\n{prefix} {message}")
 
-    def _detach_knowledge_base_from_chat(self, agent, attached: list):
+    def _detach_knowledge_base_from_chat(self, attached: list):
         if not attached:
             print("\n[INFO] К чату не подключено ни одной базы знаний.")
             return
@@ -1205,7 +1205,7 @@ class CLIChat:
 
         try:
             success, message = self.use_cases.detach_knowledge_base.execute(
-                agent, kb.id
+                self.current_chat_id, kb.id
             )
         except RagError as exc:
             print(f"\n[ERROR] {exc}")
@@ -1492,7 +1492,7 @@ class CLIChat:
 
     def chat_loop(self):
         """Основной цикл общения с агентом."""
-        if not self.current_agent:
+        if not self.current_chat:
             print("\n[WARN] Сначала выберите или создайте чат!")
             return
 
@@ -1510,10 +1510,10 @@ class CLIChat:
                 if user_input.lower() == "/menu":
                     print("\nВозврат в меню...")
                     # При выходе из чата сохраняем память через use case
-                    if self.current_agent:
-                        self._print_memory_save_start(self.current_agent.name)
+                    if self.current_chat:
+                        self._print_memory_save_start(self.current_chat.name)
                         result = self.use_cases.save_agent_memory.execute(
-                            self.current_agent,
+                            self.current_chat_id,
                             on_warning=self._print_memory_warning,
                         )
                         self._print_memory_save_result(result)
@@ -1533,14 +1533,15 @@ class CLIChat:
 
                 # Обработка команд фаз
                 if user_input.lower() in ("/plan", "/execute", "/validate", "/report"):
-                    _, message = self.current_agent.handle_phase_command(
-                        user_input.lower()
+                    phase_result = self.use_cases.change_phase.execute(
+                        self.current_chat_id, user_input.lower()
                     )
-                    print(f"\n[INFO] {message}")
+                    self.current_chat.current_phase = phase_result.current_phase
+                    print(f"\n[INFO] {phase_result.message}")
                     # Обновляем отображение фазы в заголовке
-                    phase_name = self.current_agent.current_phase.name
                     print(
-                        f"--- ЧАТ: {self.current_agent.name} [Фаза: {phase_name}] ---"
+                        f"--- ЧАТ: {self.current_chat.name} "
+                        f"[Фаза: {phase_result.current_phase}] ---"
                     )
                     continue
 
@@ -1578,8 +1579,8 @@ class CLIChat:
                 print("\n[AGENT] печатает...", end="", flush=True)
 
                 try:
-                    response, _ = self.use_cases.send_message.execute(
-                        self.current_agent,
+                    response = self.use_cases.send_message.execute(
+                        self.current_chat_id,
                         user_input,
                         on_memory_warning=self._print_memory_warning,
                     )
@@ -1622,8 +1623,7 @@ class CLIChat:
 
                     # Отображаем степень заполненности контекстного окна
                     if response.prompt_tokens is not None:
-                        settings = self.current_agent.get_settings()
-                        context_window_size = settings.context_window_size or 200_000
+                        context_window_size = response.context_window_size or 200_000
                         fill_percent = (
                             response.prompt_tokens / context_window_size
                         ) * 100
@@ -1633,10 +1633,10 @@ class CLIChat:
 
             except (KeyboardInterrupt, EOFError):
                 print("\n\nПрервано пользователем.")
-                if self.current_agent:
-                    self._print_memory_save_start(self.current_agent.name)
+                if self.current_chat:
+                    self._print_memory_save_start(self.current_chat.name)
                     result = self.use_cases.save_agent_memory.execute(
-                        self.current_agent,
+                        self.current_chat_id,
                         on_warning=self._print_memory_warning,
                     )
                     self._print_memory_save_result(result)
@@ -1728,8 +1728,8 @@ class CLIChat:
                 elif choice == "4":
                     self.print_global_memory()
                 elif choice == "5":
-                    if self.current_agent:
-                        print(f"\n[OK] Возврат в чат: {self.current_agent.name}")
+                    if self.current_chat:
+                        print(f"\n[OK] Возврат в чат: {self.current_chat.name}")
                         self.chat_loop()
                     else:
                         print("\n[WARN] Нет активного чата. Выберите или создайте чат.")

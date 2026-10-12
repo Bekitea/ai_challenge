@@ -338,6 +338,20 @@ class Agent:
         """Устанавливает стратегию управления контекстным окном."""
         self._strategy = strategy
 
+    @property
+    def turns_since_task_memory(self) -> int:
+        """Счётчик ходов с последнего обновления памяти задачи.
+
+        Персистится в репозитории, чтобы каденция обновления памяти задачи
+        сохранялась между загрузками агента (CLI теперь грузит агента на
+        каждый запрос по ``agent_id``).
+        """
+        return self._turns_since_task_memory
+
+    @turns_since_task_memory.setter
+    def turns_since_task_memory(self, value: int) -> None:
+        self._turns_since_task_memory = value
+
     def get_settings(self) -> AgentSettings:
         """Возвращает текущие настройки агента."""
         return self._settings

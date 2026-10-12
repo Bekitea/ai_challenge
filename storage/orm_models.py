@@ -180,6 +180,10 @@ class AgentORM(Base):
     tech_completion_tokens: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False
     )
+    # Ходы с последнего обновления памяти задачи диалога (per-chat каденция)
+    turns_since_task_memory: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
     current_phase: Mapped[str | None] = mapped_column(
         String(50), nullable=True, default="plan"
     )

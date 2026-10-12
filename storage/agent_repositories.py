@@ -255,6 +255,9 @@ class PersistentAgentRepository(AgentRepository):
         # Восстанавливаем is_dialog_remembered из БД
         agent.is_dialog_remembered = orm.is_dialog_remembered
 
+        # Восстанавливаем счётчик ходов до обновления памяти задачи
+        agent.turns_since_task_memory = orm.turns_since_task_memory
+
         # Восстанавливаем current_phase из БД
         phase = orm.get_current_phase()
         if phase is not None:
@@ -316,6 +319,9 @@ class PersistentAgentRepository(AgentRepository):
 
             # Сохраняем is_dialog_remembered
             orm.is_dialog_remembered = agent.is_dialog_remembered
+
+            # Сохраняем счётчик ходов до обновления памяти задачи
+            orm.turns_since_task_memory = agent.turns_since_task_memory
 
             # Сохраняем current_phase
             orm.set_current_phase(agent.current_phase)
@@ -424,6 +430,7 @@ class PersistentAgentRepository(AgentRepository):
             orm.chat_completion_tokens = 0
             orm.tech_prompt_tokens = 0
             orm.tech_completion_tokens = 0
+            orm.turns_since_task_memory = 0
 
             # Инициализируем фазу (по умолчанию plan)
             orm.set_current_phase(initial_phase or AgentPhase.PLAN)

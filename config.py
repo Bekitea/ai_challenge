@@ -106,18 +106,24 @@ RAG_FILE_MAX_BYTES = int(os.getenv("RAG_FILE_MAX_BYTES", str(1024 * 1024)))
 RAG_FOLDER_MAX_FILES = int(os.getenv("RAG_FOLDER_MAX_FILES", "100"))
 
 # --- Режим работы приложения ---
-APPLICATION_MODE = os.getenv("APPLICATION_MODE", "PROD").upper()  # TEST, PROD
+# PROD — продакшен (обязательны ключи Yandex Cloud), TEST — моки,
+# LOCAL — локальный запуск (например, только Ollama), без обязательных
+# ключей Yandex и с изолированным хранилищем ./local-data/.
+APPLICATION_MODE = os.getenv("APPLICATION_MODE", "PROD").upper()  # TEST, LOCAL, PROD
 
 if APPLICATION_MODE == "TEST":
-    # Тестовый режим: изолированное хранилище
-    DATABASE_PATH = "./test-data/agents.db"
-    FILE_STORAGE_DIR = "./test-data/file_storage"
-    GLOBAL_MEMORY_PATH = "./test-data/global_memory.pkl"
+    # Тестовый режим: изолированное хранилище для e2e-тестов
+    _STORAGE_BASE = "./test-data"
+elif APPLICATION_MODE == "LOCAL":
+    # Локальный запуск: отдельное хранилище, чтобы не смешивать с продом
+    _STORAGE_BASE = "./local-data"
 else:
     # Продакшен режим: основное хранилище
-    DATABASE_PATH = "./data/agents.db"
-    FILE_STORAGE_DIR = "./data/file_storage"
-    GLOBAL_MEMORY_PATH = "./data/global_memory.pkl"
+    _STORAGE_BASE = "./data"
+
+DATABASE_PATH = f"{_STORAGE_BASE}/agents.db"
+FILE_STORAGE_DIR = f"{_STORAGE_BASE}/file_storage"
+GLOBAL_MEMORY_PATH = f"{_STORAGE_BASE}/global_memory.pkl"
 
 DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 

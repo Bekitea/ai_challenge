@@ -16,7 +16,7 @@
 3. System prompts: `Введите название ветки (Enter для автогенерации):`
 4. User enters name or presses Enter (auto-name `{current_name} (branch {YYYY-MM-DD HH:MM:SS})`)
 5. System creates the branch via `create_branch` use case, copying all messages, settings, token counters and the context strategy with its accumulated state; a new `conversation_id` (UUID) is generated
-6. System switches `current_agent` to the branch
+6. System switches `current_chat` to the branch
 7. System asks: `Продолжить в новой ветке? (y/n):`
 8. User enters "y"
 9. System enters the chat loop for the branch chat
@@ -27,7 +27,7 @@
 - **A1: Stay In Current Chat Loop**
   - Step 8: User enters anything other than "y"
   - System prints `Ветка создана. Вы можете вернуться к ней через меню.` and stays in the current chat loop
-  - Note: `current_agent` already points to the branch; the original chat is reachable via Main Menu option 2 ("Выбрать чат")
+  - Note: `current_chat` already points to the branch; the original chat is reachable via Main Menu option 2 ("Выбрать чат")
 
 - **A2: Custom Branch Name**
   - Step 4: User enters a custom name
@@ -41,7 +41,7 @@
 ## Postconditions
 
 - New chat created in storage with copied data
-- `current_agent` points to the branch chat
+- `current_chat` points to the branch chat
 - Original chat preserved unchanged
 
 ## Related Test Cases
@@ -55,7 +55,7 @@
 | 1    | Open chat with messages                    | Chat active                                       |
 | 2    | Type "/branch"                             | Header `--- СОЗДАНИЕ ВЕТКИ ОТ '{name}' ---` + name prompt |
 | 3    | Press Enter (accept auto-name)             | Branch created with name `{name} (branch {timestamp})` |
-| 4    | Prompt: "Продолжить в новой ветке? (y/n):" | Displayed (`current_agent` already switched to branch) |
+| 4    | Prompt: "Продолжить в новой ветке? (y/n):" | Displayed (`current_chat` already switched to branch) |
 | 5    | Enter "y"                                  | Chat loop entered for the branch chat             |
 | 6    | Verify new chat                            | Has same messages, settings, strategy as original |
 | 7    | Verify original chat                       | Unchanged                                         |
@@ -74,7 +74,7 @@
 | 4    | Prompt: "Продолжить в новой ветке? (y/n):" | Displayed                                              |
 | 5    | Enter "n"                                  | `Ветка создана. Вы можете вернуться к ней через меню.` |
 | 6    | Verify branch created                      | New chat exists in storage                             |
-| 7    | Verify CLI state                           | `current_agent` points to the branch (UC-011 A1 note)  |
+| 7    | Verify CLI state                           | `current_chat` points to the branch (UC-011 A1 note)  |
 
 ---
 

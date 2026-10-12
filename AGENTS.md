@@ -10,26 +10,29 @@ AI Chat CLI — консольное приложение для взаимод�
 
 - `poetry install` — mandatory first step. Poetry's env is NOT in-project (configured `virtualenvs.in-project false`); the `.venv/` directory in the repo root is a stale artifact, ignore it. Run everything via `poetry run ...`.
 - Run app: `poetry run python main_cli.py`
+- Run web (REST API + built React) on :8080: `python main_api.py` — defaults to `APPLICATION_MODE=LOCAL` (override via env), serves both `/api/*` and `frontend/dist`. Single worker only (MCP state is in-process). Frontend build: `cd frontend && npm install && npm run build`.
 - Lint: `poetry run ruff check --fix` (only `target-version = "py313"` configured).
 - Tests (all are e2e; there is no unit test suite):
   - **NEVER run the full suite (`poetry run pytest cli_tests/`).** Its performance is unacceptable and the issue is unresolved. Always run only the specific test(s) relevant to the change.
   - Single case: `poetry run pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -v`
   - E2E tests are split one file per test class (`cli_tests/test_ucXXX_*.py`); shared helpers live in `cli_tests/e2e_helpers.py`, the autouse cleanup fixture in `cli_tests/conftest.py`. `run_cli_command` itself asserts `returncode == 0` and empty `stderr`, so tests must not duplicate those checks and should discard unused tuple parts with `_` (avoids Ruff `RUF059`).
   - Smoke: `poetry run python cli_tests/smoke_test.py`
+  - REST API tests (fast, in-process, `TestClient`): `poetry run pytest api_tests/test_api_smoke.py -v`
 - `requirements.txt` mirrors pyproject deps as a pip fallback; Poetry + `poetry.lock` is primary.
 
 ## APPLICATION_MODE — the biggest gotcha
 
 - `config.py` calls `load_dotenv()` and reads `APPLICATION_MODE` **at import time**. Set `os.environ["APPLICATION_MODE"] = "TEST"` BEFORE importing any project module (test files do this at the very top).
-- `TEST` → MockLlmProvider, isolated storage under `./test-data/`. Anything else (default) → production: real Yandex API, storage under `./data/`, and startup fails with `OSError` unless `.env` defines `YANDEX_CLOUD_API_KEY` and `YANDEX_CLOUD_FOLDER`.
+- `TEST` → MockLlmProvider, isolated storage under `./test-data/`. `LOCAL` → real providers (Ollama; Yandex only if keys present), no required env vars, isolated storage under `./local-data/`. Anything else (default `PROD`) → production: real Yandex API, storage under `./data/`, and startup fails with `OSError` unless `.env` defines `YANDEX_CLOUD_API_KEY` and `YANDEX_CLOUD_FOLDER`.
 - E2E tests need no API keys: they spawn real `python main_cli.py` subprocesses driven through stdin keystrokes, and an autouse fixture wipes `./test-data/` before each test. Test names `test_tc_XXX_...` map to test cases in `docs/uc/` (one use case per file).
-- `alembic/env.py` imports `DATABASE_URL` from `config.py`, so migrations target whichever DB the current `APPLICATION_MODE` selects. Note the app also auto-creates tables on startup (`DatabaseConnection.init_tables`), so `alembic upgrade head` is not needed for dev/tests.
+- `alembic/env.py` imports `DATABASE_URL` from `config.py`, so migrations target whichever DB the current `APPLICATION_MODE` selects. Note the app also auto-creates tables on startup (`DatabaseConnection.init_tables`), which additionally **adds missing columns** to existing SQLite tables (additive sync) — so schema drift on `create_all`-based DBs self-heals and `alembic upgrade head` is not needed for dev/tests.
 
 ## Architecture rules (enforced by README, verified in code)
 
 Layers: `main_cli.py` (entry) → `app_factory.py` (DI: builds `UseCasesBundle`) → `cli_app.py` (presentation) → `use_cases.py` (business logic) → `agents.py` / `storage/` / `llm_providers.py` / `context_strategies.py`.
 
-- `cli_app.py` may import ONLY from `use_cases` — no `storage.*`, `llm_providers`, `agents`, `app_mode`, or `app_factory` imports. `celery_app.py`/`tasks.py` form a second presentation layer under the same constraint (they reach the system only via `app_factory.initialize_application()`).
+- `cli_app.py` may import ONLY from `use_cases` (plus the constant module `config` and stdlib) — no `storage.*`, `llm_providers`, `agents`, `context_strategies`, `mcp_registry`, `app_mode`, or `app_factory` imports. `celery_app.py`/`tasks.py` form a second presentation layer under the same constraint (they reach the system only via `app_factory.initialize_application()`). The REST API (`api/` + `main_api.py`) is a third presentation layer: `api/routers/*` import only `use_cases` (DTO) + `api.schemas` + stdlib; the only place that imports `app_factory` is `main_api.py` (bootstrap).
+- **Presentation is DTO-only.** A presentation layer (`cli_app.py`, `api/`, Celery) must never see business objects (`Agent`, `TaskProfile`, …). It holds only an `agent_id`/`chat_id` and exchanges DTOs defined in (or re-exported from) `use_cases.py`. Use cases accept `agent_id` and/or DTOs and return DTOs; the `Agent` object never crosses the use-case boundary. A use case loads the agent internally via `repository.get_agent(agent_id)`.
 - Agents self-persist: `Agent` has `save()` with `auto_save=True` on by default. Use cases must NOT call `repository.update_agent()` explicitly.
 - Repositories receive a session factory; never create engines/connections inside repositories — `storage/db_connection.py::DatabaseConnection` owns that.
 - Avoid N+1: construct `Agent` with everything it needs (e.g. `conversation_id`) in one query; no extra DB round-trips inside agent methods.
@@ -41,6 +44,12 @@ New feature flow: add use case file in `docs/uc/` and register it in the UC inde
 - Requires Redis: `docker run -d --name redis-celery -p 6379:6379 redis:alpine` (override via `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND`).
 - Worker: `celery -A celery_app worker --loglevel=info --pool=solo` (`--pool=solo` is required on Windows). Beat: `celery -A celery_app beat --loglevel=info`.
 - Reports are declared in `SCHEDULED_REPORTS` in `celery_app.py`; every entry is auto-scheduled to run once per minute.
+
+## REST API / Web UI (FastAPI + React)
+
+- Entry: `main_api.py` (bootstrap: `initialize_application()`) → `api/app.py::build_app(use_cases)`. Routers (`api/routers/*`) are DTO-only presentation; Pydantic schemas in `api/schemas.py`; domain-exception → HTTP mapping in `api/errors.py`; dependency `UseCasesDep` in `api/deps.py`.
+- Serves REST under `/api/*` **and** the built React app from `frontend/dist` on one port (:8080). Single worker only (MCP state in-process). No streaming; document upload is `multipart` → temp file → existing `add_document` use case (no duplicated logic).
+- Tests: `api_tests/` (in-process `TestClient`, `APPLICATION_MODE=TEST`).
 
 ## sqlite-vec (инфраструктура RAG)
 

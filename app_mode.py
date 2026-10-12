@@ -10,6 +10,7 @@ class AppMode(Enum):
 
     PRODUCTION = auto()  # Реальный LLM провайдер
     TEST = auto()  # Mock провайдер
+    LOCAL = auto()  # Локальный запуск (Ollama и т.п.) без обязательных ключей
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,14 @@ TEST_MODE: Final = ModeConfig(
     require_env_vars=False,
 )
 
+# Локальный режим: реальные провайдеры (например, Ollama), но без
+# обязательных ключей Yandex Cloud.
+LOCAL_MODE: Final = ModeConfig(
+    mode=AppMode.LOCAL,
+    use_mock_provider=False,
+    require_env_vars=False,
+)
+
 
 def get_mode_config() -> ModeConfig:
     """Возвращает конфигурацию на основе APPLICATION_MODE из config.py.
@@ -41,7 +50,12 @@ def get_mode_config() -> ModeConfig:
     Returns:
         ModeConfig: Конфигурация режима.
     """
-    return TEST_MODE if config.APPLICATION_MODE == "TEST" else PRODUCTION_MODE
+    mode = config.APPLICATION_MODE
+    if mode == "TEST":
+        return TEST_MODE
+    if mode == "LOCAL":
+        return LOCAL_MODE
+    return PRODUCTION_MODE
 
 
 def validate_production_env(

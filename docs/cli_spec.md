@@ -23,7 +23,7 @@ This document provides a comprehensive specification for the Command Line Interf
 | Chat / Agent      | A conversation session; internal ID is a UUID (`conversation_id`), user-facing ID is a numeric `agent_id` |
 | System Prompt     | Initial instruction message that sets agent behavior                              |
 | Preview           | Short excerpt (max 50 chars) of the last visible message, suffixed with `...` if truncated |
-| Active Chat       | Currently selected agent stored in CLI state (`current_agent`)                    |
+| Active Chat       | Currently selected chat stored in CLI state (`current_chat`)                      |
 | Disabled Setting  | Parameter with `None` value, not passed to LLM                                    |
 | Phase             | Agent workflow stage: PLAN / EXECUTE / VALIDATE / REPORT                          |
 | Invariant         | Strict rule attached to a task profile that the agent must never violate          |
@@ -35,7 +35,9 @@ This document provides a comprehensive specification for the Command Line Interf
 
 The presentation layer (`CLIChat` in `cli_app.py`) is separated from application initialization (`app_factory.py`, `main_cli.py`). `CLIChat` receives all its functionality through a `UseCasesBundle` container of use cases (`use_cases.py`) and never touches repositories or the LLM provider directly.
 
-State model: the CLI keeps a single piece of state — `current_agent: Agent | None`. Menu option 5 ("Вернуться в чат") re-enters the chat loop for this agent. The active chat reference is kept when exiting a chat via `/menu`; it is replaced on chat creation/selection.
+The presentation layer is **DTO-only**: it never sees the business object `Agent`. All inputs and outputs of use cases are DTOs defined in `use_cases.py` (e.g. `ChatDTO`, `ChatPreviewDTO`, `SettingsDTO`, `MessageResponseDTO`, `HistoryMessageDTO`, `ChatInfo`, `McpServerStatus`, `PhaseChangeResultDTO`). A use case loads the agent internally by `agent_id`.
+
+State model: the CLI keeps a single piece of state — `current_chat: ChatDTO | None` (the active chat, referenced by its numeric `agent_id`). Menu option 5 ("Вернуться в чат") re-enters the chat loop for this chat. The active chat reference is kept when exiting a chat via `/menu`; it is replaced on chat creation/selection.
 
 ---
 
@@ -94,7 +96,7 @@ Prompt line: `Ваш выбор (1-7):`
 
 #### 4.2.2 Dynamic Behavior
 
-- Option 5 label depends on `current_agent` state:
+- Option 5 label depends on `current_chat` state:
   - Active chat exists: `5. Вернуться в чат: {chat_name}`
   - No active chat: `5. Вернуться в чат (нет активного чата)` (no colon)
 - Selecting option 5 with an active chat prints `[OK] Возврат в чат: {name}` and enters the chat loop.
@@ -113,8 +115,8 @@ Prompt line: `Ваш выбор (1-7):`
 
 The CLI is a single-user, session-scoped console application. Its entire state is held in the `CLIChat` instance:
 
-- `current_agent: Agent | None` — the active chat (see §2); it survives exits to the Main Menu and is replaced on chat creation or selection.
-- Per-chat runtime data (settings, phase, connected MCP servers) lives on the `Agent` object and in storage; the CLI never caches message history beyond what the current loop needs.
+- `current_chat: ChatDTO | None` — the active chat (see §2); it survives exits to the Main Menu and is replaced on chat creation or selection.
+- Per-chat runtime data (settings, phase, connected MCP servers) lives behind use cases and in storage; the CLI exchanges only DTOs and never holds the `Agent` object.
 - All persistent state (agents, messages, task profiles, global/task memories) is owned by repositories accessed exclusively through use cases (§2).
 
 There is no cross-session UI state: restarting the application re-reads everything from storage.
@@ -155,8 +157,8 @@ Visible messages exclude role="system", role="tool" and assistant messages carry
 
 #### 4.3.4 After Selection
 
-1. Agent is loaded via `select_chat.get_agent(agent_id)`; becomes `current_agent`
-2. Memory is refreshed via `refresh_agent_memory` use case
+1. Chat DTO is loaded via `select_chat.get_chat(agent_id)`; becomes `current_chat`
+2. Memory is refreshed inside the use case when the agent is loaded
 3. Displays `[OK] Выбран чат: {name}`
 4. Enters the chat loop immediately; after the loop ends (e.g. `/menu`), control returns to the Main Menu
 
@@ -382,7 +384,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
 
 ##### Phase commands: `/plan`, `/execute`, `/validate`, `/report`
 
-- **Action**: Transition the agent workflow phase via `Agent.handle_phase_command`
+- **Action**: Transition the agent workflow phase via the `change_phase` use case
 - **Rules**: Forward transition allowed only to the next phase in order PLAN → EXECUTE → VALIDATE → REPORT; any backward transition is allowed; forward skips are rejected
 - **Output**: `[INFO] {message}` where message is either `Фаза изменена: {OLD} -> {NEW}` or `Нельзя перескочить этап: переход из {OLD} сразу в {NEW} запрещен`, followed by updated header line `--- ЧАТ: {name} [Фаза: {PHASE}] ---`
 - **Phase casing**: the header line and both `[INFO]` messages use the phase's UPPERCASE name (`PLAN`/`EXECUTE`/`VALIDATE`/`REPORT`); `/info` displays the lowercase phase value (`plan`/`execute`/`validate`/`report`) — see §4.5.3 `/info`
@@ -470,10 +472,10 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   1. Display header `--- СОЗДАНИЕ ВЕТКИ ОТ '{current_name}' ---`
   2. Prompt for branch name: `Введите название ветки (Enter для автогенерации):`; empty → auto-name `{current_name} (branch {YYYY-MM-DD HH:MM:SS})`
   3. Copy all messages, settings, token counters and strategy (with its accumulated state); the branch receives a new `conversation_id` (UUID) and no ID until saved
-  4. `current_agent` is switched to the branch immediately after creation
+  4. `current_chat` is switched to the branch immediately after creation (the new `ChatDTO`)
   5. Ask: `Продолжить в новой ветке? (y/n):`
   6. If 'y': enter the chat loop for the branch
-  7. Otherwise: print `Ветка создана. Вы можете вернуться к ней через меню.` and stay in the current chat loop (note: `current_agent` already points to the branch; the original chat is reachable via "Выбрать чат")
+  7. Otherwise: print `Ветка создана. Вы можете вернуться к ней через меню.` and stay in the current chat loop (note: `current_chat` already points to the branch; the original chat is reachable via "Выбрать чат")
 - **Error handling** (alternative flow of UC-011): if `create_branch` raises any exception, print `[ERROR] Ошибка при создании ветки: {e}` and return to the chat prompt
 - **Side Effects**: New chat created in storage; original chat unchanged
 

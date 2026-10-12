@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from agents import (
     Agent,
     AgentPhase,
-    AgentPreview,
     AgentSettings,
-    Prompt,
+    ContextWindowExceededError,  # noqa: F401 — реэкспорт для слоя представления
     TaskMemory,
     TaskProfile,
 )
@@ -58,7 +57,12 @@ from storage.rag_repositories import (
 
 @dataclass
 class UseCasesBundle:
-    """Container for all use cases needed by the CLI."""
+    """Единый контейнер всех use cases для слоёв представления.
+
+    Единственное определение в проекте: его импортирует и ``app_factory``
+    (создаёт), и ``cli_app`` (потребляет), и будущий API-слой. Поля описаны
+    forward-reference'ами, поэтому класс объявлен до классов use cases.
+    """
 
     create_chat: CreateChatUseCase
     select_chat: SelectChatUseCase
@@ -66,6 +70,7 @@ class UseCasesBundle:
     view_settings: ViewSettingsUseCase
     change_settings: ChangeSettingsUseCase
     set_reranker_enabled: SetRerankerEnabledUseCase
+    change_phase: ChangePhaseUseCase
     list_models: ListModelsUseCase
     show_history: ShowHistoryUseCase
     show_summary: ShowSummaryUseCase
@@ -87,6 +92,7 @@ class UseCasesBundle:
     disconnect_mcp: DisconnectMcpUseCase
     list_connected_mcp: ListConnectedMcpUseCase
     list_available_mcp: ListAvailableMcpUseCase
+    run_scheduled_agent_task: RunScheduledAgentTaskUseCase
     create_knowledge_base: CreateKnowledgeBaseUseCase
     delete_knowledge_base: DeleteKnowledgeBaseUseCase
     list_knowledge_bases: ListKnowledgeBasesUseCase
@@ -101,9 +107,54 @@ class UseCasesBundle:
     search_knowledge_base: SearchKnowledgeBaseUseCase
 
 
+# ---------------------------------------------------------------------------
+# DTO — единственный язык обмена между слоем представления и бизнес-логикой.
+# Ни один бизнес-объект (Agent, Prompt, AgentSettings, …) не выходит наружу.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ChatPreviewDTO:
+    """Превью чата для списка чатов."""
+
+    agent_id: int
+    name: str
+    last_message_timestamp: datetime | None
+    message_count: int
+    last_message_preview: str | None = None
+
+
+@dataclass
+class ChatDTO:
+    """Идентификатор и базовые атрибуты чата (агенда)."""
+
+    agent_id: int
+    name: str
+    strategy_type: str
+    current_phase: str
+    system_prompt: str | None = None
+    task_profile_name: str | None = None
+
+
+@dataclass
+class TaskMemoryDTO:
+    """DTO памяти задачи текущего диалога."""
+
+    goal: str = ""
+    constraints: list[str] = field(default_factory=list)
+    terms: list[str] = field(default_factory=list)
+    clarifications: list[str] = field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        """Возвращает True, если память не содержит данных."""
+        return not (
+            self.goal or self.constraints or self.terms or self.clarifications
+        )
+
+
 @dataclass
 class ChatInfo:
-    """Информация о чате для отображения."""
+    """Информация о чате для отображения (DTO)."""
 
     name: str
     agent_id: int
@@ -116,7 +167,228 @@ class ChatInfo:
     buffer_size: int | None = None
     task_profile_name: str | None = None
     current_phase: str | None = None
-    task_memory: TaskMemory | None = None
+    task_memory: TaskMemoryDTO | None = None
+
+
+@dataclass
+class SettingsDTO:
+    """DTO настроек чата. Используется и на вход, и на выход."""
+
+    model_id: str | None = None
+    provider: str | None = None
+    top_k: int | None = None
+    top_p: float | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    reasoning_effort: str | None = None
+    context_window_size: int | None = None
+    reranker_enabled: bool = True
+
+
+@dataclass
+class HistoryMessageDTO:
+    """Одно сообщение истории диалога (DTO)."""
+
+    role: str
+    content: str
+    reasoning: str | None = None
+    has_tool_calls: bool = False
+    timestamp: datetime | None = None
+
+
+@dataclass
+class RagSourceDTO:
+    """Источник RAG, использованный в ответе ассистента (DTO)."""
+
+    document_name: str
+    chunk_id: int
+    chunk_index: int
+    text: str
+    relevance: float | None = None
+
+
+@dataclass
+class MessageResponseDTO:
+    """Ответ ассистента на сообщение пользователя (DTO)."""
+
+    content: str
+    reasoning: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    context_window_size: int | None = None
+    rag_sources: list[RagSourceDTO] | None = None
+
+
+@dataclass
+class AvailableMcpServerDTO:
+    """MCP-сервер из реестра, доступный для подключения (DTO)."""
+
+    name: str
+    title: str
+    description: str
+
+
+@dataclass
+class PhaseChangeResultDTO:
+    """Результат команды перехода по фазам."""
+
+    success: bool
+    message: str
+    current_phase: str
+
+
+@dataclass
+class DeleteProfileResultDTO:
+    """Результат удаления профиля задачи."""
+
+    deleted: bool
+    linked: bool = False
+
+
+def _settings_to_agent_settings(dto: SettingsDTO) -> AgentSettings:
+    """Преобразует DTO настроек в бизнес-объект ``AgentSettings``."""
+    return AgentSettings(
+        model_id=dto.model_id,
+        provider=dto.provider,
+        top_k=dto.top_k,
+        top_p=dto.top_p,
+        temperature=dto.temperature,
+        max_tokens=dto.max_tokens,
+        reasoning_effort=dto.reasoning_effort,
+        context_window_size=dto.context_window_size,
+        reranker_enabled=dto.reranker_enabled,
+    )
+
+
+def _agent_settings_to_dto(settings: AgentSettings) -> SettingsDTO:
+    """Преобразует ``AgentSettings`` в DTO настроек."""
+    return SettingsDTO(
+        model_id=settings.model_id,
+        provider=settings.provider,
+        top_k=settings.top_k,
+        top_p=settings.top_p,
+        temperature=settings.temperature,
+        max_tokens=settings.max_tokens,
+        reasoning_effort=settings.reasoning_effort,
+        context_window_size=settings.context_window_size,
+        reranker_enabled=settings.reranker_enabled,
+    )
+
+
+def _task_memory_to_dto(memory: TaskMemory) -> TaskMemoryDTO:
+    """Преобразует бизнес-объект памяти задачи в DTO."""
+    return TaskMemoryDTO(
+        goal=memory.goal,
+        constraints=list(memory.constraints),
+        terms=list(memory.terms),
+        clarifications=list(memory.clarifications),
+    )
+
+
+def _agent_to_chat_dto(agent: Agent) -> ChatDTO:
+    """Преобразует ``Agent`` в ``ChatDTO`` (без утечки бизнес-объекта)."""
+    system_prompt = None
+    for message in agent.get_history():
+        if message.role == "system":
+            system_prompt = message.content
+            break
+    return ChatDTO(
+        agent_id=agent.agent_id,
+        name=agent.name,
+        strategy_type=agent.strategy.strategy_type,
+        current_phase=agent.current_phase.name,
+        system_prompt=system_prompt,
+        task_profile_name=(
+            agent.task_profile.name if agent.task_profile is not None else None
+        ),
+    )
+
+
+def _load_agent(repository: AgentRepository, agent_id: int | None) -> Agent | None:
+    """Загружает агента по ``agent_id`` (None-safe)."""
+    if agent_id is None:
+        return None
+    return repository.get_agent(agent_id)
+
+
+def _task_profile_to_info(profile: TaskProfile) -> TaskProfileInfo:
+    """Преобразует ``TaskProfile`` в краткий DTO для списка."""
+    return TaskProfileInfo(
+        id=profile.id,
+        name=profile.name,
+        description=profile.description,
+        created_at=profile.created_at,
+        facts_count=len(profile.facts),
+        preferences=profile.preferences or "",
+        invariants_count=len(profile.invariants),
+    )
+
+
+def _task_profile_to_detail(profile: TaskProfile) -> TaskProfileDetailDTO:
+    """Преобразует ``TaskProfile`` в детальный DTO с памятью."""
+    return TaskProfileDetailDTO(
+        id=profile.id,
+        name=profile.name,
+        description=profile.description,
+        created_at=profile.created_at,
+        facts=list(profile.facts),
+        preferences=profile.preferences or "",
+        invariants=list(profile.invariants),
+    )
+
+
+def _require_agent(repository: AgentRepository, agent_id: int) -> Agent:
+    """Загружает агента или бросает ValueError, если он не найден."""
+    agent = repository.get_agent(agent_id)
+    if agent is None:
+        raise ValueError(f"Чат #{agent_id} не найден")
+    return agent
+
+
+def _build_strategy(selection: StrategySelection) -> ContextWindowStrategy:
+    """Создаёт стратегию управления контекстом из DTO-описания выбора."""
+    if selection.strategy_type == "SummarizationStrategy":
+        return SummarizationStrategy(
+            non_compressible_count=selection.non_compressible_count or 2,
+            buffer_size=selection.buffer_size or 3,
+        )
+    if selection.strategy_type == "KeyValueMemoryStrategy":
+        return KeyValueMemoryStrategy(
+            non_compressible_count=selection.non_compressible_count or 2,
+            buffer_size=selection.buffer_size or 3,
+        )
+    if selection.strategy_type == "SlidingWindowStrategy":
+        return SlidingWindowStrategy(window_size=selection.window_size or 10)
+    return DefaultStrategy()
+
+
+def _response_to_dto(response: LlmResponse, agent: Agent) -> MessageResponseDTO:
+    """Преобразует ``LlmResponse`` + состояние агента в ``MessageResponseDTO``."""
+    counters = agent.token_counters
+    rag_sources = None
+    if response.rag_sources is not None:
+        rag_sources = [
+            RagSourceDTO(
+                document_name=chunk.document_name,
+                chunk_id=chunk.chunk_id,
+                chunk_index=chunk.chunk_index,
+                text=chunk.text,
+                relevance=chunk.relevance,
+            )
+            for chunk in response.rag_sources
+        ]
+    return MessageResponseDTO(
+        content=response.content,
+        reasoning=response.reasoning,
+        prompt_tokens=response.prompt_tokens,
+        completion_tokens=response.completion_tokens,
+        total_prompt_tokens=counters.total_prompt_tokens,
+        total_completion_tokens=counters.total_completion_tokens,
+        context_window_size=agent.get_settings().context_window_size,
+        rag_sources=rag_sources,
+    )
 
 
 @dataclass
@@ -140,6 +412,19 @@ class TaskProfileInfo:
     facts_count: int
     preferences: str = ""
     invariants_count: int = 0
+
+
+@dataclass
+class TaskProfileDetailDTO:
+    """Профиль задачи с полной памятью (факты + инварианты)."""
+
+    id: str
+    name: str
+    description: str
+    created_at: datetime | None
+    facts: list[str] = field(default_factory=list)
+    preferences: str = ""
+    invariants: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -179,24 +464,26 @@ class CreateChatUseCase:
         self,
         name: str,
         system_prompt: str | None,
-        settings: AgentSettings,
-        strategy: ContextWindowStrategy,
+        settings: SettingsDTO,
+        strategy_selection: StrategySelection,
         task_profile_id: str | None = None,
-        initial_phase: AgentPhase | None = None,
-    ) -> Agent:
+        initial_phase: str | None = None,
+    ) -> ChatDTO:
         """
         Создаёт новый чат с указанными настройками.
 
         Args:
-            name: Название чата.
+            name: Название чата. Пустая строка — имя генерируется автоматически
+                («Чат N» по текущему количеству чатов).
             system_prompt: Системный промпт (опционально).
-            settings: Настройки агента.
-            strategy: Стратегия управления контекстным окном.
+            settings: Настройки агента (DTO).
+            strategy_selection: Выбор стратегии управления контекстным окном.
             task_profile_id: UUID профиля задачи (опционально).
-            initial_phase: Стартовая фаза агента (опционально, по умолчанию PLAN).
+            initial_phase: Стартовая фаза агента (``plan``/``execute``/...).
+                По умолчанию PLAN.
 
         Returns:
-            Agent: Созданный агент.
+            ChatDTO: Созданный чат.
 
         Raises:
             ValueError: Если указан несуществующий профиль задачи.
@@ -207,15 +494,18 @@ class CreateChatUseCase:
             if profile is None:
                 raise ValueError(f"Профиль задачи с ID {task_profile_id} не найден")
 
+        if not name:
+            name = f"Чат {len(self.repository.get_all_previews()) + 1}"
+
         agent = self.repository.create_agent(
             name=name,
-            initial_settings=settings,
+            initial_settings=_settings_to_agent_settings(settings),
             system_prompt=system_prompt,
-            strategy=strategy,
+            strategy=_build_strategy(strategy_selection),
             task_profile_id=task_profile_id,
-            initial_phase=initial_phase,
+            initial_phase=AgentPhase(initial_phase) if initial_phase else None,
         )
-        return agent
+        return _agent_to_chat_dto(agent)
 
 
 class SelectChatUseCase:
@@ -224,13 +514,23 @@ class SelectChatUseCase:
     def __init__(self, repository: AgentRepository):
         self.repository = repository
 
-    def get_all_previews(self) -> list[AgentPreview]:
-        """Получает список всех чатов."""
-        return self.repository.get_all_previews()
+    def get_all_previews(self) -> list[ChatPreviewDTO]:
+        """Получает список всех чатов (DTO)."""
+        return [
+            ChatPreviewDTO(
+                agent_id=preview.agent_id,
+                name=preview.name,
+                last_message_timestamp=preview.last_message_timestamp,
+                message_count=preview.message_count,
+                last_message_preview=preview.last_message_preview,
+            )
+            for preview in self.repository.get_all_previews()
+        ]
 
-    def get_agent(self, agent_id: int) -> Agent | None:
-        """Получает агент по числовому ID."""
-        return self.repository.get_agent(agent_id)
+    def get_chat(self, agent_id: int) -> ChatDTO | None:
+        """Получает чат (DTO) по числовому ID."""
+        agent = self.repository.get_agent(agent_id)
+        return _agent_to_chat_dto(agent) if agent is not None else None
 
 
 class SendMessageUseCase:
@@ -241,39 +541,44 @@ class SendMessageUseCase:
 
     def execute(
         self,
-        agent: Agent,
+        agent_id: int,
         user_message: str,
         on_memory_warning: Callable[[str], None] | None = None,
-    ) -> tuple[LlmResponse, Agent]:
+    ) -> MessageResponseDTO:
         """
         Отправляет сообщение агенту и получает ответ.
 
         Args:
-            agent: Агент для общения.
+            agent_id: ID чата, которому адресовано сообщение.
             user_message: Текст сообщения пользователя.
             on_memory_warning: Необязательный колбэк для сообщений о сбое
                 обновления памяти задачи диалога.
 
         Returns:
-            Tuple of (LlmResponse, updated Agent).
+            MessageResponseDTO: Ответ ассистента и счётчики токенов.
 
         Raises:
             ContextWindowExceededError: Если превышен лимит контекстного окна.
         """
+        agent = _require_agent(self.repository, agent_id)
         response = agent.continue_dialog(
             user_message, on_memory_warning=on_memory_warning
         )
-        return response, agent
+        return _response_to_dto(response, agent)
 
 
 class ViewSettingsUseCase:
     """Use case для просмотра настроек чата."""
 
-    def execute(self, agent: Agent | None) -> AgentSettings | None:
-        """Получает настройки текущего агента."""
-        if not agent:
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self, agent_id: int | None) -> SettingsDTO | None:
+        """Получает настройки чата (DTO)."""
+        agent = _load_agent(self.repository, agent_id)
+        if agent is None:
             return None
-        return agent.get_settings()
+        return _agent_settings_to_dto(agent.get_settings())
 
 
 class ChangeSettingsUseCase:
@@ -282,22 +587,27 @@ class ChangeSettingsUseCase:
     def __init__(self, repository: AgentRepository):
         self.repository = repository
 
-    def execute(self, agent: Agent, new_settings: AgentSettings) -> None:
+    def execute(self, agent_id: int, new_settings: SettingsDTO) -> None:
         """
-        Обновляет настройки агента.
+        Обновляет настройки чата.
 
         Args:
-            agent: Агент для обновления.
-            new_settings: Новые настройки.
+            agent_id: ID чата для обновления.
+            new_settings: Новые настройки (DTO).
         """
-        agent.update_settings(new_settings)
+        agent = _require_agent(self.repository, agent_id)
+        agent.update_settings(_settings_to_agent_settings(new_settings))
 
 
 class SetRerankerEnabledUseCase:
     """Use case включения/отключения реранкинга для конкретного чата."""
 
-    def execute(self, agent: Agent, enabled: bool) -> bool:
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self, agent_id: int, enabled: bool) -> bool:
         """Обновляет per-chat флаг реранкинга, сохраняя остальные настройки."""
+        agent = _require_agent(self.repository, agent_id)
         current = agent.get_settings()
         agent.update_settings(replace(current, reranker_enabled=bool(enabled)))
         return bool(enabled)
@@ -329,27 +639,44 @@ class ListModelsUseCase:
 class ShowHistoryUseCase:
     """Use case для показа истории чата."""
 
-    def execute(self, agent: Agent | None) -> list[Prompt] | None:
-        """Получает историю сообщений агента."""
-        if not agent:
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self, agent_id: int | None) -> list[HistoryMessageDTO] | None:
+        """Получает историю сообщений чата (DTO)."""
+        agent = _load_agent(self.repository, agent_id)
+        if agent is None:
             return None
-        return agent.get_history()
+        return [
+            HistoryMessageDTO(
+                role=message.role,
+                content=message.content,
+                reasoning=message.reasoning,
+                has_tool_calls=bool(message.tool_calls),
+                timestamp=message.timestamp,
+            )
+            for message in agent.get_history()
+        ]
 
 
 class ShowSummaryUseCase:
     """Use case для показа саммари диалога."""
 
-    def execute(self, agent: Agent | None) -> str | None:
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self, agent_id: int | None) -> str | None:
         """
-        Получает саммари из стратегии агента.
+        Получает саммари из стратегии чата.
 
         Args:
-            agent: Агент для получения саммари.
+            agent_id: ID чата.
 
         Returns:
             Саммари или None, если оно отсутствует.
         """
-        if not agent:
+        agent = _load_agent(self.repository, agent_id)
+        if agent is None:
             return None
 
         strategy = agent.strategy
@@ -361,17 +688,21 @@ class ShowSummaryUseCase:
 class ShowChatInfoUseCase:
     """Use case для показа информации о чате."""
 
-    def execute(self, agent: Agent | None) -> ChatInfo | None:
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self, agent_id: int | None) -> ChatInfo | None:
         """
-        Получает информацию о чате включая счетчики токенов.
+        Получает информацию о чате включая счетчики токенов (DTO).
 
         Args:
-            agent: Агент для получения информации.
+            agent_id: ID чата.
 
         Returns:
-            ChatInfo или None, если агент не выбран.
+            ChatInfo или None, если чат не найден.
         """
-        if not agent:
+        agent = _load_agent(self.repository, agent_id)
+        if agent is None:
             return None
 
         counters = agent.token_counters
@@ -391,12 +722,7 @@ class ShowChatInfoUseCase:
         if agent.task_profile is not None:
             task_profile_name = agent.task_profile.name
 
-        # Получаем текущую фазу агента
-        current_phase = (
-            agent.current_phase.value
-            if hasattr(agent, "current_phase") and agent.current_phase
-            else None
-        )
+        current_phase = agent.current_phase.value if agent.current_phase else None
 
         return ChatInfo(
             name=agent.name,
@@ -410,25 +736,47 @@ class ShowChatInfoUseCase:
             buffer_size=buffer_size,
             task_profile_name=task_profile_name,
             current_phase=current_phase,
-            task_memory=agent.task_memory,
+            task_memory=_task_memory_to_dto(agent.task_memory),
         )
 
 
 class CreateBranchUseCase:
     """Use case для создания ветки текущего чата."""
 
-    def execute(self, parent_agent: Agent, new_name: str | None = None) -> Agent:
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self, agent_id: int, new_name: str | None = None) -> ChatDTO:
         """
         Создаёт ветку текущего чата.
 
         Args:
-            parent_agent: Родительский агент.
+            agent_id: ID родительского чата.
             new_name: Новое название для ветки (опционально).
 
         Returns:
-            Agent: Новый агент-ветка.
+            ChatDTO: Новая ветка.
         """
-        return parent_agent.branch(new_name=new_name)
+        parent_agent = _require_agent(self.repository, agent_id)
+        branch = parent_agent.branch(new_name=new_name)
+        return _agent_to_chat_dto(branch)
+
+
+class ChangePhaseUseCase:
+    """Use case перехода агента между фазами (PLAN/EXECUTE/VALIDATE/REPORT)."""
+
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self, agent_id: int, command: str) -> PhaseChangeResultDTO:
+        """Обрабатывает команду перехода по фазам (``/plan``, ``/execute``, …)."""
+        agent = _require_agent(self.repository, agent_id)
+        success, message = agent.handle_phase_command(command)
+        return PhaseChangeResultDTO(
+            success=success,
+            message=message,
+            current_phase=agent.current_phase.name,
+        )
 
 
 class SelectContextStrategyUseCase:
@@ -444,28 +792,7 @@ class SelectContextStrategyUseCase:
         Returns:
             ContextWindowStrategy: Экземпляр стратегии.
         """
-        if selection.strategy_type == "DefaultStrategy":
-            return DefaultStrategy()
-
-        elif selection.strategy_type == "SummarizationStrategy":
-            return SummarizationStrategy(
-                non_compressible_count=selection.non_compressible_count or 2,
-                buffer_size=selection.buffer_size or 3,
-            )
-
-        elif selection.strategy_type == "KeyValueMemoryStrategy":
-            return KeyValueMemoryStrategy(
-                non_compressible_count=selection.non_compressible_count or 2,
-                buffer_size=selection.buffer_size or 3,
-            )
-
-        elif selection.strategy_type == "SlidingWindowStrategy":
-            return SlidingWindowStrategy(
-                window_size=selection.window_size or 10,
-            )
-
-        else:
-            return DefaultStrategy()
+        return _build_strategy(selection)
 
 
 class ViewGlobalMemoryUseCase:
@@ -488,17 +815,19 @@ class ViewGlobalMemoryUseCase:
 class RefreshAgentMemoryUseCase:
     """Use case для загрузки памяти агента при выборе чата."""
 
-    def __init__(self, global_memory_repository):
-        self.global_memory_repository = global_memory_repository
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
 
-    def execute(self, agent: Agent) -> None:
+    def execute(self, agent_id: int) -> None:
         """
-        Загружает общесистемную память из репозитория.
+        Загружает общесистемную память и память задачи для чата.
 
         Args:
-            agent: Агент, для которого нужно загрузить память.
+            agent_id: ID чата, для которого нужно загрузить память.
         """
-        agent.refresh_memory()
+        agent = _load_agent(self.repository, agent_id)
+        if agent is not None:
+            agent.refresh_memory()
 
 
 @dataclass
@@ -545,24 +874,25 @@ def _save_agent_memory(
 class SaveAgentMemoryUseCase:
     """Use case для сохранения памяти агента при выходе из чата."""
 
-    def __init__(self, global_memory_repository):
-        self.global_memory_repository = global_memory_repository
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
 
     def execute(
         self,
-        agent: Agent,
+        agent_id: int,
         on_warning: Callable[[str], None] | None = None,
     ) -> MemorySaveResult:
         """
         Сохраняет общесистемную память о пользователе и память профиля задачи.
 
         Args:
-            agent: Агент, для которого нужно сохранить память.
+            agent_id: ID чата, для которого нужно сохранить память.
             on_warning: Необязательный колбэк для сообщений о сбое памяти задачи.
 
         Returns:
             Результат заполнения памяти чата (успех, длительность, ошибка).
         """
+        agent = _require_agent(self.repository, agent_id)
         return _save_agent_memory(agent, on_warning=on_warning)
 
 
@@ -634,18 +964,7 @@ class ListTaskProfilesUseCase:
             Список TaskProfileInfo.
         """
         profiles = self.task_profile_repository.get_all_profiles()
-        return [
-            TaskProfileInfo(
-                id=p.id,
-                name=p.name,
-                description=p.description,
-                created_at=p.created_at,
-                facts_count=len(p.facts),
-                preferences=p.preferences or "",
-                invariants_count=len(p.invariants),
-            )
-            for p in profiles
-        ]
+        return [_task_profile_to_info(p) for p in profiles]
 
 
 class CreateTaskProfileUseCase:
@@ -660,7 +979,7 @@ class CreateTaskProfileUseCase:
         description: str,
         preferences: str = "",
         invariants: list[str] | None = None,
-    ) -> TaskProfile:
+    ) -> TaskProfileInfo:
         """
         Создаёт новый профиль задачи.
 
@@ -671,11 +990,12 @@ class CreateTaskProfileUseCase:
             invariants: Список строгих правил/ограничений (опционально).
 
         Returns:
-            TaskProfile: Созданный профиль.
+            TaskProfileInfo: Созданный профиль.
         """
-        return self.task_profile_repository.create_profile(
+        profile = self.task_profile_repository.create_profile(
             name, description, preferences, invariants
         )
+        return _task_profile_to_info(profile)
 
 
 class GetTaskProfileMemoryUseCase:
@@ -684,7 +1004,7 @@ class GetTaskProfileMemoryUseCase:
     def __init__(self, task_profile_repository):
         self.task_profile_repository = task_profile_repository
 
-    def execute(self, profile_id: str) -> TaskProfile | None:
+    def execute(self, profile_id: str) -> TaskProfileDetailDTO | None:
         """
         Получает информацию о профиле задачи и его память.
 
@@ -692,9 +1012,12 @@ class GetTaskProfileMemoryUseCase:
             profile_id: UUID профиля задачи.
 
         Returns:
-            TaskProfile или None, если профиль не найден.
+            TaskProfileDetailDTO или None, если профиль не найден.
         """
-        return self.task_profile_repository.get_profile_by_id(profile_id)
+        profile = self.task_profile_repository.get_profile_by_id(profile_id)
+        if profile is None:
+            return None
+        return _task_profile_to_detail(profile)
 
 
 class DeleteTaskProfileUseCase:
@@ -703,7 +1026,11 @@ class DeleteTaskProfileUseCase:
     def __init__(self, task_profile_repository):
         self.task_profile_repository = task_profile_repository
 
-    def execute(self, profile_id: str) -> bool:
+    def is_linked(self, profile_id: str) -> bool:
+        """Возвращает True, если профиль привязан к агентам."""
+        return self.task_profile_repository.is_profile_linked_to_agents(profile_id)
+
+    def execute(self, profile_id: str) -> DeleteProfileResultDTO:
         """
         Удаляет профиль задачи.
 
@@ -711,13 +1038,16 @@ class DeleteTaskProfileUseCase:
             profile_id: UUID профиля для удаления.
 
         Returns:
-            True, если профиль был удалён, False если не найден или привязан к агентам.
+            DeleteProfileResultDTO: ``deleted`` — удалён ли профиль,
+            ``linked`` — был ли отказ из-за привязки к агентам.
         """
         # Проверяем, привязан ли профиль к агентам
         if self.task_profile_repository.is_profile_linked_to_agents(profile_id):
-            return False
+            return DeleteProfileResultDTO(deleted=False, linked=True)
 
-        return self.task_profile_repository.delete_profile(profile_id)
+        return DeleteProfileResultDTO(
+            deleted=self.task_profile_repository.delete_profile(profile_id)
+        )
 
 
 class AddInvariantUseCase:
@@ -821,7 +1151,10 @@ class McpServerStatus:
 class ListConnectedMcpUseCase:
     """Use case для получения списка MCP-серверов, подключённых к чату."""
 
-    def execute(self, agent: Agent) -> list[McpServerStatus]:
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self, agent_id: int | None) -> list[McpServerStatus]:
         """Возвращает статусы всех подключённых к чату MCP-серверов.
 
         В список попадают и серверы, сохранённые в чате, но недоступные в
@@ -831,11 +1164,11 @@ class ListConnectedMcpUseCase:
         from mcp_client import MCP_MANAGER
         from mcp_registry import find_server
 
-        connections = (
-            MCP_MANAGER.get_connections(agent.agent_id)
-            if agent.agent_id is not None
-            else {}
-        )
+        agent = _load_agent(self.repository, agent_id)
+        if agent is None or agent.agent_id is None:
+            return []
+
+        connections = MCP_MANAGER.get_connections(agent.agent_id)
         result: list[McpServerStatus] = []
         for server_name in agent.connected_mcp_servers:
             info = find_server(server_name)
@@ -858,30 +1191,47 @@ class ListConnectedMcpUseCase:
 class ListAvailableMcpUseCase:
     """Use case для получения списка MCP-серверов, ещё не подключённых к чату."""
 
-    def execute(self, agent: Agent) -> list:
-        """Возвращает записи реестра McpServerInfo, не подключённые к чату."""
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self, agent_id: int | None) -> list[AvailableMcpServerDTO]:
+        """Возвращает не подключённые к чату MCP-серверы реестра (DTO)."""
         from mcp_registry import get_available_servers
 
+        agent = _load_agent(self.repository, agent_id)
+        connected = set(agent.connected_mcp_servers) if agent is not None else set()
         return [
-            server
+            AvailableMcpServerDTO(
+                name=server.name,
+                title=server.title,
+                description=server.description,
+            )
             for server in get_available_servers()
-            if server.name not in agent.connected_mcp_servers
+            if server.name not in connected
         ]
 
 
 class ConnectMcpUseCase:
     """Use case для подключения MCP-сервера к чату."""
 
-    def execute(self, agent: Agent, server_name: str) -> tuple[bool, str]:
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self, agent_id: int, server_name: str) -> tuple[bool, str]:
         """Подключает MCP-сервер к чату (см. Agent.connect_mcp)."""
+        agent = _require_agent(self.repository, agent_id)
         return agent.connect_mcp(server_name)
 
 
 class DisconnectMcpUseCase:
     """Use case для отключения MCP-сервера от чата."""
 
-    def execute(self, agent: Agent, server_name: str) -> tuple[bool, str]:
+    def __init__(self, repository: AgentRepository):
+        self.repository = repository
+
+    def execute(self, agent_id: int, server_name: str) -> tuple[bool, str]:
         """Отключает MCP-сервер от чата (см. Agent.disconnect_mcp)."""
+        agent = _require_agent(self.repository, agent_id)
         return agent.disconnect_mcp(server_name)
 
 
@@ -965,35 +1315,34 @@ class RunScheduledAgentTaskUseCase:
         agent = self.create_chat.execute(
             name=self._run_chat_name(chat_name),
             system_prompt=system_prompt,
-            settings=AgentSettings(
+            settings=SettingsDTO(
                 provider=DEFAULT_REPORT_PROVIDER,
                 model_id=DEFAULT_REPORT_MODEL,
             ),
-            strategy=DefaultStrategy(),
-            initial_phase=AgentPhase.EXECUTE,
+            strategy_selection=StrategySelection(strategy_type="DefaultStrategy"),
+            initial_phase="execute",
         )
 
         # Подключаем MCP-серверы к freshly created чату: живые соединения
         # создаются в этом же процессе воркера, поэтому гарантированно
         # доступны агенту при вызове LLM с tools.
         for server_name in mcp_servers or []:
-            success, message = self.connect_mcp.execute(agent, server_name)
+            success, message = self.connect_mcp.execute(agent.agent_id, server_name)
             if not success:
                 raise RuntimeError(
                     f"Не удалось подключить MCP-сервер '{server_name}' "
                     f"для периодического отчёта '{chat_name}': {message}"
                 )
 
-        response, agent = self.send_message.execute(agent, task)
+        response = self.send_message.execute(agent.agent_id, task)
 
-        counters = agent.token_counters
         return ScheduledReport(
             chat_name=agent.name,
             agent_id=agent.agent_id,
             task=task,
             answer=response.content,
-            prompt_tokens=counters.total_prompt_tokens,
-            completion_tokens=counters.total_completion_tokens,
+            prompt_tokens=response.total_prompt_tokens,
+            completion_tokens=response.total_completion_tokens,
         )
 
 
@@ -1218,15 +1567,12 @@ class AttachKnowledgeBaseToAgentUseCase:
         self._kb_repository = knowledge_base_repository
         self._agent_kb_repository = agent_knowledge_base_repository
 
-    def execute(self, agent: Agent, knowledge_base_id: int) -> tuple[bool, str]:
-        if agent.agent_id is None:
-            return False, "Агент ещё не сохранён — подключите базу знаний позже."
-
+    def execute(self, agent_id: int, knowledge_base_id: int) -> tuple[bool, str]:
         kb = self._kb_repository.get(knowledge_base_id)
         if kb is None:
             return False, f"База знаний #{knowledge_base_id} не найдена."
 
-        created = self._agent_kb_repository.attach(agent.agent_id, knowledge_base_id)
+        created = self._agent_kb_repository.attach(agent_id, knowledge_base_id)
         if created:
             return True, f"База знаний '{kb.name}' подключена к чату."
         return True, f"База знаний '{kb.name}' уже подключена к чату."
@@ -1243,16 +1589,11 @@ class DetachKnowledgeBaseFromAgentUseCase:
         self._kb_repository = knowledge_base_repository
         self._agent_kb_repository = agent_knowledge_base_repository
 
-    def execute(self, agent: Agent, knowledge_base_id: int) -> tuple[bool, str]:
-        if agent.agent_id is None:
-            return False, "Агент ещё не сохранён."
-
+    def execute(self, agent_id: int, knowledge_base_id: int) -> tuple[bool, str]:
         kb = self._kb_repository.get(knowledge_base_id)
         name = kb.name if kb is not None else f"#{knowledge_base_id}"
 
-        removed = self._agent_kb_repository.detach(
-            agent.agent_id, knowledge_base_id
-        )
+        removed = self._agent_kb_repository.detach(agent_id, knowledge_base_id)
         if removed:
             return True, f"База знаний '{name}' отключена от чата."
         return True, f"База знаний '{name}' не была подключена к чату."
@@ -1264,10 +1605,8 @@ class ListAgentKnowledgeBasesUseCase:
     def __init__(self, agent_knowledge_base_repository: AgentKnowledgeBaseRepository):
         self._agent_kb_repository = agent_knowledge_base_repository
 
-    def execute(self, agent: Agent) -> list[KnowledgeBaseDTO]:
-        if agent.agent_id is None:
-            return []
-        return self._agent_kb_repository.list_for_agent(agent.agent_id)
+    def execute(self, agent_id: int) -> list[KnowledgeBaseDTO]:
+        return self._agent_kb_repository.list_for_agent(agent_id)
 
 
 class RetrieveRagContextUseCase:

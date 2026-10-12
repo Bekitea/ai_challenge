@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-
 from app_mode import get_mode_config
 from config import (
     EMBEDDING_BASE_URL,
@@ -48,6 +46,7 @@ from use_cases import (
     AddDocumentToKnowledgeBaseUseCase,
     AddInvariantUseCase,
     AttachKnowledgeBaseToAgentUseCase,
+    ChangePhaseUseCase,
     ChangeSettingsUseCase,
     ConnectMcpUseCase,
     CreateBranchUseCase,
@@ -83,55 +82,10 @@ from use_cases import (
     ShowChatInfoUseCase,
     ShowHistoryUseCase,
     ShowSummaryUseCase,
+    UseCasesBundle,
     ViewGlobalMemoryUseCase,
     ViewSettingsUseCase,
 )
-
-
-@dataclass
-class UseCasesBundle:
-    """Container for all use cases needed by the CLI."""
-
-    create_chat: CreateChatUseCase
-    select_chat: SelectChatUseCase
-    send_message: SendMessageUseCase
-    view_settings: ViewSettingsUseCase
-    change_settings: ChangeSettingsUseCase
-    set_reranker_enabled: SetRerankerEnabledUseCase
-    list_models: ListModelsUseCase
-    show_history: ShowHistoryUseCase
-    show_summary: ShowSummaryUseCase
-    show_chat_info: ShowChatInfoUseCase
-    create_branch: CreateBranchUseCase
-    select_strategy: SelectContextStrategyUseCase
-    view_global_memory: ViewGlobalMemoryUseCase
-    refresh_agent_memory: RefreshAgentMemoryUseCase
-    save_agent_memory: SaveAgentMemoryUseCase
-    save_unsaved_memories: SaveUnsavedMemoriesUseCase
-    list_task_profiles: ListTaskProfilesUseCase
-    create_task_profile: CreateTaskProfileUseCase
-    get_task_profile_memory: GetTaskProfileMemoryUseCase
-    delete_task_profile: DeleteTaskProfileUseCase
-    add_invariant: AddInvariantUseCase
-    remove_invariant: RemoveInvariantUseCase
-    list_invariants: ListInvariantsUseCase
-    connect_mcp: ConnectMcpUseCase
-    disconnect_mcp: DisconnectMcpUseCase
-    list_connected_mcp: ListConnectedMcpUseCase
-    list_available_mcp: ListAvailableMcpUseCase
-    run_scheduled_agent_task: RunScheduledAgentTaskUseCase
-    create_knowledge_base: CreateKnowledgeBaseUseCase
-    delete_knowledge_base: DeleteKnowledgeBaseUseCase
-    list_knowledge_bases: ListKnowledgeBasesUseCase
-    add_document: AddDocumentToKnowledgeBaseUseCase
-    list_documents: ListDocumentsUseCase
-    list_document_chunks: ListDocumentChunksUseCase
-    delete_document: DeleteDocumentUseCase
-    attach_knowledge_base: AttachKnowledgeBaseToAgentUseCase
-    detach_knowledge_base: DetachKnowledgeBaseFromAgentUseCase
-    list_agent_knowledge_bases: ListAgentKnowledgeBasesUseCase
-    retrieve_rag_context: RetrieveRagContextUseCase
-    search_knowledge_base: SearchKnowledgeBaseUseCase
 
 
 def initialize_application() -> UseCasesBundle:
@@ -161,7 +115,9 @@ def initialize_application() -> UseCasesBundle:
         validate_production_env(YANDEX_API_KEY, YANDEX_FOLDER_ID)
 
     # Create LLM provider registry. В тестовом режиме — детерминированные
-    # моки (yandex + ollama), в проде — реальные провайдеры. Провайдер для
+    # моки (yandex + ollama); в проде/локальном — реальные провайдеры.
+    # Ollama доступен всегда, Yandex регистрируется только при наличии ключей
+    # (в PROD они уже проверены выше, в LOCAL — опциональны). Провайдер для
     # конкретного чата выбирается по AgentSettings.provider.
     if mode_config.use_mock_provider:
         provider_registry = LlmProviderRegistry(
@@ -171,15 +127,13 @@ def initialize_application() -> UseCasesBundle:
             }
         )
     else:
-        provider_registry = LlmProviderRegistry(
-            {
-                "yandex": YandexCloudLlmProvider(
-                    api_key=YANDEX_API_KEY,
-                    folder_id=YANDEX_FOLDER_ID,
-                ),
-                "ollama": OllamaLlmProvider(),
-            }
-        )
+        providers = {"ollama": OllamaLlmProvider()}
+        if YANDEX_API_KEY and YANDEX_FOLDER_ID:
+            providers["yandex"] = YandexCloudLlmProvider(
+                api_key=YANDEX_API_KEY,
+                folder_id=YANDEX_FOLDER_ID,
+            )
+        provider_registry = LlmProviderRegistry(providers)
 
     # Initialize database connection and tables
     db_connection = DatabaseConnection(
@@ -260,24 +214,25 @@ def initialize_application() -> UseCasesBundle:
     # Create and return all use cases
     create_chat = CreateChatUseCase(repository, task_profile_repository)
     send_message = SendMessageUseCase(repository)
-    connect_mcp = ConnectMcpUseCase()
+    connect_mcp = ConnectMcpUseCase(repository)
 
     return UseCasesBundle(
         create_chat=create_chat,
         select_chat=SelectChatUseCase(repository),
         send_message=send_message,
-        view_settings=ViewSettingsUseCase(),
+        view_settings=ViewSettingsUseCase(repository),
         change_settings=ChangeSettingsUseCase(repository),
-        set_reranker_enabled=SetRerankerEnabledUseCase(),
+        set_reranker_enabled=SetRerankerEnabledUseCase(repository),
+        change_phase=ChangePhaseUseCase(repository),
         list_models=ListModelsUseCase(provider_registry),
-        show_history=ShowHistoryUseCase(),
-        show_summary=ShowSummaryUseCase(),
-        show_chat_info=ShowChatInfoUseCase(),
-        create_branch=CreateBranchUseCase(),
+        show_history=ShowHistoryUseCase(repository),
+        show_summary=ShowSummaryUseCase(repository),
+        show_chat_info=ShowChatInfoUseCase(repository),
+        create_branch=CreateBranchUseCase(repository),
         select_strategy=SelectContextStrategyUseCase(),
         view_global_memory=ViewGlobalMemoryUseCase(memory_repository),
-        refresh_agent_memory=RefreshAgentMemoryUseCase(memory_repository),
-        save_agent_memory=SaveAgentMemoryUseCase(memory_repository),
+        refresh_agent_memory=RefreshAgentMemoryUseCase(repository),
+        save_agent_memory=SaveAgentMemoryUseCase(repository),
         save_unsaved_memories=SaveUnsavedMemoriesUseCase(repository),
         list_task_profiles=ListTaskProfilesUseCase(task_profile_repository),
         create_task_profile=CreateTaskProfileUseCase(task_profile_repository),
@@ -287,9 +242,9 @@ def initialize_application() -> UseCasesBundle:
         remove_invariant=RemoveInvariantUseCase(task_profile_repository),
         list_invariants=ListInvariantsUseCase(task_profile_repository),
         connect_mcp=connect_mcp,
-        disconnect_mcp=DisconnectMcpUseCase(),
-        list_connected_mcp=ListConnectedMcpUseCase(),
-        list_available_mcp=ListAvailableMcpUseCase(),
+        disconnect_mcp=DisconnectMcpUseCase(repository),
+        list_connected_mcp=ListConnectedMcpUseCase(repository),
+        list_available_mcp=ListAvailableMcpUseCase(repository),
         run_scheduled_agent_task=RunScheduledAgentTaskUseCase(
             create_chat=create_chat,
             send_message=send_message,

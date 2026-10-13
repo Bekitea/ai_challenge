@@ -68,8 +68,9 @@ class CLIChat:
             print(f"5. Вернуться в чат: {self.current_chat.name}")
         else:
             print("5. Вернуться в чат (нет активного чата)")
-        print("6. Выход")
+        print("6. API-ключи")
         print("7. Базы знаний")
+        print("8. Выход")
         print("-" * 40)
 
     def print_chat_list(self):
@@ -1213,6 +1214,102 @@ class CLIChat:
         prefix = "[OK]" if success else "[ERROR]"
         print(f"\n{prefix} {message}")
 
+    def api_keys_menu(self):
+        """Пункт главного меню: выпуск и отзыв API-ключей."""
+        while True:
+            print("\n--- API-КЛЮЧИ ---")
+            print("1. Создать ключ")
+            print("2. Показать список ключей")
+            print("3. Удалить ключ")
+            print("0. Назад в главное меню")
+            print("-" * 40)
+
+            try:
+                choice = input("Ваш выбор (0-3): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return
+
+            if choice == "1":
+                self._create_api_key()
+            elif choice == "2":
+                self._list_api_keys()
+            elif choice == "3":
+                self._delete_api_key()
+            elif choice == "0":
+                return
+            else:
+                print("\n[WARN] Неверный выбор, попробуйте снова.")
+
+    def _create_api_key(self):
+        print("\n--- СОЗДАНИЕ API-КЛЮЧА ---")
+        name = ""
+        while not name:
+            name = input("Введите название ключа: ").strip()
+            if not name:
+                print("[ERROR] Название API-ключа не может быть пустым.")
+
+        try:
+            created = self.use_cases.create_api_key.execute(name)
+        except ValueError as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+
+        print(f"\n[OK] API-ключ '{created.name}' создан.")
+        print(f"  ID: {created.id}")
+        print(f"  Ключ: {created.api_key}")
+        print(
+            "[WARN] Сохраните ключ сейчас — больше он не будет показан "
+            "ни здесь, ни где-либо ещё."
+        )
+
+    def _list_api_keys(self):
+        keys = self.use_cases.list_api_keys.execute()
+        if not keys:
+            print("\n[INFO] API-ключи отсутствуют. Создайте первый ключ.")
+            return
+
+        print("\n--- СПИСОК API-КЛЮЧЕЙ ---")
+        for key in keys:
+            created = key.created_at.strftime("%Y-%m-%d %H:%M")
+            last_used = (
+                key.last_used_at.strftime("%Y-%m-%d %H:%M")
+                if key.last_used_at
+                else "никогда"
+            )
+            print(f"  ID: {key.id} | {key.name} | {key.prefix}…")
+            print(f"     Создан: {created} | Последнее использование: {last_used}")
+        print("-" * 40)
+
+    def _delete_api_key(self):
+        keys = self.use_cases.list_api_keys.execute()
+        if not keys:
+            print("\n[INFO] API-ключи отсутствуют.")
+            return
+
+        self._list_api_keys()
+        raw = input("Введите ID ключа для удаления (Enter — отмена): ").strip()
+        if not raw:
+            print("[INFO] Удаление отменено.")
+            return
+        try:
+            key_id = int(raw)
+        except (TypeError, ValueError):
+            print("\n[WARN] ID должен быть числом.")
+            return
+
+        confirm = input(f"Удалить API-ключ #{key_id}? (y/n): ").strip().lower()
+        if confirm != "y":
+            print("[INFO] Удаление отменено.")
+            return
+
+        try:
+            result = self.use_cases.delete_api_key.execute(key_id)
+        except ValueError as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+        print(f"\n[OK] API-ключ '{result.name}' отозван.")
+
     def knowledge_bases_menu(self):
         """Пункт главного меню: управление базами знаний и документами."""
         while True:
@@ -1717,7 +1814,7 @@ class CLIChat:
             self.print_menu()
 
             try:
-                choice = input("\nВаш выбор (1-7): ").strip()
+                choice = input("\nВаш выбор (1-8): ").strip()
 
                 if choice == "1":
                     self.create_new_chat()
@@ -1734,10 +1831,12 @@ class CLIChat:
                     else:
                         print("\n[WARN] Нет активного чата. Выберите или создайте чат.")
                 elif choice == "6":
-                    print("\nДо свидания!\n")
-                    break
+                    self.api_keys_menu()
                 elif choice == "7":
                     self.knowledge_bases_menu()
+                elif choice == "8":
+                    print("\nДо свидания!\n")
+                    break
                 else:
                     print("\n[WARN] Неверный выбор, попробуйте снова.")
 

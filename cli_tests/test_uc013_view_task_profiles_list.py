@@ -26,7 +26,7 @@ class TestUC013_ViewTaskProfilesList:
         test_input = (
             "3\n"  # Профили задач
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -53,7 +53,7 @@ class TestUC013_ViewTaskProfilesList:
             "Test Task Profile\n"  # Name
             "This is a test task description\n"  # Description
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

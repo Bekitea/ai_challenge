@@ -17,7 +17,7 @@ class TestUC022_TaskMemory:
             _QUICK_CHAT
             + "Расскажи о задаче\n"
             + "/info\n"
-            + "/menu\n6\n"
+            + "/menu\n8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -30,7 +30,7 @@ class TestUC022_TaskMemory:
 
     def test_tc_143_no_task_memory_without_updates(self):
         """TC-143: до порога ходов память задачи в /info не отображается."""
-        test_input = _QUICK_CHAT + "Привет\n" + "/info\n" + "/menu\n6\n"
+        test_input = _QUICK_CHAT + "Привет\n" + "/info\n" + "/menu\n8\n"
 
         stdout, _, _ = run_cli_command(test_input)
 
@@ -41,11 +41,11 @@ class TestUC022_TaskMemory:
         """TC-144: память сохраняется между чатами, а ветка её не наследует."""
         monkeypatch.setenv("TASK_MEMORY_UPDATE_EVERY_N_MESSAGES", "1")
         # Создаём чат, наполняем память и выходим (память сохраняется на /menu)
-        first = _QUICK_CHAT + "Поговорим о задаче\n" + "/menu\n6\n"
+        first = _QUICK_CHAT + "Поговорим о задаче\n" + "/menu\n8\n"
         run_cli_command(first)
 
         # Возвращаемся в тот же чат и проверяем, что память на месте
-        second = "2\n1\n/info\n/menu\n6\n"
+        second = "2\n1\n/info\n/menu\n8\n"
         stdout, _, _ = run_cli_command(second)
 
         assert "Цель: уточнить детали проекта" in stdout

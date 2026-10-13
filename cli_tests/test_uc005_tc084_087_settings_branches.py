@@ -24,7 +24,7 @@ class TestUC005_TC084_087_SettingsBranches:
             "/settings\n"
             "n\n"  # Явный отказ
             "/menu\n"
-            "6\n"
+            "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -59,7 +59,7 @@ class TestUC005_TC084_087_SettingsBranches:
             "\n"  # Reasoning effort (default)
             "\n"  # Context window (default)
             "/menu\n"
-            "6\n"
+            "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

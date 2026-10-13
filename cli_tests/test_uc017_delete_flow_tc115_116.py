@@ -47,7 +47,7 @@ class TestUC017_DeleteFlow_TC115_116:
             "1\n"  # Чат 1
             "/info\n"  # Проверка счётчика сообщений
             "/menu\n"
-            "6\n"
+            "8\n"
         )
         stdout2, stderr2, rc2 = run_cli_command(restart_input)
         assert rc2 == 0, f"Restart failed: {stderr2}"
@@ -80,7 +80,7 @@ class TestUC017_DeleteFlow_TC115_116:
             "0\n"  # Некорректное действие
             "4\n"  # Назад к списку -> возврат в меню профилей
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -118,7 +118,7 @@ class TestUC017_DeleteFlow_TC115_116:
             "1\n"  # Действие: просмотреть память профиля
             "1\n"  # Профиль №1
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -147,7 +147,7 @@ class TestUC017_DeleteFlow_TC115_116:
             "4\n"  # Назад к списку -> возврат в меню профилей
             "0\n"  # Выход из подменю списка (см. _view_task_profiles_list)
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -174,7 +174,7 @@ class TestUC017_DeleteFlow_TC115_116:
             "y\n"  # Подтвердить удаление
             "2\n"  # Просмотреть список снова (подменю доступно после удаления)
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

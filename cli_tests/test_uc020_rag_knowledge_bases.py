@@ -56,7 +56,7 @@ class TestUC020_RagKnowledgeBases:
 
     def test_tc_121_create_knowledge_base(self):
         """TC-121: Создание базы знаний (UC-020 main success)."""
-        test_input = "7\n1\nTest KB\nОписание базы\n0\n6\n"
+        test_input = "7\n1\nTest KB\nОписание базы\n0\n8\n"
 
         stdout, _, _ = run_cli_command(test_input)
 
@@ -65,7 +65,7 @@ class TestUC020_RagKnowledgeBases:
 
     def test_tc_122_create_knowledge_base_empty_name(self):
         """TC-122: Пустое название базы знаний -> ошибка и повторный ввод."""
-        test_input = "7\n1\n\nTest KB2\n\n0\n6\n"
+        test_input = "7\n1\n\nTest KB2\n\n0\n8\n"
 
         stdout, _, _ = run_cli_command(test_input)
 
@@ -80,7 +80,7 @@ class TestUC020_RagKnowledgeBases:
             "1\nBeta\n\n"
             "2\n"
             "0\n"
-            "6\n"
+            "8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -98,7 +98,7 @@ class TestUC020_RagKnowledgeBases:
             f"3\n1\n{doc_file}\n"
             "4\n1\n"
             "0\n"
-            "6\n"
+            "8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input, timeout=TIMEOUT)
@@ -115,7 +115,7 @@ class TestUC020_RagKnowledgeBases:
             f"3\n1\n{doc_file}\n"
             "5\n1\n1\n"
             "0\n"
-            "6\n"
+            "8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input, timeout=TIMEOUT)
@@ -131,7 +131,7 @@ class TestUC020_RagKnowledgeBases:
             + _QUICK_CHAT
             + "/rag\n1\n1\n"
             + "/rag\n2\n1\n"
-            + "/menu\n6\n"
+            + "/menu\n8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -148,7 +148,7 @@ class TestUC020_RagKnowledgeBases:
             f"3\n1\n{doc_file}\n"
             "8\n1\nГде находится Эйфелева башня?\n"
             "0\n"
-            "6\n"
+            "8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input, timeout=TIMEOUT)
@@ -166,7 +166,7 @@ class TestUC020_RagKnowledgeBases:
             + _QUICK_CHAT
             + "/rag\n1\n1\n"
             + "Где находится Эйфелева башня?\n\n"
-            + "/menu\n6\n"
+            + "/menu\n8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input, timeout=TIMEOUT)
@@ -176,7 +176,7 @@ class TestUC020_RagKnowledgeBases:
 
     def test_tc_129_dialog_without_knowledge_base(self):
         """TC-129: Без подключённых баз знаний диалог идёт без RAG-ошибок."""
-        test_input = _QUICK_CHAT + "Обычное сообщение\n" + "/menu\n6\n"
+        test_input = _QUICK_CHAT + "Обычное сообщение\n" + "/menu\n8\n"
 
         stdout, _, _ = run_cli_command(test_input)
 
@@ -192,7 +192,7 @@ class TestUC020_RagKnowledgeBases:
             "6\n1\n1\ny\n"
             "4\n1\n"
             "0\n"
-            "6\n"
+            "8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input, timeout=TIMEOUT)
@@ -208,7 +208,7 @@ class TestUC020_RagKnowledgeBases:
             "7\n1\ny\n"
             "2\n"
             "0\n"
-            "6\n"
+            "8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -218,7 +218,7 @@ class TestUC020_RagKnowledgeBases:
 
     def test_tc_132_add_document_missing_path(self):
         """TC-132: Несуществующий путь -> понятная ошибка, без падения."""
-        test_input = "7\n1\nKB Err\n\n3\n1\n/no/such/path.txt\n0\n6\n"
+        test_input = "7\n1\nKB Err\n\n3\n1\n/no/such/path.txt\n0\n8\n"
 
         stdout, _, _ = run_cli_command(test_input)
 
@@ -233,7 +233,7 @@ class TestUC020_RagKnowledgeBases:
             f"3\n1\n{py_file}\n"
             "4\n1\n"
             "0\n"
-            "6\n"
+            "8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input, timeout=TIMEOUT)
@@ -250,7 +250,7 @@ class TestUC020_RagKnowledgeBases:
             f"3\n1\n{mixed_folder}\n"
             "4\n1\n"
             "0\n"
-            "6\n"
+            "8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input, timeout=TIMEOUT)
@@ -269,7 +269,7 @@ class TestUC020_RagKnowledgeBases:
             + _QUICK_CHAT
             + "/rag\n1\n1\n"
             + "Где находится Эйфелева башня?\n\n"
-            + "/menu\n6\n"
+            + "/menu\n8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input, timeout=TIMEOUT)
@@ -289,7 +289,7 @@ class TestUC020_RagKnowledgeBases:
             + _QUICK_CHAT
             + "/rag\n1\n1\n"
             + "Где находится Эйфелева башня?\n\n"
-            + "/menu\n6\n"
+            + "/menu\n8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input, timeout=TIMEOUT)

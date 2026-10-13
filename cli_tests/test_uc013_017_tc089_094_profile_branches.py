@@ -37,7 +37,7 @@ class TestUC013_017_TC089_094_ProfileBranches:
             "\n"  # Предпочтения
             "\n"  # Инварианты: пустая строка сразу
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -68,7 +68,7 @@ class TestUC013_017_TC089_094_ProfileBranches:
             + "3\n"  # Назад из подменю инвариантов
             + "4\n"  # Назад к списку
             + "3\n"  # Назад в главное меню
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -104,7 +104,7 @@ class TestUC013_017_TC089_094_ProfileBranches:
             + "abc\n"  # Шаг 4: нечисловой индекс
             + "1\n"  # Шаг 5: корректный индекс
             + "3\n"  # Назад в главное меню
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -142,7 +142,7 @@ class TestUC013_017_TC089_094_ProfileBranches:
             + "n\n"  # Отменить удаление (проверяем только промпт подтверждения)
             + "4\n"  # Назад к списку
             + "3\n"  # Назад в главное меню
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -177,7 +177,7 @@ class TestUC013_017_TC089_094_ProfileBranches:
             + "abc\n"  # Нечисловой ввод
             + "1\n"  # Корректный индекс
             + "3\n"  # Назад в главное меню
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

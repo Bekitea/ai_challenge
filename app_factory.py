@@ -29,6 +29,7 @@ from llm_providers import (
 from rag_service import RagModelService, RagService
 from reranker_providers import HttpRerankerProvider, MockRerankerProvider
 from storage.agent_repositories import PersistentAgentRepository
+from storage.api_key_repository import DatabaseApiKeyRepository
 from storage.db_connection import DatabaseConnection
 from storage.global_memory_repository import FileGlobalMemoryRepository
 from storage.orm_models import Base
@@ -49,10 +50,12 @@ from use_cases import (
     ChangePhaseUseCase,
     ChangeSettingsUseCase,
     ConnectMcpUseCase,
+    CreateApiKeyUseCase,
     CreateBranchUseCase,
     CreateChatUseCase,
     CreateKnowledgeBaseUseCase,
     CreateTaskProfileUseCase,
+    DeleteApiKeyUseCase,
     DeleteDocumentUseCase,
     DeleteKnowledgeBaseUseCase,
     DeleteTaskProfileUseCase,
@@ -60,6 +63,7 @@ from use_cases import (
     DisconnectMcpUseCase,
     GetTaskProfileMemoryUseCase,
     ListAgentKnowledgeBasesUseCase,
+    ListApiKeysUseCase,
     ListAvailableMcpUseCase,
     ListConnectedMcpUseCase,
     ListDocumentChunksUseCase,
@@ -83,6 +87,7 @@ from use_cases import (
     ShowHistoryUseCase,
     ShowSummaryUseCase,
     UseCasesBundle,
+    VerifyApiKeyUseCase,
     ViewGlobalMemoryUseCase,
     ViewSettingsUseCase,
 )
@@ -211,6 +216,9 @@ def initialize_application() -> UseCasesBundle:
         task_memory_repository=task_memory_repository,
     )
 
+    # API-ключи доступа к REST API
+    api_key_repository = DatabaseApiKeyRepository(db_connection.get_session)
+
     # Create and return all use cases
     create_chat = CreateChatUseCase(repository, task_profile_repository)
     send_message = SendMessageUseCase(repository)
@@ -276,4 +284,8 @@ def initialize_application() -> UseCasesBundle:
         ),
         retrieve_rag_context=RetrieveRagContextUseCase(rag_service),
         search_knowledge_base=SearchKnowledgeBaseUseCase(rag_service),
+        create_api_key=CreateApiKeyUseCase(api_key_repository),
+        list_api_keys=ListApiKeysUseCase(api_key_repository),
+        delete_api_key=DeleteApiKeyUseCase(api_key_repository),
+        verify_api_key=VerifyApiKeyUseCase(api_key_repository),
     )

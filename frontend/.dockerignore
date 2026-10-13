@@ -1,0 +1,4 @@
+# Контекст сборки фронтенда.
+node_modules
+dist
+.vite

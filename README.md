@@ -75,6 +75,20 @@ Yandex не обязательны; данные в `./local-data/`) и разд
 одном порту. Откройте <http://127.0.0.1:8080>, создайте чат, выберите локальную
 модель и напишите сообщение.
 
+### Авторизация по API-ключу
+
+Все эндпоинты `/api/*`, кроме `/api/health`, требуют действующий API-ключ:
+
+```
+Authorization: Bearer <ключ>
+```
+
+Ключи выпускаются и отзываются только через CLI: главное меню → `6. API-ключи`
+(см. [UC-025](docs/uc/uc-025-manage-api-keys.md)). Секрет показывается **один
+раз** при создании; в БД хранится только его SHA-256-хеш, прочитать ключ
+повторно нельзя. Веб-UI при первом открытии спрашивает ключ и хранит его в
+`localStorage` браузера. Без ключа все защищённые запросы получают HTTP 401.
+
 Переопределяется переменными окружения: `APPLICATION_MODE` (`LOCAL`/`PROD`/`TEST`),
 `API_HOST` (по умолчанию `127.0.0.1`), `API_PORT` (по умолчанию `8080`). Для
 `PROD`, например:
@@ -97,8 +111,79 @@ APPLICATION_MODE=PROD API_HOST=0.0.0.0 python main_api.py
 ### Тесты API
 
 ```bash
-poetry run pytest api_tests/test_api_smoke.py -v
+poetry run pytest api_tests/test_api_smoke.py api_tests/test_api_auth.py -v
 ```
+
+## Запуск всего проекта через Docker Compose
+
+Один `docker compose up` поднимает все сервисы проекта: фронтенд, REST API,
+реранкер, Redis и Celery (worker + beat).
+
+### Что поднимается и куда стучаться
+
+| Сервис                | Адрес на хосте                    | Назначение                                             |
+| --------------------- | --------------------------------- | ------------------------------------------------------ |
+| Фронтенд (nginx)      | <http://localhost:3000>           | Web UI; проксирует `/api` на `web`                     |
+| REST API              | <http://localhost:8080/api>       | API (нужен `Authorization: Bearer <ключ>`)             |
+| Проверка API          | <http://localhost:8080/api/health>| Публичный health-check                                 |
+| Реранкер              | <http://localhost:18080/health>   | HTTP-сервис `bge-reranker-v2-m3` (TEI-совместимый)     |
+| Redis / Ollama        | внутри сети                       | Redis для Celery; Ollama — на хосте, порт не публикуем |
+
+**Открывать нужно фронтенд — <http://localhost:3000>.** Запросы к API он
+проксирует сам на `web:8080`, поэтому в браузере всё на одном origin и
+`Authorization`-заголовок проходит без CORS.
+
+### Предусловия
+
+- Docker Desktop (Compose v2).
+- Ollama, запущенная **на хосте** (порт 11434) — контейнера Ollama в compose нет,
+  приложение обращается к хосту через `host.docker.internal:11434` и использует
+  уже скачанные модели, ничего не дублируется.
+- Файл `.env` в корне с ключами Yandex Cloud (режим `PROD` их требует):
+  `YANDEX_CLOUD_API_KEY`, `YANDEX_CLOUD_FOLDER`. Compose читает его как
+  `env_file` (если файла нет — сервис `web` упадёт при старте с понятной ошибкой).
+
+### Запуск
+
+```bash
+docker compose up --build
+```
+
+Остановка (данные сохраняются в `./data`):
+
+```bash
+docker compose down
+```
+
+> Первый старт `reranker` скачивает модель (~2.3 ГБ) в volume `reranker_models`;
+> это может занять несколько минут. `web` при этом уже доступен.
+>
+> Данные (`./data/agents.db`, файловое хранилище, память) монтируются с хоста,
+> поэтому CLI, запущенный на хосте, и контейнеры видят одну и ту же БД.
+
+### Первый запуск: создать API-ключ
+
+API закрыт по ключу, поэтому до первого входа в веб-UI нужно выпустить ключ
+через CLI (главное меню → `6. API-ключи`). Проще всего — прямо в контейнере:
+
+```bash
+docker compose exec -it web python main_cli.py
+```
+
+Скопируйте показанный один раз ключ (`aic_...`), откройте
+<http://localhost:3000> и вставьте его в поле «Доступ к API». Затем попробуйте:
+
+```bash
+curl -i http://localhost:8080/api/models                       # 401 без ключа
+curl -H "Authorization: Bearer aic_..." http://localhost:8080/api/models
+```
+
+### Отдельные части
+
+- Только реранкер (как раньше, без остальных сервисов):
+  `cd reranker_service && docker compose up --build`.
+- Compose для контейнера разработки opencode переименован в
+  `docker-compose.opencode.yml`.
 
 ## Периодические задачи (Celery)
 

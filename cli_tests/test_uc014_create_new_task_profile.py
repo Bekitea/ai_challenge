@@ -36,7 +36,7 @@ class TestUC014_CreateNewTaskProfile:
             "\n"  # Предпочтения (пропуск)
             "\n"  # Инварианты: пустая строка завершает ввод
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -66,7 +66,7 @@ class TestUC014_CreateNewTaskProfile:
             "\n"  # Предпочтения (пропуск)
             "\n"  # Инварианты: пустая строка завершает ввод
             "3\n"  # Назад
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -97,7 +97,7 @@ class TestUC014_CreateNewTaskProfile:
             "\n"  # Предпочтения (пропуск)
             "\n"  # Инварианты: пустая строка завершает ввод
             "3\n"  # Назад
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -127,7 +127,7 @@ class TestUC014_CreateNewTaskProfile:
             "\n"  # Предпочтения (пропуск)
             "\n"  # Инварианты: пустая строка завершает ввод
             "3\n"  # Назад
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -159,7 +159,7 @@ class TestUC014_CreateNewTaskProfile:
             "1\n"  # Действие: просмотреть память профиля
             "1\n"  # Профиль №1
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -193,7 +193,7 @@ class TestUC014_CreateNewTaskProfile:
             "1\n"  # Действие: просмотреть память профиля
             "1\n"  # Профиль №1
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

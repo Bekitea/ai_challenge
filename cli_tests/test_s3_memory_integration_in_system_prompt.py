@@ -58,7 +58,7 @@ class TestS3_MemoryIntegrationInSystemPrompt:
             "/info\n"  # Проверка привязки профиля и памяти в инфо чата
             "/menu\n"  # Выход в меню
             "4\n"  # Просмотреть глобальную память (шаг 1: факты есть)
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -109,7 +109,7 @@ class TestS3_MemoryIntegrationInSystemPrompt:
             "1\n"  # Select profile #1
             "Test message\n"  # Message
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

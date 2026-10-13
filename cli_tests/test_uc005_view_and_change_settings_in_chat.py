@@ -69,7 +69,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "\n"  # Reasoning effort (пусто -> default 1)
             "\n"  # Context window (пусто -> 200k)
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -104,7 +104,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
             "\n"  # Reasoning effort (default)
             "\n"  # Context window (default)
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)

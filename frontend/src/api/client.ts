@@ -73,11 +73,41 @@ export interface ActionResult {
 
 const BASE = "/api";
 
+const API_KEY_STORAGE = "ai_chat_api_key";
+
+export class UnauthorizedError extends Error {}
+
+export function getApiKey(): string | null {
+  return localStorage.getItem(API_KEY_STORAGE);
+}
+
+export function setApiKey(key: string): void {
+  localStorage.setItem(API_KEY_STORAGE, key);
+}
+
+export function clearApiKey(): void {
+  localStorage.removeItem(API_KEY_STORAGE);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...((init?.headers as Record<string, string> | undefined) ?? {}),
+  };
+  const apiKey = getApiKey();
+  if (apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+
   const response = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers,
   });
+
+  if (response.status === 401) {
+    throw new UnauthorizedError("Требуется действующий API-ключ.");
+  }
+
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
     try {

@@ -18,7 +18,7 @@ class TestUC001_TC063_120_CreationExtras:
             _manual_chat("NoProfilesChat")
             + "/info\n"  # Профиль не привязан
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -51,7 +51,7 @@ class TestUC001_TC063_120_CreationExtras:
             + "n\n"
             + "/info\n"
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

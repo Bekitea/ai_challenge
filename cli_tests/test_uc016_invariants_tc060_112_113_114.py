@@ -35,7 +35,7 @@ class TestUC016_Invariants_TC060_112_113_114:
             "3\n"  # Назад из подменю инвариантов
             "4\n"  # Назад к списку -> возврат в меню профилей
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -61,7 +61,7 @@ class TestUC016_Invariants_TC060_112_113_114:
             "3\n"  # Назад из подменю инвариантов
             "4\n"  # Назад к списку
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -89,7 +89,7 @@ class TestUC016_Invariants_TC060_112_113_114:
             "3\n"  # Назад из подменю инвариантов
             "4\n"  # Назад к списку
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -139,7 +139,7 @@ class TestUC016_Invariants_TC060_112_113_114:
             "3\n"  # Назад из подменю инвариантов
             "4\n"  # Назад к списку
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

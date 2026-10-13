@@ -37,7 +37,7 @@ class TestEdgeCases_Robustness:
             "1\n"  # Новый чат (быстрое создание)
             "\n"  # По умолчанию
             + long_message
-            + "\n/exit\n6\n"  # Выход из чата и приложения
+            + "\n/exit\n8\n"  # Выход из чата и приложения
         )
 
         run_cli_command(test_input)

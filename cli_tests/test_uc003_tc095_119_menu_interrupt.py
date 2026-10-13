@@ -10,7 +10,7 @@ class TestUC003_TC095_119_MenuInterrupt:
         """
         TC-095: Return To Active Chat - Ctrl+C At Menu Prompt (UC-003 A2)
 
-        EOF at 'Ваш выбор (1-7):' (emulated Ctrl+C) -> 'До свидания!', clean
+        EOF at 'Ваш выбор (1-8):' (emulated Ctrl+C) -> 'До свидания!', clean
         termination, no traceback.
         """
         test_input = (
@@ -51,7 +51,7 @@ class TestUC003_TC095_119_MenuInterrupt:
         assert "Traceback" not in stderr
 
         # Шаг 3: рестарт — чат сохранён и доступен через опцию 2
-        restart_input = "2\n1\n/info\n/menu\n6\n"
+        restart_input = "2\n1\n/info\n/menu\n8\n"
         stdout2, stderr2, rc2 = run_cli_command(restart_input)
         assert rc2 == 0, f"Restart failed: {stderr2}"
         assert "[OK] Выбран чат: Чат 1" in stdout2

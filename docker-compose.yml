@@ -1,54 +1,132 @@
+# Единый compose для всего проекта: фронтенд, REST API, реранкер, Redis и Celery.
+#
+# Запуск:  docker compose up --build
+# Доступ:  фронтенд http://localhost:3000, API http://localhost:8080/api
+#
+# Ollama-контейнера здесь нет: приложение обращается к Ollama, запущенной на
+# хосте, через host.docker.internal:11434 (см. config.py). Это использует уже
+# скачанные модели без дублирования.
+#
+# Режим PROD и данные в ./data (общий agents.db для CLI на хосте и контейнера).
+# Требуются YANDEX_CLOUD_API_KEY и YANDEX_CLOUD_FOLDER (берите из .env).
+
+name: ai-chat
+
+# --- Общие настройки приложения (web / worker / beat) ---
+x-app-build: &app-build
+  build: .
+  image: ai-chat-web:latest
+
+x-app-env: &app-env
+  APPLICATION_MODE: PROD
+  OLLAMA_BASE_URL: http://host.docker.internal:11434
+  RERANKER_BASE_URL: http://reranker:18080
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+
+x-app-common: &app-common
+  <<: *app-build
+  env_file:
+    - path: .env
+      required: false
+  environment: *app-env
+  volumes:
+    - ./data:/app/data
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  restart: unless-stopped
+
 services:
-  opencode:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM ghcr.io/anomalyco/opencode:latest AS base
-        USER root
-        
-        RUN apk update && \
-            apk add --no-cache \
-            python3 \
-            python3-dev \
-            py3-pip \
-            build-base \
-            libffi-dev \
-            openssl-dev
-            
-        RUN pip install --no-cache-dir --break-system-packages poetry
-        
-        RUN poetry config virtualenvs.in-project false && \
-            poetry config virtualenvs.path /root/.cache/pypoetry/virtualenvs
-        
-        WORKDIR /workspace
-
-        RUN echo '#!/bin/sh' > /entrypoint.sh && \
-            echo 'poetry install --no-interaction --no-ansi' >> /entrypoint.sh && \
-            echo 'exec opencode' >> /entrypoint.sh && \
-            chmod +x /entrypoint.sh
-
-    container_name: opencode_agent
-    user: root
-    
-    entrypoint: ["/entrypoint.sh"]
-    
-    volumes:
-      - .:/workspace
-      - ${USERPROFILE:-~}/.gitconfig:/root/.gitconfig:ro
-      - poetry_cache:/root/.cache
-      
-    working_dir: /workspace
-    
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-      
+  web:
+    <<: *app-common
+    container_name: ai_chat_web
     environment:
-      - OPENCODE_API_KEY
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      
-    stdin_open: true
-    tty: true
+      <<: *app-env
+      API_HOST: 0.0.0.0
+      API_PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      reranker:
+        condition: service_started
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    build: ./frontend
+    image: ai-chat-frontend:latest
+    container_name: ai_chat_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      web:
+        condition: service_started
+    restart: unless-stopped
+
+  reranker:
+    build:
+      context: ./reranker_service
+      args:
+        # Пусто = модель скачается при первом старте. Укажите id модели,
+        # чтобы запечь её в образ для офлайн-работы:
+        # PREFETCH_MODEL: BAAI/bge-reranker-v2-m3
+        PREFETCH_MODEL: ""
+    image: ai-chat-reranker:latest
+    container_name: ai_chat_reranker
+    environment:
+      - RERANKER_MODEL_ID=BAAI/bge-reranker-v2-m3
+      - RERANKER_DEVICE=cpu
+      - PORT=18080
+    ports:
+      # Порт 18080, чтобы не конфликтовать с 8080. На Windows обращайтесь по
+      # 127.0.0.1, а не localhost (localhost -> ::1).
+      - "18080:18080"
+    volumes:
+      - reranker_models:/models
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:18080/health', timeout=5).status == 200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Первый старт включает скачивание модели (~2.3 ГБ).
+      start_period: 600s
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: ai_chat_redis
+    restart: unless-stopped
+
+  worker:
+    <<: *app-common
+    container_name: ai_chat_worker
+    command:
+      ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--pool=solo"]
+    depends_on:
+      redis:
+        condition: service_started
+      reranker:
+        condition: service_started
+
+  beat:
+    <<: *app-common
+    container_name: ai_chat_beat
+    command: ["celery", "-A", "celery_app", "beat", "--loglevel=info"]
+    depends_on:
+      redis:
+        condition: service_started
+      worker:
+        condition: service_started
 
 volumes:
-  poetry_cache:
+  reranker_models:

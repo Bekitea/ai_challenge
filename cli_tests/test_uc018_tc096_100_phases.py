@@ -23,7 +23,7 @@ class TestUC018_TC096_100_Phases:
             + "/validate\n"
             + "message in validate phase\n"
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -53,7 +53,7 @@ class TestUC018_TC096_100_Phases:
             + "/execute\n"
             + "/report\n"
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -94,7 +94,7 @@ class TestUC018_TC096_100_Phases:
             + "/execute\n"
             + "/plan\n"
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -114,7 +114,7 @@ class TestUC018_TC096_100_Phases:
         2. /Validate from EXECUTE -> transition succeeds.
         3. Headers reflect new phases.
         """
-        test_input = _QUICK_CHAT + "/EXECUTE\n" + "/Validate\n" + "/menu\n" + "6\n"
+        test_input = _QUICK_CHAT + "/EXECUTE\n" + "/Validate\n" + "/menu\n" + "8\n"
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
@@ -141,7 +141,7 @@ class TestUC018_TC096_100_Phases:
             + "5\n"  # Возврат в чат
             + "/info\n"
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

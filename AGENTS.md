@@ -11,6 +11,7 @@ AI Chat CLI — консольное приложение для взаимод�
 - `poetry install` — mandatory first step. Poetry's env is NOT in-project (configured `virtualenvs.in-project false`); the `.venv/` directory in the repo root is a stale artifact, ignore it. Run everything via `poetry run ...`.
 - Run app: `poetry run python main_cli.py`
 - Run web (REST API + built React) on :8080: `python main_api.py` — defaults to `APPLICATION_MODE=LOCAL` (override via env), serves both `/api/*` and `frontend/dist`. Single worker only (MCP state is in-process). Frontend build: `cd frontend && npm install && npm run build`.
+- Run everything via Docker Compose: `docker compose up --build` — services `frontend` (nginx :3000, proxies `/api` → `web:8080`), `web` (:8080), `reranker` (:18080), `redis`, `worker`, `beat`. Mode `PROD`, data `./data`, Ollama — on the host (`host.docker.internal:11434`). The opencode dev container compose was renamed to `docker-compose.opencode.yml`. The web image is `python:3.14-alpine` (musl, for the vendored `vec0.so`) and deps are installed with Poetry (`requirements.txt` has `pywin32` and won't install on Linux).
 - Lint: `poetry run ruff check --fix` (only `target-version = "py313"` configured).
 - Tests (all are e2e; there is no unit test suite):
   - **NEVER run the full suite (`poetry run pytest cli_tests/`).** Its performance is unacceptable and the issue is unresolved. Always run only the specific test(s) relevant to the change.
@@ -49,6 +50,7 @@ New feature flow: add use case file in `docs/uc/` and register it in the UC inde
 
 - Entry: `main_api.py` (bootstrap: `initialize_application()`) → `api/app.py::build_app(use_cases)`. Routers (`api/routers/*`) are DTO-only presentation; Pydantic schemas in `api/schemas.py`; domain-exception → HTTP mapping in `api/errors.py`; dependency `UseCasesDep` in `api/deps.py`.
 - Serves REST under `/api/*` **and** the built React app from `frontend/dist` on one port (:8080). Single worker only (MCP state in-process). No streaming; document upload is `multipart` → temp file → existing `add_document` use case (no duplicated logic).
+- **Auth**: all `/api/*` routes require `Authorization: Bearer <key>` except `/api/health` (enforced in `api/app.py` via `Depends(require_api_key)` from `api/security.py`). Keys are issued/revoked only from the CLI (main menu → `6. API-ключи`, UC-025); only a SHA-256 hash is stored. Tests create a key in the `client` fixture (see `api_tests/conftest.py`).
 - Tests: `api_tests/` (in-process `TestClient`, `APPLICATION_MODE=TEST`).
 
 ## sqlite-vec (инфраструктура RAG)

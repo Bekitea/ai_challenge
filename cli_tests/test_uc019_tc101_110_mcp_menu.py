@@ -45,7 +45,7 @@ class TestUC019_TC101_110_McpMenu:
         2. Empty state line displayed.
         3. Prompt 'Подключить новые MCP? (y/n):' shown.
         """
-        test_input = _QUICK_CHAT + "/mcp\nn\n/menu\n6\n"
+        test_input = _QUICK_CHAT + "/mcp\nn\n/menu\n8\n"
 
         stdout, stderr, returncode = run_cli_command(test_input)
 
@@ -71,7 +71,7 @@ class TestUC019_TC101_110_McpMenu:
             + "regular message\n"  # Шаг 3: цикл чата жив
             + "\n"
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -100,7 +100,7 @@ class TestUC019_TC101_110_McpMenu:
             + "/mcp\n"  # Повторный просмотр — сервер в списке [OK]
             + "n\n"
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input, timeout=90)
@@ -133,7 +133,7 @@ class TestUC019_TC101_110_McpMenu:
             + "y\n"
             + "time\n"  # Машинное имя сервера вместо номера
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input, timeout=90)
@@ -159,7 +159,7 @@ class TestUC019_TC101_110_McpMenu:
             + "/mcp\ny\n1\n"  # openalex (оставшийся)
             + "/mcp\ny\n"  # Всё подключено -> INFO сообщение
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input, timeout=120)
@@ -189,7 +189,7 @@ class TestUC019_TC101_110_McpMenu:
             + "/mcp\n"
             + "n\n"  # Проверка: подключённых серверов по-прежнему нет
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -216,7 +216,7 @@ class TestUC019_TC101_110_McpMenu:
             + "next message\n"  # Цикл чата жив
             + "\n"
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -245,7 +245,7 @@ class TestUC019_TC101_110_McpMenu:
             + "/mcp\n"  # Шаг 3: список подключённых не изменился
             + "n\n"
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -278,7 +278,7 @@ class TestUC019_TC101_110_McpMenu:
             + "/mcp\n"
             + "n\n"
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input, timeout=90)

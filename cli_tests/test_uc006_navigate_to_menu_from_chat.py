@@ -73,7 +73,7 @@ class TestUC006_NavigateToMenuFromChat:
             "/menu\n"  # Return to menu
             "5\n"  # Вернуться в активный чат (A)
             "/menu\n"
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

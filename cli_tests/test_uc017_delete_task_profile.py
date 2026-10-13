@@ -38,7 +38,7 @@ class TestUC017_DeleteTaskProfile:
             "2\n"  # Снова открыть список профилей
             "4\n"  # Действие: назад к списку
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -83,7 +83,7 @@ class TestUC017_DeleteTaskProfile:
             "3\n"  # Действие: удалить профиль
             "1\n"  # Профиль №1 для удаления
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -117,7 +117,7 @@ class TestUC017_DeleteTaskProfile:
             "1\n"  # Выбрать профиль №1 для удаления
             "n\n"  # Подтверждение удаления: нет (отмена)
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

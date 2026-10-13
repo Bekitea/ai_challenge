@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   api,
+  clearApiKey,
+  getApiKey,
+  UnauthorizedError,
   type AvailableModel,
   type Chat,
   type ChatPreview,
   type HistoryMessage,
   type Settings,
 } from "./api/client";
+import ApiKeyGate from "./components/ApiKeyGate";
 import ChatList from "./components/ChatList";
 import ChatView from "./components/ChatView";
 import NewChatDialog from "./components/NewChatDialog";
@@ -22,18 +26,32 @@ export default function App() {
   const [showNew, setShowNew] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasKey, setHasKey] = useState<boolean>(() => getApiKey() !== null);
+
+  const fail = useCallback((err: unknown) => {
+    if (err instanceof UnauthorizedError) {
+      clearApiKey();
+      setHasKey(false);
+      setError(null);
+      return;
+    }
+    setError((err as Error).message);
+  }, []);
 
   const loadChats = useCallback(async () => {
     setChats(await api.listChats());
   }, []);
 
   useEffect(() => {
+    if (!hasKey) {
+      return;
+    }
     api
       .listModels()
       .then(setModels)
-      .catch((err: Error) => setError(err.message));
-    loadChats().catch((err: Error) => setError(err.message));
-  }, [loadChats]);
+      .catch(fail);
+    loadChats().catch(fail);
+  }, [hasKey, fail, loadChats]);
 
   const selectChat = useCallback(async (id: number) => {
     try {
@@ -47,9 +65,9 @@ export default function App() {
       setHistory(hist);
       setSettings(cfg);
     } catch (err) {
-      setError((err as Error).message);
+      fail(err);
     }
-  }, []);
+  }, [fail]);
 
   const handleCreate = async (
     name: string,
@@ -68,7 +86,7 @@ export default function App() {
       await loadChats();
       await selectChat(chat.agent_id);
     } catch (err) {
-      setError((err as Error).message);
+      fail(err);
     } finally {
       setBusy(false);
     }
@@ -102,7 +120,7 @@ export default function App() {
       ]);
       await loadChats();
     } catch (err) {
-      setError((err as Error).message);
+      fail(err);
     } finally {
       setBusy(false);
     }
@@ -118,7 +136,7 @@ export default function App() {
       const saved = await api.updateSettings(current.agent_id, next);
       setSettings(saved);
     } catch (err) {
-      setError((err as Error).message);
+      fail(err);
     } finally {
       setBusy(false);
     }
@@ -135,7 +153,7 @@ export default function App() {
         prev ? { ...prev, reranker_enabled: result.enabled } : prev,
       );
     } catch (err) {
-      setError((err as Error).message);
+      fail(err);
     }
   };
 
@@ -150,9 +168,13 @@ export default function App() {
         prev ? { ...prev, current_phase: result.current_phase } : prev,
       );
     } catch (err) {
-      setError((err as Error).message);
+      fail(err);
     }
   };
+
+  if (!hasKey) {
+    return <ApiKeyGate onSaved={() => setHasKey(true)} />;
+  }
 
   return (
     <div className="app">

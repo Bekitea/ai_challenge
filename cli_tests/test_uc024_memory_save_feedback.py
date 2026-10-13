@@ -13,7 +13,7 @@ class TestUC024_MemorySaveFeedback:
 
     def test_tc_146_memory_save_feedback_on_chat_exit(self):
         """TC-146: при выходе из чата видно начало, конец и время сохранения."""
-        test_input = _QUICK_CHAT + "Привет\n" + "/menu\n6\n"
+        test_input = _QUICK_CHAT + "Привет\n" + "/menu\n8\n"
 
         stdout, _, _ = run_cli_command(test_input)
 
@@ -33,12 +33,12 @@ class TestUC024_MemorySaveFeedback:
             + _manual_chat("Chat B")
             + "Привет\n\n"
             + "/stop\n"
-            + "6\n"
+            + "8\n"
         )
         run_cli_command(first_run)
 
         # Второй запуск: save_unsaved_memories подхватывает несохранённые чаты.
-        stdout, _, _ = run_cli_command("6\n")
+        stdout, _, _ = run_cli_command("8\n")
 
         assert "[INFO] Проверка несохранённой памяти..." in stdout
         assert "[INFO] Сохранение памяти чата 'Chat A'..." in stdout
@@ -49,10 +49,10 @@ class TestUC024_MemorySaveFeedback:
     def test_tc_148_empty_chat_is_not_unsaved_memory(self):
         """TC-148: чат без сообщений не считается несохранённой памятью."""
         # Создаём чат и сразу выходим из цикла чата через /stop, сообщений нет.
-        first_run = _QUICK_CHAT + "/stop\n6\n"
+        first_run = _QUICK_CHAT + "/stop\n8\n"
         run_cli_command(first_run)
 
-        stdout, _, _ = run_cli_command("6\n")
+        stdout, _, _ = run_cli_command("8\n")
 
         assert "[INFO] Проверка несохранённой памяти..." in stdout
         assert "[INFO] Несохранённой памяти нет." in stdout

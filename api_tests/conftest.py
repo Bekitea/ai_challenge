@@ -32,12 +32,28 @@ def clean_test_environment():
 
 
 @pytest.fixture()
-def client():
-    """Возвращает TestClient поверх приложения в тестовом режиме."""
+def app():
+    """Собирает приложение и возвращает пару (app, use_cases)."""
     from api.app import build_app
     from app_factory import initialize_application
 
     use_cases = initialize_application()
-    app = build_app(use_cases)
-    with TestClient(app) as test_client:
+    return build_app(use_cases), use_cases
+
+
+@pytest.fixture()
+def client(app):
+    """TestClient с действующим API-ключом в заголовке по умолчанию."""
+    application, use_cases = app
+    with TestClient(application) as test_client:
+        created = use_cases.create_api_key.execute("pytest")
+        test_client.headers["Authorization"] = f"Bearer {created.api_key}"
+        yield test_client
+
+
+@pytest.fixture()
+def anon_client(app):
+    """TestClient без API-ключа (для проверок авторизации)."""
+    application, _ = app
+    with TestClient(application) as test_client:
         yield test_client

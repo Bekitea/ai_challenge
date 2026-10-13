@@ -25,7 +25,7 @@ class TestUC001_Alternatives_TC070_075:
             "1\n"  # Strategy
             "Hello\n"  # Сообщение в чат (генерация ответа модели)
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -58,7 +58,7 @@ class TestUC001_Alternatives_TC070_075:
             "/settings\n"  # Просмотр настроек
             "n\n"  # Не изменять
             "/menu\n"
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -87,7 +87,7 @@ class TestUC001_Alternatives_TC070_075:
             "\n" + "\n" + "\n"  # Max Tokens / Reasoning / Context
             "1\n"  # Strategy
             "/menu\n"
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -114,7 +114,7 @@ class TestUC001_Alternatives_TC070_075:
             "\n"  # Context window
             "1\n"  # Strategy
             "/menu\n"
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -139,7 +139,7 @@ class TestUC001_Alternatives_TC070_075:
             "/settings\n"  # Просмотр настроек
             "n\n"  # Не изменять
             "/menu\n"
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -175,7 +175,7 @@ class TestUC001_Alternatives_TC070_075:
             "0\n"  # Zero context -> fallback 200k
             "1\n"  # Strategy
             "/menu\n"
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -201,7 +201,7 @@ class TestUC001_Alternatives_TC070_075:
             "1\n"  # Корректный выбор DefaultStrategy
             "/info\n"  # Проверка стратегии созданного чата
             "/menu\n"
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

@@ -26,7 +26,7 @@ class TestUC012_ViewGlobalMemoryFromMenu:
         # Main Menu has option 4 for Global Memory, accessible without active chat
         test_input = (
             "4\n"  # Select Global Memory
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -48,7 +48,7 @@ class TestUC012_ViewGlobalMemoryFromMenu:
         """
         test_input = (
             "4\n"  # View global memory (should be empty on fresh start)
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -82,7 +82,7 @@ class TestUC012_ViewGlobalMemoryFromMenu:
             "Расскажи о себе\n"  # Send message to trigger memory extraction
             "/menu\n"  # Return to main menu
             "4\n"  # View global memory (should have facts from mock)
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

@@ -29,7 +29,7 @@ class TestUC001_TC004_008_CreationValidation:
             + "1\n"  # DefaultStrategy
             + "0\n"  # Профиль не привязывать
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -108,7 +108,7 @@ class TestUC001_TC004_008_CreationValidation:
             + "/settings\n"  # Проверить выбранную модель
             + "n\n"
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -152,7 +152,7 @@ class TestUC001_TC004_008_CreationValidation:
             # Профилей нет => блок привязки профиля пропускается без ввода.
             + "/info\n"  # Проверка стратегии и параметров
             + "/menu\n"
-            + "6\n"
+            + "8\n"
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

@@ -42,7 +42,7 @@ class TestUC001_ChatCreationWithTaskProfile:
             "1\n"  # Select profile 1 (Chat Profile)
             "/info\n"  # Проверка привязки профиля
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -73,7 +73,7 @@ class TestUC001_ChatCreationWithTaskProfile:
             # Профилей нет -> шаг привязки пропускается автоматически (TC-063)
             "/info\n"  # Проверка отсутствия профиля
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -112,7 +112,7 @@ class TestUC001_ChatCreationWithTaskProfile:
             "1\n"  # Strategy
             "99\n"  # Некорректный номер профиля (вне диапазона)
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

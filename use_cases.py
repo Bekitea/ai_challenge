@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import secrets
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -47,6 +49,7 @@ from rag_models import (
 )
 from rag_service import RagModelService, RagService
 from storage.agent_repositories import AgentRepository
+from storage.api_key_repository import DatabaseApiKeyRepository
 from storage.rag_repositories import (
     AgentKnowledgeBaseRepository,
     ChunkIngest,
@@ -105,6 +108,10 @@ class UseCasesBundle:
     list_agent_knowledge_bases: ListAgentKnowledgeBasesUseCase
     retrieve_rag_context: RetrieveRagContextUseCase
     search_knowledge_base: SearchKnowledgeBaseUseCase
+    create_api_key: CreateApiKeyUseCase
+    list_api_keys: ListApiKeysUseCase
+    delete_api_key: DeleteApiKeyUseCase
+    verify_api_key: VerifyApiKeyUseCase
 
 
 # ---------------------------------------------------------------------------
@@ -1648,3 +1655,121 @@ class SearchKnowledgeBaseUseCase:
         return self._rag_service.search_knowledge_base(
             knowledge_base_id, query_text, top_k
         )
+
+
+# ---------------------------------------------------------------------------
+# API-ключи доступа к REST API.
+# ---------------------------------------------------------------------------
+
+API_KEY_PREFIX = "aic_"
+
+
+def _hash_api_key(api_key: str) -> str:
+    """Возвращает SHA-256-хеш секрета API-ключа в hex-виде."""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+
+@dataclass
+class ApiKeyCreatedDTO:
+    """Результат создания API-ключа.
+
+    ``api_key`` содержит исходный секрет и возвращается вызывающему коду
+    ровно один раз — при создании; сохранить его нужно сразу.
+    """
+
+    id: int
+    name: str
+    api_key: str
+    created_at: datetime
+
+
+@dataclass
+class ApiKeyDTO:
+    """Метаданные API-ключа без секрета."""
+
+    id: int
+    name: str
+    prefix: str
+    created_at: datetime
+    last_used_at: datetime | None
+
+
+@dataclass
+class DeleteApiKeyResultDTO:
+    """Результат удаления API-ключа."""
+
+    deleted: bool
+    name: str | None
+
+
+class CreateApiKeyUseCase:
+    """Use case создания нового API-ключа."""
+
+    def __init__(self, api_key_repository: DatabaseApiKeyRepository):
+        self._api_key_repository = api_key_repository
+
+    def execute(self, name: str) -> ApiKeyCreatedDTO:
+        clean_name = name.strip()
+        if not clean_name:
+            raise ValueError("Название API-ключа не может быть пустым.")
+
+        api_key = API_KEY_PREFIX + secrets.token_urlsafe(32)
+        record = self._api_key_repository.create(
+            name=clean_name,
+            key_hash=_hash_api_key(api_key),
+            prefix=api_key[: len(API_KEY_PREFIX) + 8],
+        )
+        return ApiKeyCreatedDTO(
+            id=record.id,
+            name=record.name,
+            api_key=api_key,
+            created_at=record.created_at,
+        )
+
+
+class ListApiKeysUseCase:
+    """Use case получения списка API-ключей (без секретов)."""
+
+    def __init__(self, api_key_repository: DatabaseApiKeyRepository):
+        self._api_key_repository = api_key_repository
+
+    def execute(self) -> list[ApiKeyDTO]:
+        return [
+            ApiKeyDTO(
+                id=record.id,
+                name=record.name,
+                prefix=record.prefix,
+                created_at=record.created_at,
+                last_used_at=record.last_used_at,
+            )
+            for record in self._api_key_repository.list_all()
+        ]
+
+
+class DeleteApiKeyUseCase:
+    """Use case отзыва API-ключа по идентификатору."""
+
+    def __init__(self, api_key_repository: DatabaseApiKeyRepository):
+        self._api_key_repository = api_key_repository
+
+    def execute(self, key_id: int) -> DeleteApiKeyResultDTO:
+        record = self._api_key_repository.delete(key_id)
+        if record is None:
+            raise ValueError(f"API-ключ #{key_id} не найден.")
+        return DeleteApiKeyResultDTO(deleted=True, name=record.name)
+
+
+class VerifyApiKeyUseCase:
+    """Use case проверки API-ключа при обращении к REST API."""
+
+    def __init__(self, api_key_repository: DatabaseApiKeyRepository):
+        self._api_key_repository = api_key_repository
+
+    def execute(self, api_key: str) -> bool:
+        if not api_key:
+            return False
+        record = self._api_key_repository.find_by_hash(_hash_api_key(api_key))
+        if record is None:
+            return False
+        self._api_key_repository.touch(record.id)
+        return True

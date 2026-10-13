@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -22,6 +22,7 @@ from api.routers import (
     models,
     task_profiles,
 )
+from api.security import require_api_key
 from use_cases import UseCasesBundle
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
@@ -33,7 +34,8 @@ def build_app(use_cases: UseCasesBundle) -> FastAPI:
     app.state.use_cases = use_cases
 
     # CORS нужен только для Vite dev-сервера; в проде фронт раздаётся тем же
-    # origin, поэтому политика максимально простая (без аутентификации).
+    # origin. Авторизация — по API-ключу (Authorization: Bearer), эндпоинт
+    # /api/health остаётся публичным.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -55,7 +57,9 @@ def build_app(use_cases: UseCasesBundle) -> FastAPI:
     api.include_router(knowledge_bases.router)
     api.include_router(task_profiles.router)
     api.include_router(memory.router)
-    app.include_router(api, prefix="/api")
+    app.include_router(
+        api, prefix="/api", dependencies=[Depends(require_api_key)]
+    )
 
     # Раздача собранного React-фронта с того же порта (single origin).
     if FRONTEND_DIST.is_dir():

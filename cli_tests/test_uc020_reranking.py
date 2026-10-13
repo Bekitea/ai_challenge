@@ -14,7 +14,7 @@ class TestUC020_Reranking:
 
     def test_tc_135_reranking_enabled_by_default(self):
         """TC-135: по умолчанию реранкинг включён."""
-        test_input = _QUICK_CHAT + "/rerank\n" + "/menu\n6\n"
+        test_input = _QUICK_CHAT + "/rerank\n" + "/menu\n8\n"
 
         stdout, _, _ = run_cli_command(test_input)
 
@@ -28,7 +28,7 @@ class TestUC020_Reranking:
             + "/rerank\n"
             + "/rerank on\n"
             + "/rerank\n"
-            + "/menu\n6\n"
+            + "/menu\n8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -40,7 +40,7 @@ class TestUC020_Reranking:
 
     def test_tc_137_reranking_invalid_argument(self):
         """TC-137: неверный аргумент -> подсказка по использованию."""
-        test_input = _QUICK_CHAT + "/rerank maybe\n" + "/menu\n6\n"
+        test_input = _QUICK_CHAT + "/rerank maybe\n" + "/menu\n8\n"
 
         stdout, _, _ = run_cli_command(test_input)
 
@@ -52,7 +52,7 @@ class TestUC020_Reranking:
             _QUICK_CHAT
             + "/rerank off\n"
             + "/rag\n0\n"
-            + "/menu\n6\n"
+            + "/menu\n8\n"
         )
 
         stdout, _, _ = run_cli_command(test_input)

@@ -46,7 +46,7 @@ class TestUC010_ViewChatInfoAndTokenStatistics:
             "1\n"  # DefaultStrategy
             "/info\n"  # View info
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)

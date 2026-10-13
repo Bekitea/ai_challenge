@@ -36,7 +36,7 @@ class TestUC015_ViewTaskProfileMemory:
             "1\n"  # Действие: просмотреть память профиля
             "1\n"  # Профиль №1
             "3\n"  # Назад
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -85,7 +85,7 @@ class TestUC015_ViewTaskProfileMemory:
             "1\n"  # Действие: просмотреть память профиля
             "1\n"  # Профиль №1
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -124,7 +124,7 @@ class TestUC015_ViewTaskProfileMemory:
             "1\n"  # Действие: просмотреть память профиля
             "1\n"  # Выбрать профиль с предпочтениями (№1)
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -164,7 +164,7 @@ class TestUC015_ViewTaskProfileMemory:
             "1\n"  # Действие: просмотреть память профиля
             "1\n"  # Выбрать профиль с пустыми предпочтениями (№1)
             "3\n"  # Назад в главное меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

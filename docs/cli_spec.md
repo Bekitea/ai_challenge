@@ -87,12 +87,13 @@ Facts are extracted into global and task-profile memory by the `save_agent_memor
 3. Профили задач
 4. Просмотреть глобальную память
 5. Вернуться в чат: {chat_name} | Вернуться в чат (нет активного чата)
-6. Выход
+6. API-ключи
 7. Базы знаний
+8. Выход
 ----------------------------------------
 ```
 
-Prompt line: `Ваш выбор (1-7):`
+Prompt line: `Ваш выбор (1-8):`
 
 #### 4.2.2 Dynamic Behavior
 
@@ -101,12 +102,13 @@ Prompt line: `Ваш выбор (1-7):`
   - No active chat: `5. Вернуться в чат (нет активного чата)` (no colon)
 - Selecting option 5 with an active chat prints `[OK] Возврат в чат: {name}` and enters the chat loop.
 - Selecting option 5 without an active chat prints `[WARN] Нет активного чата. Выберите или создайте чат.` and stays in the menu.
-- Option 6 prints `До свидания!` and terminates the application.
+- Option 6 enters the API Keys menu (§4.10).
 - Option 7 enters the Knowledge Bases menu (§4.9).
+- Option 8 prints `До свидания!` and terminates the application.
 
 #### 4.2.3 Input Validation
 
-- Accept only strings "1".."7" (exact match after strip)
+- Accept only strings "1".."8" (exact match after strip)
 - Any other input: `[WARN] Неверный выбор, попробуйте снова.` and re-prompt
 - `KeyboardInterrupt` / `EOFError` at the menu prompt: print `До свидания!` and exit cleanly
 - On application start, before the application header and the menu loop, the system prints `[INFO] Проверка несохранённой памяти...` and executes the `save_unsaved_memories` use case: for every agent with unremembered prompts it extracts facts into global/task memory (technical token counters). The scan does not restore MCP connections and does not hydrate agents without unremembered prompts. If there are none, the system prints `[INFO] Несохранённой памяти нет.`; otherwise, for each such agent it prints `[INFO] Сохранение памяти чата '{name}'...` followed by `[OK] '{name}': сохранено за {seconds:.2f} с.` or `[ERROR] '{name}': не удалось за {seconds:.2f} с: {error}` (see UC-024); a failure of one chat does not stop the others. It finally prints `[INFO] Проверка памяти завершена за {seconds:.2f} с.`, then the header. All memory-extraction LLM calls use `MEMORY_LLM_TIMEOUT` (5 s) with `MEMORY_LLM_MAX_RETRIES=0` (no SDK retries, so the limit is not multiplied); if any memory call for a chat times out, the remaining memory calls for that chat are skipped. A task-memory timeout prints `[WARN] Не удалось обновить память задачи: {error}` and does not interrupt the program, while a timeout during global/profile extraction at startup aborts the remaining chats with `[WARN] Сохранение памяти прервано из-за таймаута модели; пропущено чатов: {n}.` (see §3 Memory Integration).
@@ -747,6 +749,36 @@ All list-selection prompts accept a number or `0` to cancel; non-numeric input p
 
 ---
 
+### 4.10 API Keys Menu (Main Menu Option 6)
+
+Manages REST API access keys for the local `main_api.py` server. A key is
+required for every `/api/*` endpoint except `/api/health`. The secret is shown
+exactly once (at creation) and is stored only as a SHA-256 hash — it can never
+be read back from the CLI or the database (see §5, UC-025).
+
+```
+--- API-КЛЮЧИ ---
+1. Создать ключ
+2. Показать список ключей
+3. Удалить ключ
+0. Назад в главное меню
+----------------------------------------
+```
+
+Prompt: `Ваш выбор (0-3):`. Invalid choice: `[WARN] Неверный выбор, попробуйте снова.` and the menu is re-displayed. Option 0 returns to the Main Menu.
+
+- **Create (1)**: prompts `Введите название ключа:` (empty re-prompts with `[ERROR] Название API-ключа не может быть пустым.`). Success prints the secret one last time:
+  ```
+  [OK] API-ключ '{name}' создан.
+    ID: {id}
+    Ключ: aic_{secret}
+  [WARN] Сохраните ключ сейчас — больше он не будет показан ни здесь, ни где-либо ещё.
+  ```
+- **List (2)**: prints `--- СПИСОК API-КЛЮЧЕЙ ---` with each key's id, name, masked prefix (`aic_XXXXXXXX…`), creation time and last-used time (`никогда` if never used); the secret is never shown. Empty list → `[INFO] API-ключи отсутствуют. Создайте первый ключ.`
+- **Delete (3)**: prints the list, prompts `Введите ID ключа для удаления (Enter — отмена):`, then confirms `Удалить API-ключ #{id}? (y/n):`; on `y` prints `[OK] API-ключ '{name}' отозван.` Unknown id → `[ERROR] API-ключ #{id} не найден.`
+
+---
+
 ## 5. Use Cases Index
 
 All use cases live in [`docs/uc/`](uc/) — one file per use case, each with its
@@ -779,3 +811,4 @@ this document.
 | UC-022 | Task Memory Of The Dialogue | Keep goal, constraints, terms and clarifications per chat and inject them every turn. | [uc-022-task-memory.md](uc/uc-022-task-memory.md) |
 | UC-023 | List Available Models And Providers | Fetch models dynamically from Yandex Cloud and Ollama, label each with its provider and let the user pick one. | [uc-023-list-available-models-and-providers.md](uc/uc-023-list-available-models-and-providers.md) |
 | UC-024 | Memory Save Feedback | Show a start notice and a timed finish/error notice when global and task-profile memory is filled; per-chat feedback at application start. | [uc-024-memory-save-feedback.md](uc/uc-024-memory-save-feedback.md) |
+| UC-025 | Manage API Keys (menu 6) | Issue and revoke REST API keys; the secret is shown once and otherwise stored only as a hash. | [uc-025-manage-api-keys.md](uc/uc-025-manage-api-keys.md) |

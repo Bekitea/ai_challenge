@@ -18,6 +18,58 @@ body {
   height: 100vh;
 }
 
+.api-key-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #f5f7fa;
+}
+
+.api-key-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 360px;
+  padding: 28px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(31, 41, 51, 0.12);
+}
+
+.api-key-card h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.api-key-card p {
+  margin: 0;
+  color: #52606d;
+  font-size: 13px;
+}
+
+.api-key-card input {
+  padding: 10px 12px;
+  border: 1px solid #cbd2d9;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.api-key-card button {
+  padding: 10px 12px;
+  border: none;
+  border-radius: 6px;
+  background: #1f2933;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.api-key-error {
+  color: #9b1c1c;
+  font-size: 13px;
+}
+
 .app-header {
   padding: 12px 20px;
   background: #1f2933;

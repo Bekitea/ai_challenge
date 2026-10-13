@@ -25,7 +25,7 @@ class TestUC002_Alt_TC076_077_ChatListValidation:
             + "3\n"  # Вне диапазона сверху
             + "1\n"  # Корректный выбор
             + "/menu\n"
-            + "6\n"  # Exit
+            + "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -49,7 +49,7 @@ class TestUC002_Alt_TC076_077_ChatListValidation:
             + "2.5\n"  # Нечисловой ввод (int() падает)
             "1\n"  # Корректный выбор
             "/menu\n"
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)

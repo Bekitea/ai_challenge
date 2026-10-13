@@ -41,7 +41,7 @@ class TestUC001_CreateChatWithAllSettings:
             "n\n"  # Не изменять настройки
             "/info\n"  # Проверка стратегии и профиля созданного чата
             "/menu\n"  # Выход из цикла чата в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, stderr, returncode = run_cli_command(test_input)
@@ -99,7 +99,7 @@ class TestUC001_CreateChatWithAllSettings:
             "/settings\n"  # Проверка применённых настроек
             "n\n"  # Не изменять
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -138,7 +138,7 @@ class TestUC001_CreateChatWithAllSettings:
             "1\n"  # DefaultStrategy
             "0\n"  # Нет профиля
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -166,7 +166,7 @@ class TestUC001_CreateChatWithAllSettings:
                 "1\n"  # DefaultStrategy
                 "0\n"  # Нет профиля
                 "/menu\n"
-                "6\n"
+                "8\n"
             )
 
             stdout, _, _ = run_cli_command(test_input)
@@ -198,7 +198,7 @@ class TestUC001_CreateChatWithAllSettings:
             "2\n"  # Выбрать чат — проверить список
             "1\n"  # Выбор единственного чата
             "/menu\n"
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -230,7 +230,7 @@ class TestUC001_CreateChatWithAllSettings:
             "4\n"  # SlidingWindowStrategy
             "0\n"  # Нет профиля задачи
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -258,7 +258,7 @@ class TestUC001_CreateChatWithAllSettings:
             "20\n"  # Custom window_size
             "0\n"  # Нет профиля задачи
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -288,7 +288,7 @@ class TestUC001_CreateChatWithAllSettings:
             "\n"  # buffer_size=3
             "0\n"  # Нет профиля задачи
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -318,7 +318,7 @@ class TestUC001_CreateChatWithAllSettings:
             "4\n"  # buffer_size=4
             "0\n"  # Нет профиля задачи
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -348,7 +348,7 @@ class TestUC001_CreateChatWithAllSettings:
             "\n"  # buffer_size=3
             "0\n"  # Нет профиля задачи
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -378,7 +378,7 @@ class TestUC001_CreateChatWithAllSettings:
             "5\n"  # buffer_size=5
             "0\n"  # Нет профиля задачи
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
@@ -405,7 +405,7 @@ class TestUC001_CreateChatWithAllSettings:
             "1\n"  # DefaultStrategy
             "0\n"  # Нет профиля задачи
             "/menu\n"  # Выход в меню
-            "6\n"  # Exit
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)

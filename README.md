@@ -457,6 +457,36 @@ python cli_tests/smoke_test.py
 - `reranker_service/` — отдельный CPU-контейнер с моделью `bge-reranker-v2-m3`
   (см. раздел «Реранкинг (RAG)»)
 
+#### 6.2. `llm_gateway/` — единый шлюз к Ollama
+Ollama плохо переносит параллельные запросы, а приложение нагружает её из
+нескольких потоков (CLI, REST API, Celery) и в будущем — из сабагентов.
+`llm_gateway/` — отдельный сервис (Python 3.14), который является
+**единственным**, кто ходит в Ollama напрямую. Он принимает
+Ollama-совместимые запросы (`POST /v1/chat/completions`, `POST /api/embed`,
+`GET /api/tags`) и сериализует их через очередь (Redis Streams, durable):
+одновременно в Ollama уходит ровно один запрос, остальные ждут.
+
+Основной бэкенд не меняется кодом провайдеров: `OllamaLlmProvider` и
+`OllamaEmbeddingProvider` по-прежнему работают по OpenAI/Ollama-API, но их
+базовые URL при `LLM_GATEWAY_ENABLED=true` указывают на gateway
+(`OLLAMA_NATIVE_BASE_URL`, `OLLAMA_OPENAI_BASE_URL`, `EMBEDDING_BASE_URL`).
+В `APPLICATION_MODE=TEST` gateway выключен (там `MockLlmProvider`).
+
+| Переменная | По умолчанию | Назначение |
+| --- | --- | --- |
+| `LLM_GATEWAY_ENABLED` | `false` | Глобальный выключатель шлюза |
+| `LLM_GATEWAY_URL` | `http://127.0.0.1:18081` | Адрес gateway для бэкенда |
+| `LLM_GATEWAY_REDIS_URL` | пусто (in-process) | Redis-очередь gateway |
+| `QUEUE_WAIT_TIMEOUT` | `600` | Ожидание ответа в HTTP-слое gateway |
+| `LLM_UPSTREAM_TIMEOUT` | `300` | Таймаут запроса к Ollama |
+| `MAX_QUEUE_DEPTH` | `200` | Backpressure: переполнение → 503 |
+| `LLM_REQUEST_TIMEOUT` | `900` | Таймаут чат-запроса (должен перекрывать очередь) |
+
+При недоступности gateway/Redis — **fail fast** (503/504), без обхода в
+Ollama. Держать ровно **одну реплику** gateway: гарантия «один запрос в
+Ollama» держится на единственном потребителе очереди. Тесты:
+`poetry run pytest llm_gateway/tests -v`.
+
 #### 7. `agents.py` — Бизнес-объекты
 Эти классы тоже относятся к бизнес-логике приложения, они могут напрямую использовать API репозиториев, провайдеров и так далее.
 **Классы:**
@@ -654,6 +684,14 @@ N ходов и при сжатии контекста; новые уточне�
            # ✅ Возвращаем агента со всеми данными, включая conversation_id
            return Agent(id=db_agent.id, conversation_id=db_agent.conversation_id, ...)
    ```
+
+8. **Не ходите в Ollama в обход `llm_gateway` и не масштабируйте его**
+   - В PROD/LOCAL обращения к Ollama (чат, эмбеддинги, список моделей) должны
+     идти только через `llm_gateway` — иначе нарушается сериализация запросов
+   - Держите ровно **одну** реплику/одного потребителя очереди gateway: при
+     нескольких потребителях гарантия «один запрос в Ollama одновременно»
+     теряется
+   - В `APPLICATION_MODE=TEST` шлюз не нужен — там работают mock-провайдеры
 
 ### Добавление новой функциональности
 

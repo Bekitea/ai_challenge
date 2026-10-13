@@ -10,6 +10,7 @@ from typing import Any
 
 from config import (
     DEFAULT_PROVIDER,
+    LLM_REQUEST_TIMEOUT,
     MEMORY_LLM_MAX_RETRIES,
     MEMORY_LLM_TIMEOUT,
     TASK_MEMORY_ENABLED,
@@ -118,7 +119,12 @@ class AgentSettings:
         }
 
     def to_llm_request_properties(self) -> dict[str, Any]:
-        """Преобразует настройки в словарь, отфильтровывая None значения."""
+        """Преобразует настройки в словарь, отфильтровывая None значения.
+
+        Таймаут задаётся явно (``LLM_REQUEST_TIMEOUT``): при включённом LLM
+        Gateway запрос может простоять в очереди к Ollama, поэтому стандартный
+        короткий таймаут провайдера не подходит.
+        """
         return {
             k: v
             for k, v in {
@@ -128,6 +134,7 @@ class AgentSettings:
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
                 "reasoning_effort": self.reasoning_effort,
+                "timeout": LLM_REQUEST_TIMEOUT,
             }.items()
             if v is not None
         }

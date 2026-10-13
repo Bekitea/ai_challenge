@@ -11,7 +11,7 @@ AI Chat CLI — консольное приложение для взаимод�
 - `poetry install` — mandatory first step. Poetry's env is NOT in-project (configured `virtualenvs.in-project false`); the `.venv/` directory in the repo root is a stale artifact, ignore it. Run everything via `poetry run ...`.
 - Run app: `poetry run python main_cli.py`
 - Run web (REST API + built React) on :8080: `python main_api.py` — defaults to `APPLICATION_MODE=LOCAL` (override via env), serves both `/api/*` and `frontend/dist`. Single worker only (MCP state is in-process). Frontend build: `cd frontend && npm install && npm run build`.
-- Run everything via Docker Compose: `docker compose up --build` — services `frontend` (nginx :3000, proxies `/api` → `web:8080`), `web` (:8080), `reranker` (:18080), `redis`, `worker`, `beat`. Mode `PROD`, data `./data`, Ollama — on the host (`host.docker.internal:11434`). The opencode dev container compose was renamed to `docker-compose.opencode.yml`. The web image is `python:3.14-alpine` (musl, for the vendored `vec0.so`) and deps are installed with Poetry (`requirements.txt` has `pywin32` and won't install on Linux).
+- Run everything via Docker Compose: `docker compose up --build` — services `frontend` (nginx :3000, proxies `/api` → `web:8080`), `web` (:8080), `llm_gateway` (:18081, serializes access to Ollama), `reranker` (:18080), `redis`, `worker`, `beat`. Mode `PROD`, data `./data`, Ollama — on the host (`host.docker.internal:11434`). The opencode dev container compose was renamed to `docker-compose.opencode.yml`. The web image is `python:3.14-alpine` (musl, for the vendored `vec0.so`) and deps are installed with Poetry (`requirements.txt` has `pywin32` and won't install on Linux).
 - Lint: `poetry run ruff check --fix` (only `target-version = "py313"` configured).
 - Tests (all are e2e; there is no unit test suite):
   - **NEVER run the full suite (`poetry run pytest cli_tests/`).** Its performance is unacceptable and the issue is unresolved. Always run only the specific test(s) relevant to the change.
@@ -70,6 +70,16 @@ New feature flow: add use case file in `docs/uc/` and register it in the UC inde
 - Переключатель per-chat: команда `/rerank on|off` (bare `/rerank` показывает состояние); по умолчанию реранкинг включён (`AgentSettings.reranker_enabled=True`). Состояние также видно в `/rag` и `/settings`.
 - Запуск сервиса: `cd reranker_service && docker compose up --build` (порт 18080; на Windows — через Docker Desktop). Адрес — `RERANKER_BASE_URL` (по умолчанию `http://127.0.0.1:18080`, **не** `localhost`: на Windows `localhost` → `::1` и может попасть в чужой процесс), глобальный выключатель — `RERANKER_ENABLED`.
 - В `APPLICATION_MODE=TEST` подключается `MockRerankerProvider` (без сети); в проде — `HttpRerankerProvider`. При недоступном сервисе `RagService` деградирует к векторному порядку (circuit breaker).
+
+## LLM Gateway (единый поток запросов к Ollama)
+
+- Ollama плохо переносит параллельные запросы, а её нагружают CLI, REST API, Celery и (в будущем) сабагенты. Сервис `llm_gateway/` (Python 3.14, отдельный контейнер `ai_chat_llm_gateway`, порт 18081) — **единственный, кто ходит в Ollama напрямую**. Он принимает Ollama-совместимые запросы (`/v1/chat/completions`, `/api/embed`, `/api/tags`) и сериализует их через очередь: одновременно в Ollama уходит ровно один запрос, остальные ждут.
+- Очередь — Redis Streams (durable) при заданном `LLM_GATEWAY_REDIS_URL`; пусто ⇒ in-process очередь (dev/тесты). Ответ отдаётся через per-request reply-list; «зависшие» задачи переклэймливаются (`XAUTOCLAIM`).
+- Бэкенд не меняет код провайдеров: `OllamaLlmProvider`/`OllamaEmbeddingProvider` работают по OpenAI/Ollama-API, но базовые URL при `LLM_GATEWAY_ENABLED=true` указывают на gateway (`OLLAMA_NATIVE_BASE_URL`, `OLLAMA_OPENAI_BASE_URL`, `EMBEDDING_BASE_URL` в `config.py`). В `TEST` шлюз выключен (mock-провайдеры).
+- **Ровно одна реплика gateway.** Гарантия «один запрос в Ollama» держится на единственном потребителе очереди; несколько реплик/потребителей её ломают (это же правило зафиксировано в README DON'T).
+- При недоступности gateway/Redis — **fail fast** (503/504), без обхода в Ollama. Backpressure — `MAX_QUEUE_DEPTH`; таймауты: gateway `QUEUE_WAIT_TIMEOUT`/`LLM_UPSTREAM_TIMEOUT`, бэкенд `LLM_REQUEST_TIMEOUT`/`MEMORY_LLM_TIMEOUT`/`EMBEDDING_TIMEOUT` (должны перекрывать ожидание в очереди).
+- Gateway использует Redis DB `2` (`LLM_GATEWAY_REDIS_URL`), Celery — `0/1`.
+- Тесты: `poetry run pytest llm_gateway/tests -v` (in-process очередь + стаб upstream, без сети). Локальный запуск без Docker: `python -m llm_gateway.main`.
 
 ## Misc
 

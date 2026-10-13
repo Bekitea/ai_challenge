@@ -20,6 +20,10 @@ x-app-build: &app-build
 x-app-env: &app-env
   APPLICATION_MODE: PROD
   OLLAMA_BASE_URL: http://host.docker.internal:11434
+  # Через gateway идут чат, эмбеддинги и список моделей; OLLAMA_BASE_URL выше
+  # остаётся адресом реальной Ollama для upstream (используется gateway'ем).
+  LLM_GATEWAY_ENABLED: "true"
+  LLM_GATEWAY_URL: http://llm_gateway:18081
   RERANKER_BASE_URL: http://reranker:18080
   CELERY_BROKER_URL: redis://redis:6379/0
   CELERY_RESULT_BACKEND: redis://redis:6379/1
@@ -51,12 +55,44 @@ services:
         condition: service_started
       redis:
         condition: service_started
+      llm_gateway:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  # LLM Gateway — единственный сервис, который ходит в Ollama. Сериализует
+  # запросы (чат, эмбеддинги, список моделей) через Redis-очередь, чтобы в
+  # Ollama одновременно уходил ровно один запрос. Держать ровно одну реплику:
+  # при нескольких потребителях гарантия сериализации теряется.
+  llm_gateway:
+    build:
+      context: .
+      dockerfile: llm_gateway/Dockerfile
+    image: ai-chat-llm-gateway:latest
+    container_name: ai_chat_llm_gateway
+    environment:
+      OLLAMA_UPSTREAM_URL: http://host.docker.internal:11434
+      LLM_GATEWAY_REDIS_URL: redis://redis:6379/2
+      LLM_GATEWAY_PORT: "18081"
+      QUEUE_WAIT_TIMEOUT: "600"
+      LLM_UPSTREAM_TIMEOUT: "300"
+      MAX_QUEUE_DEPTH: "200"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18081/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
 
   frontend:
     build: ./frontend
@@ -116,6 +152,8 @@ services:
       redis:
         condition: service_started
       reranker:
+        condition: service_started
+      llm_gateway:
         condition: service_started
 
   beat:

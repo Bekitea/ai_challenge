@@ -25,12 +25,22 @@ DEFAULT_PROVIDER = LLM_PROVIDER_YANDEX
 DEFAULT_REPORT_PROVIDER = os.getenv("DEFAULT_REPORT_PROVIDER", LLM_PROVIDER_YANDEX)
 DEFAULT_REPORT_MODEL = os.getenv("DEFAULT_REPORT_MODEL", "aliceai-llm-flash/latest")
 
-# Таймаут опроса списка моделей у провайдеров.
-MODEL_LIST_TIMEOUT = int(os.getenv("MODEL_LIST_TIMEOUT", "10"))
+# Таймаут опроса списка моделей у провайдеров. При активном LLM Gateway
+# запрос списка моделей тоже проходит очередь и может подождать, пока Ollama
+# занята генерацией, поэтому таймаут увеличен.
+MODEL_LIST_TIMEOUT = int(os.getenv("MODEL_LIST_TIMEOUT", "60"))
+
+# Таймаут одного чат-запроса к LLM. С включённым LLM Gateway запрос может
+# подождать в очереди (пока Ollama занята другим запросом), поэтому таймаут
+# заметно больше времени генерации. Должен превышать gateway QUEUE_WAIT_TIMEOUT
+# (по умолчанию 600s), чтобы клиент получал осмысленную ошибку самого gateway,
+# а не гонку таймаутов.
+LLM_REQUEST_TIMEOUT = int(os.getenv("LLM_REQUEST_TIMEOUT", "900"))
 
 # Таймаут LLM-вызовов извлечения памяти (глобальной, профиля задачи и памяти
-# задачи диалога). Короткий, чтобы сбои модели не блокировали работу.
-MEMORY_LLM_TIMEOUT = int(os.getenv("MEMORY_LLM_TIMEOUT", "5"))
+# задачи диалога). Память — best-effort (сбой не прерывает диалог), но при
+# активном gateway вызов тоже проходит очередь, поэтому таймаут увеличен.
+MEMORY_LLM_TIMEOUT = int(os.getenv("MEMORY_LLM_TIMEOUT", "120"))
 # Число повторов SDK для вызовов памяти. 0 — без повторов, чтобы таймаут
 # MEMORY_LLM_TIMEOUT не умножался на количество попыток.
 MEMORY_LLM_MAX_RETRIES = int(os.getenv("MEMORY_LLM_MAX_RETRIES", "0"))
@@ -47,9 +57,31 @@ DEFAULT_OLLAMA_URL = (
 )
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_URL)
+
+# --- LLM Gateway (единый поток запросов к Ollama) ---
+# Отдельный прокси-сервис (llm_gateway/), который гарантирует, что в Ollama
+# одновременно уходит ровно один запрос, а остальные ждут в очереди (Redis).
+# При включении основной бэкенд ходит в Ollama не напрямую, а через gateway —
+# это касается чата, эмбеддингов RAG и списка моделей. В TEST режиме выключен
+# (там MockLlmProvider), в PROD/LOCAL включается переменной окружения.
+LLM_GATEWAY_ENABLED = os.getenv("LLM_GATEWAY_ENABLED", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+LLM_GATEWAY_URL = os.getenv(
+    "LLM_GATEWAY_URL", "http://127.0.0.1:18081"
+).rstrip("/")
+
+# Нативный базовый URL Ollama (без ``/v1``) для списка моделей. При активном
+# gateway указывает на gateway, иначе — напрямую на Ollama.
+OLLAMA_NATIVE_BASE_URL = (
+    LLM_GATEWAY_URL if LLM_GATEWAY_ENABLED else OLLAMA_BASE_URL
+)
+
 # OpenAI-совместимый эндпоинт Ollama для чата (tool calling, usage-токены).
 OLLAMA_OPENAI_BASE_URL = os.getenv(
-    "OLLAMA_OPENAI_BASE_URL", f"{OLLAMA_BASE_URL.rstrip('/')}/v1"
+    "OLLAMA_OPENAI_BASE_URL", f"{OLLAMA_NATIVE_BASE_URL.rstrip('/')}/v1"
 )
 OLLAMA_DEFAULT_EMBEDDING_MODEL = os.getenv("OLLAMA_DEFAULT_EMBEDDING_MODEL", "bge-m3")
 
@@ -58,11 +90,13 @@ AVAILABLE_EMBEDDING_MODELS = {
 }
 
 # --- Настройки RAG (эмбеддинг, реранкер, чанкинг, поиск) ---
-EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", OLLAMA_BASE_URL)
+EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", OLLAMA_NATIVE_BASE_URL)
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "bge-m3")
 EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "1024"))
 EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "16"))
-EMBEDDING_TIMEOUT = int(os.getenv("EMBEDDING_TIMEOUT", "60"))
+# При активном gateway эмбеддинги ждут очередь так же, как чат, поэтому
+# таймаут должен перекрывать QUEUE_WAIT_TIMEOUT gateway.
+EMBEDDING_TIMEOUT = int(os.getenv("EMBEDDING_TIMEOUT", "300"))
 
 # Реранкер по умолчанию включён (per-chat флаг в AgentSettings тоже по
 # умолчанию True). Сервис реранкинга — отдельный HTTP-контейнер

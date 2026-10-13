@@ -11,7 +11,7 @@ from openai import APITimeoutError, OpenAI
 from config import (
     AVAILABLE_EMBEDDING_MODELS,
     MODEL_LIST_TIMEOUT,
-    OLLAMA_BASE_URL,
+    OLLAMA_NATIVE_BASE_URL,
     OLLAMA_OPENAI_BASE_URL,
     YANDEX_BASE_URL,
 )
@@ -282,9 +282,11 @@ class YandexCloudLlmProvider(LlmProvider):
 class OllamaLlmProvider(LlmProvider):
     """Провайдер для локальных моделей Ollama (OpenAI-совместимый ``/v1``).
 
-    Генерация идёт через ``POST {OLLAMA_BASE_URL}/v1/chat/completions`` (тот же
-    ``openai`` SDK, что и у Yandex), а список моделей — через
-    ``GET {OLLAMA_BASE_URL}/api/tags`` (нативный и стабильный эндпоинт Ollama).
+    Генерация идёт через ``POST {OLLAMA_OPENAI_BASE_URL}/chat/completions`` (тот
+    же ``openai`` SDK, что и у Yandex), а список моделей — через
+    ``GET {OLLAMA_NATIVE_BASE_URL}/api/tags`` (нативный и стабильный эндпоинт
+    Ollama). При включённом LLM Gateway оба URL указывают на gateway, а не на
+    Ollama напрямую.
     """
 
     provider_name = "ollama"
@@ -292,7 +294,7 @@ class OllamaLlmProvider(LlmProvider):
     def __init__(
         self,
         base_url: str = OLLAMA_OPENAI_BASE_URL,
-        native_base_url: str = OLLAMA_BASE_URL,
+        native_base_url: str = OLLAMA_NATIVE_BASE_URL,
     ):
         """Инициализирует клиент Ollama.
 

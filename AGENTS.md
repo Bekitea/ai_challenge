@@ -11,7 +11,7 @@ AI Chat CLI — консольное приложение для взаимод�
 - `poetry install` — mandatory first step. Poetry's env is NOT in-project (configured `virtualenvs.in-project false`); the `.venv/` directory in the repo root is a stale artifact, ignore it. Run everything via `poetry run ...`.
 - Run app: `poetry run python main_cli.py`
 - Run web (REST API + built React) on :8080: `python main_api.py` — defaults to `APPLICATION_MODE=LOCAL` (override via env), serves both `/api/*` and `frontend/dist`. Single worker only (MCP state is in-process). Frontend build: `cd frontend && npm install && npm run build`.
-- Run everything via Docker Compose: `docker compose up --build` — services `frontend` (nginx :3000, proxies `/api` → `web:8080`), `web` (:8080), `llm_gateway` (:18081, serializes access to Ollama), `reranker` (:18080), `redis`, `worker`, `beat`. Mode `PROD`, data `./data`, Ollama — on the host (`host.docker.internal:11434`). The opencode dev container compose was renamed to `docker-compose.opencode.yml`. The web image is `python:3.14-alpine` (musl, for the vendored `vec0.so`) and deps are installed with Poetry (`requirements.txt` has `pywin32` and won't install on Linux).
+- Run everything via Docker Compose: `docker compose up --build` — services `frontend` (nginx :3000, proxies `/api` → `web:8080`), `web` (:8080), `llm_gateway` (:18081, serializes access to Ollama), `reranker` (:18080), `redis`, `worker`, `beat`. Mode `PROD`, data `./data`, Ollama — on the host (`host.docker.internal:11434`). The opencode dev container compose was renamed to `docker-compose.opencode.yml`. The web image is `python:3.14-alpine` (musl, for the vendored `vec0.so`) and deps are installed with Poetry.
 - Lint: `poetry run ruff check --fix` (only `target-version = "py313"` configured).
 - Tests (all are e2e; there is no unit test suite):
   - Full suite: `poetry run pytest cli_tests/` — runs in parallel by default (`pytest-xdist`, `-n auto` set in `pyproject.toml [tool.pytest.ini_options]`) and takes ~1 min. Each worker uses its own storage dir `test-data-<worker>` (override via `AI_CHAT_TEST_DATA_DIR`), so no collisions. Use `-n0` to debug a single case serially.
@@ -21,7 +21,6 @@ AI Chat CLI — консольное приложение для взаимод�
   - **Assertions must prefer ground truth** (`ground_truth.py`: reads `agents.db` + pickles) over CLI-output substrings. `run_cli_command(input, mock=...)` injects a per-test mock scenario via `MOCK_LLM_SCENARIO` (see `mock_llm.py` / `e2e_helpers.mock_llm`); without it the default echo mock is used.
   - Smoke: `poetry run python cli_tests/smoke_test.py`
   - REST API tests (fast, in-process, `TestClient`): `poetry run pytest api_tests/test_api_smoke.py -v`
-- `requirements.txt` mirrors pyproject deps as a pip fallback; Poetry + `poetry.lock` is primary.
 
 ## APPLICATION_MODE — the biggest gotcha
 

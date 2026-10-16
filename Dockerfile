@@ -2,8 +2,7 @@
 #
 # База намеренно Alpine (musl): вендорное расширение sqlite-vec
 # (storage/extensions/sqlite_vec/vec0.so) собрано под musl, на glibc-образе оно
-# не загрузится. Зависимости ставим через Poetry (pyproject.toml + poetry.lock);
-# requirements.txt для Linux не годится, там Windows-only пакет pywin32.
+# не загрузится. Зависимости ставим через Poetry (pyproject.toml + poetry.lock)
 FROM python:3.14-alpine
 
 ENV PYTHONUNBUFFERED=1 \

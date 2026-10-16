@@ -14,7 +14,7 @@
 
 ```bash
 cd /path/to/project
-pip install -r requirements.txt
+poetry install
 ```
 
 ### 2. Настройка переменных окружения

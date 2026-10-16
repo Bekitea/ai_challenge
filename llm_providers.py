@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import requests
-from openai import APITimeoutError, OpenAI
 
 from config import (
     AVAILABLE_EMBEDDING_MODELS,
@@ -15,11 +15,25 @@ from config import (
     OLLAMA_OPENAI_BASE_URL,
     YANDEX_BASE_URL,
 )
+from mock_llm import MockScenario, load_scenario_from_env
 
 if TYPE_CHECKING:
     from rag_models import RagContextChunk
 
 logger = logging.getLogger(__name__)
+
+
+def _openai():
+    """Ленивый импорт SDK ``openai``.
+
+    SDK импортируется ~1.9 с и нужен только для реальных сетевых провайдеров.
+    В TEST-режиме (mock-провайдеры) он вообще не должен загружаться — иначе
+    каждый из сотен e2e-subprocess-запусков платит за него. Поэтому импорт
+    выполняется только в момент фактического обращения к API.
+    """
+    import openai
+
+    return openai
 
 
 class LlmTimeoutError(Exception):
@@ -183,7 +197,9 @@ class YandexCloudLlmProvider(LlmProvider):
             folder_id: ID папки в Yandex Cloud.
             base_url: Базовый URL API (по умолчанию Yandex Cloud).
         """
-        self.client = OpenAI(api_key=api_key, base_url=base_url, project=folder_id)
+        self.client = _openai().OpenAI(
+            api_key=api_key, base_url=base_url, project=folder_id
+        )
         self.folder_id = folder_id
 
     def list_models(self) -> list[LlmModelInfo]:
@@ -274,7 +290,7 @@ class YandexCloudLlmProvider(LlmProvider):
 
         try:
             response = client.chat.completions.create(**kwargs)
-        except APITimeoutError as e:
+        except _openai().APITimeoutError as e:
             raise LlmTimeoutError(str(e)) from e
         return _parse_openai_response(response)
 
@@ -302,7 +318,7 @@ class OllamaLlmProvider(LlmProvider):
             base_url: OpenAI-совместимый базовый URL (``.../v1``).
             native_base_url: Нативный базовый URL Ollama (без ``/v1``).
         """
-        self.client = OpenAI(api_key="ollama", base_url=base_url)
+        self.client = _openai().OpenAI(api_key="ollama", base_url=base_url)
         self.native_base_url = native_base_url.rstrip("/")
 
     def list_models(self) -> list[LlmModelInfo]:
@@ -384,7 +400,7 @@ class OllamaLlmProvider(LlmProvider):
 
         try:
             response = client.chat.completions.create(**kwargs)
-        except APITimeoutError as e:
+        except _openai().APITimeoutError as e:
             raise LlmTimeoutError(str(e)) from e
         return _parse_openai_response(response)
 
@@ -417,6 +433,7 @@ class MockLlmProvider(LlmProvider):
         self,
         provider_name: str = "yandex",
         models: list[tuple[str, str]] | None = None,
+        scenario: MockScenario | None = None,
     ):
         """Инициализирует mock-провайдер.
 
@@ -424,10 +441,41 @@ class MockLlmProvider(LlmProvider):
             provider_name: Ключ провайдера (совпадает с провайдерами прода).
             models: Список пар (model_id, display_name); по умолчанию берётся
                 из ``MOCK_MODELS`` для указанного провайдера.
+            scenario: Сценарий ответов. Если не задан, читается из переменной
+                окружения ``MOCK_LLM_SCENARIO``.
         """
         self.provider_name = provider_name
         self._models = (
             models if models is not None else MOCK_MODELS.get(provider_name, [])
+        )
+        self._scenario = scenario if scenario is not None else load_scenario_from_env()
+
+    def _response_from_spec(self, spec: dict) -> LlmResponse:
+        """Преобразует элемент сценария в ``LlmResponse`` (или бросает ошибку)."""
+        error = spec.get("error")
+        if error:
+            if error == "timeout":
+                raise LlmTimeoutError("mock llm timeout")
+            raise RuntimeError(f"mock llm error: {error}")
+
+        tool_calls: list[ToolCall] | None = None
+        raw_tool_calls = spec.get("tool_calls")
+        if raw_tool_calls:
+            tool_calls = [
+                ToolCall(
+                    id=str(tc.get("id", "")),
+                    name=str(tc.get("name", "")),
+                    arguments=tc.get("arguments", ""),
+                )
+                for tc in raw_tool_calls
+            ]
+
+        return LlmResponse(
+            content=spec.get("content", ""),
+            reasoning=spec.get("reasoning"),
+            prompt_tokens=spec.get("prompt_tokens"),
+            completion_tokens=spec.get("completion_tokens"),
+            tool_calls=tool_calls,
         )
 
     def list_models(self) -> list[LlmModelInfo]:
@@ -478,6 +526,16 @@ class MockLlmProvider(LlmProvider):
         # Память задачи диалога: возвращаем структурированное состояние,
         # чтобы тесты могли проверить подмешивание в системный промпт.
         if response_format and response_format.get("type") == "json_object":
+            if self._scenario is not None:
+                spec = self._scenario.next_json_object()
+                if spec is not None:
+                    # JSON-сценарий сериализуется в content, если не задан явно.
+                    if "content" not in spec:
+                        spec = {
+                            **spec,
+                            "content": json.dumps(spec, ensure_ascii=False),
+                        }
+                    return self._response_from_spec(spec)
             if "память задачи диалога" in system_text.lower():
                 return LlmResponse(
                     content=(
@@ -497,6 +555,12 @@ class MockLlmProvider(LlmProvider):
                 prompt_tokens=100,
                 completion_tokens=20,
             )
+
+        # Сценарный ответ (если задан) имеет приоритет над echo-заглушкой.
+        if self._scenario is not None:
+            spec = self._scenario.next_response()
+            if spec is not None:
+                return self._response_from_spec(spec)
 
         # Получаем последнее сообщение пользователя для формирования ответа
         last_user_message = ""

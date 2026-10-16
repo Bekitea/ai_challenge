@@ -1,6 +1,7 @@
 """E2E tests: TestUC013_ViewTaskProfilesList."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_profile_by_name, get_task_profiles
 
 
 class TestUC013_ViewTaskProfilesList:
@@ -25,6 +26,7 @@ class TestUC013_ViewTaskProfilesList:
         """
         test_input = (
             "3\n"  # Профили задач
+            "2\n"  # Просмотреть список профилей (пусто)
             "3\n"  # Назад в главное меню
             "8\n"  # Exit
         )
@@ -33,9 +35,8 @@ class TestUC013_ViewTaskProfilesList:
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
         # Should show message about no profiles or empty list
-        assert "Нет доступных профилей" in stdout or "Профили задач" in stdout, (
-            "Should show profiles section"
-        )
+        assert "Нет доступных профилей задач." in stdout
+        assert get_task_profiles() == []
 
     def test_tc_054_view_task_profiles_list_multiple(self):
         """
@@ -52,6 +53,10 @@ class TestUC013_ViewTaskProfilesList:
             "1\n"  # Создать новый профиль
             "Test Task Profile\n"  # Name
             "This is a test task description\n"  # Description
+            "\n"  # Предпочтения (пропуск)
+            "\n"  # Инварианты: пусто
+            "2\n"  # Просмотреть список профилей
+            "4\n"  # Назад к списку
             "3\n"  # Назад в главное меню
             "8\n"  # Exit
         )
@@ -60,6 +65,9 @@ class TestUC013_ViewTaskProfilesList:
 
         assert returncode == 0, f"App failed with stderr: {stderr}"
         # After creation, should see the profile in the list or confirmation
-        assert "создан" in stdout.lower() or "Test Task Profile" in stdout, (
-            "Should confirm profile creation or show it in list"
-        )
+        assert "--- СПИСОК ПРОФИЛЕЙ ЗАДАЧ ---" in stdout
+        assert "Test Task Profile" in stdout
+        profile = get_profile_by_name("Test Task Profile")
+        assert profile is not None
+        assert profile["description"] == "This is a test task description"
+        assert get_task_profiles() != []

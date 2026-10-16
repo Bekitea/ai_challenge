@@ -1,6 +1,7 @@
 """E2E tests: TestUC005_ViewAndChangeSettingsInChat."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_agent_by_name, get_settings
 
 
 class TestUC005_ViewAndChangeSettingsInChat:
@@ -38,8 +39,12 @@ class TestUC005_ViewAndChangeSettingsInChat:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout or "Модель:" in stdout
+        assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout
         assert "Температура:" in stdout
+        settings = get_settings(get_agent_by_name("ViewSettings"))
+        assert settings["model_id"] == "gpt-oss-120b/latest"
+        assert settings["provider"] == "yandex"
+        assert "temperature" not in settings
 
     def test_tc_017_change_settings_with_empty_inputs_disables_parameters(self):
         """
@@ -74,7 +79,12 @@ class TestUC005_ViewAndChangeSettingsInChat:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "[OK] Настройки обновлены!" in stdout or "обновлены" in stdout.lower()
+        assert "[OK] Настройки обновлены!" in stdout
+        settings = get_settings(get_agent_by_name("PartialSettings"))
+        assert settings["temperature"] == 0.8
+        assert settings["model_id"] == "gpt-oss-120b/latest"
+        assert "top_p" not in settings
+        assert "max_tokens" not in settings
 
     def test_tc_032_settings_change_with_confirmation(self):
         """
@@ -109,7 +119,10 @@ class TestUC005_ViewAndChangeSettingsInChat:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "Изменить настройки?" in stdout or "y/n" in stdout
+        assert "Изменить настройки?" in stdout
+        settings = get_settings(get_agent_by_name("ConfirmSettings"))
+        assert settings["temperature"] == 0.8
+        assert settings["model_id"] == "gpt-oss-120b/latest"
 
     def test_tc_033_settings_change_cancelled(self):
         """
@@ -135,3 +148,7 @@ class TestUC005_ViewAndChangeSettingsInChat:
         )
 
         run_cli_command(test_input)
+
+        settings = get_settings(get_agent_by_name("CancelSettings"))
+        assert "temperature" not in settings
+        assert settings["model_id"] == "gpt-oss-120b/latest"

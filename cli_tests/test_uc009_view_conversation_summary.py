@@ -1,6 +1,7 @@
 """E2E tests: TestUC009_ViewConversationSummary."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_agent_by_name, get_strategy
 
 
 class TestUC009_ViewConversationSummary:
@@ -31,7 +32,10 @@ class TestUC009_ViewConversationSummary:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "/summary" in stdout or "Суммаризация" in stdout or "[INFO]" in stdout
+        assert "Саммари пока недоступно" in stdout
+        strategy = get_strategy(get_agent_by_name("SummaryTest"))
+        assert strategy["strategy_type"] == "SummarizationStrategy"
+        assert not strategy.get("summary")
 
     def test_tc_027_view_summary_without_summarization(self):
         """
@@ -51,4 +55,7 @@ class TestUC009_ViewConversationSummary:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "[INFO]" in stdout or "Суммаризация еще не выполнялась" in stdout
+        assert "Саммари пока недоступно" in stdout
+        strategy = get_strategy(get_agent_by_name("NoSummary"))
+        assert strategy["strategy_type"] == "DefaultStrategy"
+        assert "summary" not in strategy

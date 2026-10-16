@@ -8,6 +8,13 @@ UC-020: локальная RAG-подсистема (базы знаний, до
 
 import pytest
 from e2e_helpers import _QUICK_CHAT, ollama_available, run_cli_command
+from ground_truth import (
+    get_agent_by_name,
+    get_agent_knowledge_bases,
+    get_chunks,
+    get_documents,
+    get_knowledge_base_by_name,
+)
 
 pytestmark = pytest.mark.skipif(
     not ollama_available(),
@@ -62,6 +69,11 @@ class TestUC020_RagKnowledgeBases:
 
         assert "[OK] База знаний 'Test KB' создана!" in stdout
         assert "Модель эмбеддинга: bge-m3 (1024)" in stdout
+        kb = get_knowledge_base_by_name("Test KB")
+        assert kb is not None
+        assert kb["embedding_model"] == "bge-m3"
+        assert kb["embedding_dimension"] == 1024
+        assert kb["description"] == "Описание базы"
 
     def test_tc_122_create_knowledge_base_empty_name(self):
         """TC-122: Пустое название базы знаний -> ошибка и повторный ввод."""
@@ -71,6 +83,7 @@ class TestUC020_RagKnowledgeBases:
 
         assert "[ERROR] Название базы знаний не может быть пустым." in stdout
         assert "[OK] База знаний 'Test KB2' создана!" in stdout
+        assert get_knowledge_base_by_name("Test KB2") is not None
 
     def test_tc_123_list_knowledge_bases(self):
         """TC-123: Список баз знаний возвращает корректные данные."""
@@ -106,6 +119,14 @@ class TestUC020_RagKnowledgeBases:
         assert "[OK] france.txt — чанков:" in stdout
         assert "Документы БАЗЫ 'KB Docs'".lower() in stdout.lower()
         assert "[ready]" in stdout
+        kb = get_knowledge_base_by_name("KB Docs")
+        assert kb is not None
+        documents = get_documents(kb["id"])
+        assert len(documents) == 1
+        assert documents[0]["name"] == "france.txt"
+        assert documents[0]["status"] == "ready"
+        assert documents[0]["chunk_count"] > 0
+        assert len(get_chunks(documents[0]["id"])) == documents[0]["chunk_count"]
 
     def test_tc_125_list_document_chunks(self, doc_file):
         """TC-125: Просмотр чанков документа в правильном порядке."""
@@ -123,6 +144,12 @@ class TestUC020_RagKnowledgeBases:
         assert "--- ЧАНКИ ДОКУМЕНТА 'france.txt' ---" in stdout
         assert "[0] (id=" in stdout
         assert "Столица Франции" in stdout
+        kb = get_knowledge_base_by_name("KB Chunks")
+        assert kb is not None
+        chunks = get_chunks(get_documents(kb["id"])[0]["id"])
+        assert chunks
+        assert [c["chunk_index"] for c in chunks] == list(range(len(chunks)))
+        assert "Столица Франции" in chunks[0]["text"]
 
     def test_tc_126_attach_and_detach_knowledge_base(self):
         """TC-126: Подключение и отключение базы знаний к чату через /rag."""
@@ -139,6 +166,10 @@ class TestUC020_RagKnowledgeBases:
         assert "--- БАЗЫ ЗНАНИЙ ЧАТА: Чат 1 ---" in stdout
         assert "База знаний 'KB Chat' подключена к чату." in stdout
         assert "База знаний 'KB Chat' отключена от чата." in stdout
+        agent = get_agent_by_name("Чат 1")
+        assert agent is not None
+        # После отсоединения связей чата с базами знаний не осталось
+        assert get_agent_knowledge_bases(agent["id"]) == []
 
     def test_tc_127_search_knowledge_base(self, doc_file):
         """TC-127: Поиск по базе знаний возвращает релевантный чанк."""
@@ -199,6 +230,9 @@ class TestUC020_RagKnowledgeBases:
 
         assert "[OK] Документ 'france.txt' удалён." in stdout
         assert "нет документов" in stdout
+        kb = get_knowledge_base_by_name("KB DelDoc")
+        assert kb is not None
+        assert get_documents(kb["id"]) == []
 
     def test_tc_131_delete_knowledge_base(self):
         """TC-131: Удаление базы знаний удаляет её из списка."""
@@ -215,6 +249,7 @@ class TestUC020_RagKnowledgeBases:
 
         assert "[OK] База знаний 'KB Del' удалена." in stdout
         assert "Базы знаний отсутствуют." in stdout
+        assert get_knowledge_base_by_name("KB Del") is None
 
     def test_tc_132_add_document_missing_path(self):
         """TC-132: Несуществующий путь -> понятная ошибка, без падения."""
@@ -241,6 +276,12 @@ class TestUC020_RagKnowledgeBases:
         assert "[OK] sample.py — чанков:" in stdout
         assert "sample.py" in stdout
         assert "[ready]" in stdout
+        kb = get_knowledge_base_by_name("KB Python")
+        assert kb is not None
+        documents = get_documents(kb["id"])
+        assert [d["name"] for d in documents] == ["sample.py"]
+        assert documents[0]["status"] == "ready"
+        assert documents[0]["chunk_count"] > 0
 
     def test_tc_134_empty_files_are_skipped(self, mixed_folder):
         """TC-134: Пустые файлы пропускаются, а не прерывают индексацию."""
@@ -259,6 +300,9 @@ class TestUC020_RagKnowledgeBases:
         assert "empty.py" not in stdout
         assert "[ERROR]" not in stdout
         assert "[ready]" in stdout
+        kb = get_knowledge_base_by_name("KB Skip")
+        assert kb is not None
+        assert [d["name"] for d in get_documents(kb["id"])] == ["notes.txt"]
 
     def test_tc_139_rag_sources_shown_in_dialog(self, doc_file):
         """TC-139: При подключённой базе знаний после ответа печатаются источники."""

@@ -1,6 +1,14 @@
 """E2E tests: TestUC016_Invariants_TC060_112_113_114."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_invariants, get_profile_by_name
+
+
+def _invariant_texts(profile_name: str) -> list[str]:
+    """Тексты инвариантов профиля по имени (ground truth из БД)."""
+    profile = get_profile_by_name(profile_name)
+    assert profile is not None
+    return [row["text"] for row in get_invariants(profile["id"])]
 
 
 class TestUC016_Invariants_TC060_112_113_114:
@@ -45,6 +53,8 @@ class TestUC016_Invariants_TC060_112_113_114:
         assert "Инвариант добавлен" in stdout
         assert "Инвариант удал" in stdout
         assert "Некорректный номер" in stdout
+        # Ground truth: остался только исходный инвариант
+        assert _invariant_texts("Inv Profile") == ["Base rule"]
 
     def test_tc_112_manage_invariants_empty_text(self):
         """
@@ -69,6 +79,8 @@ class TestUC016_Invariants_TC060_112_113_114:
         assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "не может быть пустым" in stdout
         assert "Инвариант добавлен" in stdout
+        # Ground truth: пустой инвариант не сохранён, валидный добавлен
+        assert _invariant_texts("Inv Profile") == ["Base rule", "Valid rule"]
 
     def test_tc_113_manage_invariants_invalid_action(self):
         """
@@ -102,7 +114,9 @@ class TestUC016_Invariants_TC060_112_113_114:
         # ...and the list/action prompt is re-displayed after each warning
         assert stdout.count("Выберите действие (1-3):") >= 3
         # Step 4: valid action returns control to the Task Profiles menu
-        assert "МЕНЮ ПРОФИЛЕЙ ЗАДАЧ" in stdout or "Действия:" in stdout
+        assert "--- ПРОФИЛИ ЗАДАЧ ---" in stdout
+        # Ground truth: невалидные действия не изменили инварианты
+        assert _invariant_texts("Inv Profile") == ["Base rule"]
 
     def test_tc_114_manage_invariants_remove_with_empty_list(self):
         """
@@ -161,3 +175,5 @@ class TestUC016_Invariants_TC060_112_113_114:
         assert "Выберите номер инварианта для удаления (1-2)" in stdout
         assert "Инвариант добавлен" in stdout
         assert "Инвариант удал" in stdout
+        # Ground truth: добавлены Rule A и Rule B, удалён первый (Rule A)
+        assert _invariant_texts("Empty Inv Profile") == ["Rule B"]

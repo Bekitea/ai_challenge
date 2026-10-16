@@ -1,6 +1,7 @@
 """E2E tests: TestUC011_CreateChatBranch."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_agent_by_name, get_agents, get_strategy
 
 
 class TestUC011_CreateChatBranch:
@@ -35,8 +36,16 @@ class TestUC011_CreateChatBranch:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "Ветка" in stdout or "branch" in stdout.lower()
         assert "Продолжить в новой ветке?" in stdout
+        agents = get_agents()
+        assert len(agents) == 2
+        original = get_agent_by_name("BranchSwitch")
+        assert original is not None
+        branch = next(a for a in agents if a["id"] != original["id"])
+        assert "BranchSwitch" in branch["name"]
+        assert "branch" in branch["name"]
+        assert branch["conversation_id"] != original["conversation_id"]
+        assert get_strategy(branch)["strategy_type"] == "DefaultStrategy"
 
     def test_tc_030_create_branch_and_stay(self):
         """
@@ -56,9 +65,13 @@ class TestUC011_CreateChatBranch:
             "4\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        _, _, _ = run_cli_command(test_input)
 
-        assert "Ветка" in stdout or "[OK]" in stdout
+        assert len(get_agents()) == 2
+        original = get_agent_by_name("BranchStay")
+        assert original is not None
+        branch = next(a for a in get_agents() if a["id"] != original["id"])
+        assert "BranchStay" in branch["name"]
 
     def test_tc_031_create_branch_with_custom_name(self):
         """
@@ -78,9 +91,11 @@ class TestUC011_CreateChatBranch:
             "4\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        _, _, _ = run_cli_command(test_input)
 
-        assert "My Custom Branch" in stdout or "Ветка" in stdout
+        branch = get_agent_by_name("My Custom Branch")
+        assert branch is not None
+        assert len(get_agents()) == 2
 
     def test_tc_044_branch_preserves_strategy_type(self):
         """
@@ -101,9 +116,14 @@ class TestUC011_CreateChatBranch:
             "4\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        _, _, _ = run_cli_command(test_input)
 
-        assert "Ветка" in stdout or "[OK]" in stdout
+        agents = get_agents()
+        assert len(agents) == 2
+        assert all(
+            get_strategy(a)["strategy_type"] == "SummarizationStrategy"
+            for a in agents
+        )
 
     def test_tc_045_branch_preserves_sliding_window_configuration(self):
         """
@@ -124,6 +144,12 @@ class TestUC011_CreateChatBranch:
             "4\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        _, _, _ = run_cli_command(test_input)
 
-        assert "Ветка" in stdout or "[OK]" in stdout
+        agents = get_agents()
+        assert len(agents) == 2
+        assert all(
+            get_strategy(a)["strategy_type"] == "SlidingWindowStrategy"
+            and get_strategy(a)["window_size"] == 15
+            for a in agents
+        )

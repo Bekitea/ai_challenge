@@ -17,6 +17,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+# На Windows консоль может использовать cp1251, в которую не влезают маркеры
+# результата. Явно переключаем stdout на UTF-8, чтобы smoke-тест не падал.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 def get_project_root() -> Path:
     """Dynamically resolve project root directory."""
@@ -69,14 +74,14 @@ def run_smoke_test():
 
         print("-" * 50)
         if result.returncode == 0:
-            print("✅ Smoke test PASSED - All critical paths verified")
+            print("[PASS] Smoke test PASSED - All critical paths verified")
             return True
         else:
-            print("❌ Smoke test FAILED")
+            print("[FAIL] Smoke test FAILED")
             return False
 
     except Exception as e:  # noqa: BLE001
-        print(f"❌ Test failed with exception: {e}")
+        print(f"[FAIL] Test failed with exception: {e}")
         return False
 
 

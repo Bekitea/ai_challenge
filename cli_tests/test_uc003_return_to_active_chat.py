@@ -1,6 +1,7 @@
 """E2E tests: TestUC003_ReturnToActiveChat."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_agent_by_name, get_agents
 
 
 class TestUC003_ReturnToActiveChat:
@@ -18,18 +19,19 @@ class TestUC003_ReturnToActiveChat:
 
         Steps:
         1. Start application
-        2. Verify option 3 shows "(нет активного чата)"
-        3. Select option 3
+        2. Verify option 5 shows "(нет активного чата)"
+        3. Select option 5
         4. Verify warning displayed
         """
         test_input = (
-            "3\n"  # Вернуться в чат (no active chat)
-            "4\n"  # Exit
+            "5\n"  # Вернуться в чат (no active chat)
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "нет активного чата" in stdout.lower() or "[WARN]" in stdout
+        assert "[WARN] Нет активного чата." in stdout
+        assert get_agents() == []
 
     def test_tc_013_return_to_chat_with_active_chat(self):
         """
@@ -38,8 +40,8 @@ class TestUC003_ReturnToActiveChat:
         Steps:
         1. Create or select chat
         2. Type "/menu"
-        3. Verify option 3 shows "Вернуться в чат: {name}"
-        4. Select option 3
+        3. Verify option 5 shows "Вернуться в чат: {name}"
+        4. Select option 5
         5. Verify chat loop entered with same context
         """
         test_input = (
@@ -51,13 +53,13 @@ class TestUC003_ReturnToActiveChat:
             "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/menu\n"  # Return to menu
-            "3\n"  # Вернуться в чат
-            "4\n"  # Exit
+            "5\n"  # Вернуться в чат
+            "/menu\n"  # Return to menu again
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert (
-            "Вернуться в чат: ActiveChatTest" in stdout
-            or "ЧАТ: ActiveChatTest" in stdout
-        )
+        assert "Вернуться в чат: ActiveChatTest" in stdout
+        assert "[OK] Возврат в чат: ActiveChatTest" in stdout
+        assert get_agent_by_name("ActiveChatTest") is not None

@@ -1,6 +1,7 @@
 """E2E tests: TestUC001_CreateChatWithAllSettings."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_agent_by_name, get_strategy
 
 
 class TestUC001_CreateChatWithAllSettings:
@@ -235,7 +236,10 @@ class TestUC001_CreateChatWithAllSettings:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "SlidingWindowStrategy" in stdout or "4." in stdout
+        assert "SlidingWindowStrategy" in stdout
+        strategy = get_strategy(get_agent_by_name("SlidingWindow Test"))
+        assert strategy["strategy_type"] == "SlidingWindowStrategy"
+        assert strategy["window_size"] == 10
 
     def test_tc_037_sliding_window_strategy_custom_window(self):
         """
@@ -263,7 +267,10 @@ class TestUC001_CreateChatWithAllSettings:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "SlidingWindowStrategy" in stdout or "window" in stdout.lower()
+        assert "SlidingWindowStrategy" in stdout
+        strategy = get_strategy(get_agent_by_name("SlidingWindow Custom"))
+        assert strategy["strategy_type"] == "SlidingWindowStrategy"
+        assert strategy["window_size"] == 20
 
     def test_tc_038_summarization_strategy_creation(self):
         """
@@ -294,6 +301,10 @@ class TestUC001_CreateChatWithAllSettings:
         stdout, _, _ = run_cli_command(test_input)
 
         assert "SummarizationStrategy" in stdout
+        strategy = get_strategy(get_agent_by_name("Summarization Test"))
+        assert strategy["strategy_type"] == "SummarizationStrategy"
+        assert strategy["non_compressible_count"] == 2
+        assert strategy["buffer_size"] == 3
 
     def test_tc_039_summarization_strategy_custom_parameters(self):
         """
@@ -324,6 +335,10 @@ class TestUC001_CreateChatWithAllSettings:
         stdout, _, _ = run_cli_command(test_input)
 
         assert "SummarizationStrategy" in stdout
+        strategy = get_strategy(get_agent_by_name("Summarization Custom"))
+        assert strategy["strategy_type"] == "SummarizationStrategy"
+        assert strategy["non_compressible_count"] == 5
+        assert strategy["buffer_size"] == 4
 
     def test_tc_040_key_value_memory_strategy_creation(self):
         """
@@ -354,6 +369,10 @@ class TestUC001_CreateChatWithAllSettings:
         stdout, _, _ = run_cli_command(test_input)
 
         assert "KeyValueMemoryStrategy" in stdout
+        strategy = get_strategy(get_agent_by_name("KeyValueMemory Test"))
+        assert strategy["strategy_type"] == "KeyValueMemoryStrategy"
+        assert strategy["non_compressible_count"] == 2
+        assert strategy["buffer_size"] == 3
 
     def test_tc_041_key_value_memory_strategy_custom_parameters(self):
         """
@@ -384,6 +403,10 @@ class TestUC001_CreateChatWithAllSettings:
         stdout, _, _ = run_cli_command(test_input)
 
         assert "KeyValueMemoryStrategy" in stdout
+        strategy = get_strategy(get_agent_by_name("KeyValueMemory Custom"))
+        assert strategy["strategy_type"] == "KeyValueMemoryStrategy"
+        assert strategy["non_compressible_count"] == 3
+        assert strategy["buffer_size"] == 5
 
     def test_tc_042_default_strategy_creation(self):
         """
@@ -410,4 +433,8 @@ class TestUC001_CreateChatWithAllSettings:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "DefaultStrategy" in stdout or "[OK]" in stdout
+        assert "DefaultStrategy" in stdout
+        strategy = get_strategy(get_agent_by_name("DefaultStrategy Test"))
+        assert strategy["strategy_type"] == "DefaultStrategy"
+        assert "window_size" not in strategy
+        assert "buffer_size" not in strategy

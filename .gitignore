@@ -3,8 +3,8 @@
 *.pyc
 app.log
 data/*
-test-data/*
-local-data/*
+test-data*/
+local-data*/
 .venv/
 celerybeat-schedule
 frontend/node_modules/

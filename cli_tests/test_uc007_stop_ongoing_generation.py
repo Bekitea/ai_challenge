@@ -1,6 +1,7 @@
 """E2E tests: TestUC007_StopOngoingGeneration."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_agent_by_name, get_messages_by_name
 
 
 class TestUC007_StopOngoingGeneration:
@@ -37,11 +38,14 @@ class TestUC007_StopOngoingGeneration:
         stdout, _, _ = run_cli_command(test_input)
 
         # CLI shows "Генерация остановлена." even when idle in mock mode
-        assert (
-            "Генерация" in stdout
-            or "остановлена" in stdout.lower()
-            or "не активна" in stdout.lower()
-        )
+        assert "Генерация" in stdout
+        # Ground truth: idle stop не создаёт сообщений
+        agent = get_agent_by_name("StopIdle")
+        assert agent is not None
+        assert agent["message_count"] == 0
+        assert agent["chat_prompt_tokens"] == 0
+        assert agent["chat_completion_tokens"] == 0
+        assert get_messages_by_name("StopIdle") == []
 
     def test_tc_034_stop_command_keeps_active_chat(self):
         """
@@ -63,6 +67,16 @@ class TestUC007_StopOngoingGeneration:
         )
 
         run_cli_command(test_input)
+
+        agent = get_agent_by_name("StopGen")
+        assert agent is not None
+        assert agent["message_count"] == 2
+        assert agent["chat_prompt_tokens"] > 0
+        assert agent["chat_completion_tokens"] > 0
+        assert [m["role"] for m in get_messages_by_name("StopGen")] == [
+            "user",
+            "assistant",
+        ]
 
     def test_tc_035_stop_command_preserves_chat_state(self):
         """
@@ -88,6 +102,8 @@ class TestUC007_StopOngoingGeneration:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert (
-            "Генерация не активна" in stdout or "[INFO]" in stdout or "[WARN]" in stdout
-        )
+        assert "Генерация не активна" in stdout
+        agent = get_agent_by_name("IdleStop")
+        assert agent is not None
+        assert agent["message_count"] == 0
+        assert agent["chat_prompt_tokens"] == 0

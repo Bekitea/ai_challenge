@@ -1,6 +1,7 @@
 """E2E tests: TestUC004_SendMessageAndReceiveResponse."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_messages_by_name
 
 
 class TestUC004_SendMessageAndReceiveResponse:
@@ -72,7 +73,12 @@ class TestUC004_SendMessageAndReceiveResponse:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "[USER]:" in stdout or "Введите сообщение" in stdout
+        assert "[USER]:" in stdout
+        # Ground truth: пустые сообщения не попали в историю
+        messages = get_messages_by_name("EmptyMessage")
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"] == "Valid message"
+        assert all(m["content"] for m in messages)
 
     def test_tc_021_unknown_command_handling(self):
         """
@@ -97,9 +103,12 @@ class TestUC004_SendMessageAndReceiveResponse:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert (
-            "[WARN]" in stdout or "Неизвестная команда" in stdout or "/help" in stdout
-        )
+        assert "[AGENT]: [MOCK RESPONSE]" in stdout
+        # UC-004 A2: неизвестная команда — обычное сообщение для агента
+        messages = get_messages_by_name("UnknownCmd")
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"] == "/unknown"
+        assert messages[1]["role"] == "assistant"
 
     def test_tc_022_system_prompt_in_history(self):
         """
@@ -125,7 +134,13 @@ class TestUC004_SendMessageAndReceiveResponse:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "[SYSTEM]" in stdout or "SYSTEM" in stdout.upper()
+        assert "[USER]:" in stdout
+        # Ground truth: системный промпт первым в истории, затем реплики
+        messages = get_messages_by_name("SystemPromptTest")
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are a helpful assistant"
+        assert messages[1]["role"] == "user"
+        assert messages[1]["content"] == "Hello"
 
     def test_tc_023_special_characters_in_input(self):
         """

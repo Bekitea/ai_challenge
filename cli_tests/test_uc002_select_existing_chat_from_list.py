@@ -1,6 +1,7 @@
 """E2E tests: TestUC002_SelectExistingChatFromList."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_agent_by_name, get_agents, get_messages_by_name
 
 
 class TestUC002_SelectExistingChatFromList:
@@ -30,10 +31,8 @@ class TestUC002_SelectExistingChatFromList:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert (
-            "Нет доступных чатов" in stdout
-            or "Нет доступных чатов. Создайте новый." in stdout
-        )
+        assert "Нет доступных чатов" in stdout
+        assert get_agents() == []
 
     def test_tc_010_preview_with_system_prompt_only(self):
         """
@@ -59,6 +58,14 @@ class TestUC002_SelectExistingChatFromList:
         )
         run_cli_command(create_input)
 
+        agent = get_agent_by_name("SystemPromptOnly")
+        assert agent is not None
+        assert agent["message_count"] == 0
+        assert agent["last_message_preview"] is None
+        messages = get_messages_by_name("SystemPromptOnly")
+        assert [m["role"] for m in messages] == ["system"]
+        assert messages[0]["content"] == "You are helpful"
+
         select_input = (
             "2\n"  # Выбрать чат
             "4\n"  # Exit
@@ -66,7 +73,7 @@ class TestUC002_SelectExistingChatFromList:
 
         stdout, _, _ = run_cli_command(select_input)
 
-        assert "(нет сообщений)" in stdout or "Сообщений: 0" in stdout
+        assert "(нет сообщений)" in stdout
 
     def test_tc_011_preview_with_user_message(self):
         """
@@ -87,9 +94,19 @@ class TestUC002_SelectExistingChatFromList:
             "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "Hello world\n"  # Message
-            "4\n"  # Exit
+            "/menu\n"  # Return to main menu
+            "8\n"  # Exit app
         )
         run_cli_command(create_input)
+
+        agent = get_agent_by_name("PreviewTest")
+        assert agent is not None
+        assert agent["message_count"] == 2
+        messages = get_messages_by_name("PreviewTest")
+        assert [m["role"] for m in messages] == ["user", "assistant"]
+        assert messages[0]["content"] == "Hello world"
+        assert "MOCK RESPONSE" in messages[1]["content"]
+        assert "MOCK RESPONSE" in agent["last_message_preview"]
 
         select_input = (
             "2\n"  # Выбрать чат
@@ -98,4 +115,4 @@ class TestUC002_SelectExistingChatFromList:
 
         stdout, _, _ = run_cli_command(select_input)
 
-        assert "PreviewTest" in stdout or "Превью:" in stdout
+        assert "PreviewTest" in stdout

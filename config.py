@@ -146,8 +146,10 @@ RAG_FOLDER_MAX_FILES = int(os.getenv("RAG_FOLDER_MAX_FILES", "100"))
 APPLICATION_MODE = os.getenv("APPLICATION_MODE", "PROD").upper()  # TEST, LOCAL, PROD
 
 if APPLICATION_MODE == "TEST":
-    # Тестовый режим: изолированное хранилище для e2e-тестов
-    _STORAGE_BASE = "./test-data"
+    # Тестовый режим: изолированное хранилище для e2e-тестов. При параллельном
+    # прогоне (pytest-xdist) каждый воркер получает свою директорию через
+    # AI_CHAT_TEST_DATA_DIR, чтобы тесты не писали в общий test-data.
+    _STORAGE_BASE = os.getenv("AI_CHAT_TEST_DATA_DIR", "./test-data")
 elif APPLICATION_MODE == "LOCAL":
     # Локальный запуск: отдельное хранилище, чтобы не смешивать с продом
     _STORAGE_BASE = "./local-data"

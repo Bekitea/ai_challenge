@@ -15,6 +15,7 @@ click-plugins==1.1.1.2
 click-repl==0.4.0
 colorama==0.4.6
 cryptography==50.0.1
+execnet==2.1.2
 fastapi==0.143.0
 greenlet==3.5.6
 h11==0.16.0
@@ -44,6 +45,7 @@ pydantic_core==2.46.5
 Pygments==2.21.0
 PyJWT==2.15.0
 pytest==9.1.1
+pytest-xdist==3.8.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.3
 python-multipart==0.0.32

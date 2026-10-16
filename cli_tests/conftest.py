@@ -1,6 +1,9 @@
 """Общие pytest-фикстуры для e2e-тестов CLI."""
 
 import os
+import shutil
+import sys
+import time
 
 # ВАЖНО: Установить APPLICATION_MODE ДО импорта любых модулей проекта,
 # так как config.py читает эту переменную при загрузке модуля
@@ -15,10 +18,45 @@ if os.path.exists("/.dockerenv"):
         "http://host.docker.internal:11434"
     )
 
-import sys
-
 import pytest
-from e2e_helpers import clean_test_data, get_project_root
+from e2e_helpers import (
+    clean_test_data,
+    get_project_root,
+    list_test_data_dirs,
+    remove_all_test_data,
+)
+
+_SESSION_START = time.time()
+
+
+def pytest_sessionstart(session):
+    """Убирает осиротевшие каталоги ``test-data*`` от прошлых прогонов.
+
+    Выполняется только на контроллере (без ``PYTEST_XDIST_WORKER``) и удаляет
+    лишь каталоги, созданные до старта текущей сессии, чтобы не задеть
+    директории параллельных воркеров.
+    """
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        return
+    for path in list_test_data_dirs():
+        try:
+            if path.stat().st_mtime < _SESSION_START:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Удаляет каталоги ``test-data*`` после успешного прогона.
+
+    При падении (``exitstatus != 0``) данные сохраняются для разбора. На
+    контроллере xdist ``exitstatus`` агрегированный, поэтому очистка не
+    затрёт артефакты упавшего воркера.
+    """
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        return
+    if exitstatus == 0:
+        remove_all_test_data()
 
 
 @pytest.fixture(autouse=True)

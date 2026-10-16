@@ -14,9 +14,11 @@ AI Chat CLI — консольное приложение для взаимод�
 - Run everything via Docker Compose: `docker compose up --build` — services `frontend` (nginx :3000, proxies `/api` → `web:8080`), `web` (:8080), `llm_gateway` (:18081, serializes access to Ollama), `reranker` (:18080), `redis`, `worker`, `beat`. Mode `PROD`, data `./data`, Ollama — on the host (`host.docker.internal:11434`). The opencode dev container compose was renamed to `docker-compose.opencode.yml`. The web image is `python:3.14-alpine` (musl, for the vendored `vec0.so`) and deps are installed with Poetry (`requirements.txt` has `pywin32` and won't install on Linux).
 - Lint: `poetry run ruff check --fix` (only `target-version = "py313"` configured).
 - Tests (all are e2e; there is no unit test suite):
-  - **NEVER run the full suite (`poetry run pytest cli_tests/`).** Its performance is unacceptable and the issue is unresolved. Always run only the specific test(s) relevant to the change.
-  - Single case: `poetry run pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -v`
-  - E2E tests are split one file per test class (`cli_tests/test_ucXXX_*.py`); shared helpers live in `cli_tests/e2e_helpers.py`, the autouse cleanup fixture in `cli_tests/conftest.py`. `run_cli_command` itself asserts `returncode == 0` and empty `stderr`, so tests must not duplicate those checks and should discard unused tuple parts with `_` (avoids Ruff `RUF059`).
+  - Full suite: `poetry run pytest cli_tests/` — runs in parallel by default (`pytest-xdist`, `-n auto` set in `pyproject.toml [tool.pytest.ini_options]`) and takes ~1 min. Each worker uses its own storage dir `test-data-<worker>` (override via `AI_CHAT_TEST_DATA_DIR`), so no collisions. Use `-n0` to debug a single case serially.
+  - `test-data*` dirs: cleaned/recreated before each test, orphaned ones removed at session start, all removed on a successful session (`pytest_sessionfinish` with exit code 0), kept on failure for debugging. `test-data*/` and `local-data*/` are in `.gitignore`.
+  - Single case: `poetry run pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -n0 -v`
+  - E2E tests are split one file per test class (`cli_tests/test_ucXXX_*.py`); shared helpers live in `cli_tests/e2e_helpers.py`, ground-truth accessors in `cli_tests/ground_truth.py`, the autouse cleanup fixture in `cli_tests/conftest.py`. `run_cli_command` itself asserts `returncode == 0` and empty `stderr`, so tests must not duplicate those checks and should discard unused tuple parts with `_` (avoids Ruff `RUF059`).
+  - **Assertions must prefer ground truth** (`ground_truth.py`: reads `agents.db` + pickles) over CLI-output substrings. `run_cli_command(input, mock=...)` injects a per-test mock scenario via `MOCK_LLM_SCENARIO` (see `mock_llm.py` / `e2e_helpers.mock_llm`); without it the default echo mock is used.
   - Smoke: `poetry run python cli_tests/smoke_test.py`
   - REST API tests (fast, in-process, `TestClient`): `poetry run pytest api_tests/test_api_smoke.py -v`
 - `requirements.txt` mirrors pyproject deps as a pip fallback; Poetry + `poetry.lock` is primary.
@@ -25,7 +27,7 @@ AI Chat CLI — консольное приложение для взаимод�
 
 - `config.py` calls `load_dotenv()` and reads `APPLICATION_MODE` **at import time**. Set `os.environ["APPLICATION_MODE"] = "TEST"` BEFORE importing any project module (test files do this at the very top).
 - `TEST` → MockLlmProvider, isolated storage under `./test-data/`. `LOCAL` → real providers (Ollama; Yandex only if keys present), no required env vars, isolated storage under `./local-data/`. Anything else (default `PROD`) → production: real Yandex API, storage under `./data/`, and startup fails with `OSError` unless `.env` defines `YANDEX_CLOUD_API_KEY` and `YANDEX_CLOUD_FOLDER`.
-- E2E tests need no API keys: they spawn real `python main_cli.py` subprocesses driven through stdin keystrokes, and an autouse fixture wipes `./test-data/` before each test. Test names `test_tc_XXX_...` map to test cases in `docs/uc/` (one use case per file).
+- E2E tests need no API keys: they spawn real `python main_cli.py` subprocesses driven through stdin keystrokes, and an autouse fixture wipes the per-worker `./test-data[-<worker>]/` before each test. Test names `test_tc_XXX_...` map to test cases in `docs/uc/` (one use case per file).
 - `alembic/env.py` imports `DATABASE_URL` from `config.py`, so migrations target whichever DB the current `APPLICATION_MODE` selects. Note the app also auto-creates tables on startup (`DatabaseConnection.init_tables`), which additionally **adds missing columns** to existing SQLite tables (additive sync) — so schema drift on `create_all`-based DBs self-heals and `alembic upgrade head` is not needed for dev/tests.
 
 ## Architecture rules (enforced by README, verified in code)
@@ -84,5 +86,5 @@ New feature flow: add use case file in `docs/uc/` and register it in the UC inde
 ## Misc
 
 - `mcp/` contains MCP servers (`time_mcp.py`, `open_alex_mcp.py`); root `*_mcp_test.py` files are manual test scripts for them, not pytest suites.
-- Deeper docs: `README.md` (full architecture DO/DON'T list), `docs/cli_spec.md` (interface spec + UC index), `docs/uc/` (use cases with related test cases), `docs/cli_e2e_testing_guide.md` (testing practices/troubleshooting).
+- Deeper docs: `README.md` (full architecture DO/DON'T list), `docs/cli_spec.md` (interface spec + UC index), `docs/uc/` (use cases with related test cases), `docs/cli_e2e_testing_guide.md` (testing practices: ground truth, scenario mocks, performance, troubleshooting).
 - No CI, no typecheck config, no pre-commit hooks.

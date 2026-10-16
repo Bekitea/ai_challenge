@@ -283,29 +283,42 @@ curl -X POST http://127.0.0.1:18080/rerank \
 
 ### Запуск E2E тестов CLI
 
-Проект включает набор End-to-End тестов, которые эмулируют поведение реального пользователя через CLI интерфейс.
+Проект включает набор End-to-End тестов, которые эмулируют поведение реального пользователя через CLI интерфейс. Тесты спавнят реальные subprocess'ы `main_cli.py`, а проверки по возможности опираются на **ground truth** — фактическое состояние после ввода (таблицы `agents.db` и pickle-файлы), а не только на подстроки в выводе.
 
 #### Требования
 
 - Python 3.14+
-- pytest: `pip install pytest`
+- Зависимости из `poetry.lock` (включая `pytest` и `pytest-xdist`): `poetry install`
 - Приложение должно быть в рабочем состоянии
 
 #### Запуск тестов
 
+Полный прогон идёт **параллельно по умолчанию** (`pytest-xdist`, `-n auto`) и занимает ~1 минуту. Каждый воркер пишет в свою директорию `test-data-<worker>/`, поэтому тесты не мешают друг другу.
+
 ```bash
-# Запустить все E2E тесты
-pytest cli_tests/ -v
+# Запустить все E2E тесты (параллельно)
+poetry run pytest cli_tests/ -v
+
+# Последовательно (для отладки одного кейса)
+poetry run pytest cli_tests/ -n0 -v
 
 # Запустить тесты конкретного Use Case
-pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings -v
+poetry run pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings -n0 -v
 
 # Запустить конкретный тесткейс
-pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -v
+poetry run pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -n0 -v
 
 # Запустить smoke тест (набор ключевых тестов)
-python cli_tests/smoke_test.py
+poetry run python cli_tests/smoke_test.py
 ```
+
+#### Ключевые механизмы
+
+- **Ground truth** (`cli_tests/ground_truth.py`) — read-only доступ к `agents.db` и файловому хранилищу: чаты, настройки, стратегии, история, память (глобальная/задача/профили), API-ключи, RAG.
+- **Сценарные моки** (`mock_llm.py` + `run_cli_command(..., mock=...)`) — разные ответы LLM на тест через `MOCK_LLM_SCENARIO`: последовательность ответов, `json_object` для извлечения памяти, ошибки, tool calls.
+- **Изоляция и скорость** — `APPLICATION_MODE=TEST`, per-worker `test-data-<worker>/` (`AI_CHAT_TEST_DATA_DIR`), ленивый импорт `openai`, `-n auto`.
+
+Полное руководство (best practices, troubleshooting, Windows/cp1251, производительность): [`docs/cli_e2e_testing_guide.md`](docs/cli_e2e_testing_guide.md).
 
 ## Руководство для новых разработчиков
 
@@ -704,7 +717,7 @@ N ходов и при сжатии контекста; новые уточне�
 2. **Напишите тесты**
    - Добавьте test case в соответствующий файл use case в `docs/uc/`
    - Реализуйте e2e тест в `cli_tests/` (отдельный файл на класс тестов)
-   - Запустите тесты: `pytest cli_tests/ -v`. Все тесты, кроме нового, должны пройти
+   - Запустите тесты: `poetry run pytest cli_tests/`. Все тесты, кроме нового, должны пройти
 
 3. **Определите use case**
    - Создайте новый класс в `use_cases.py` или используйте существующий
@@ -723,7 +736,7 @@ N ходов и при сжатии контекста; новые уточне�
    - Обрабатывайте результат и отображайте пользователю
 
 7. **Проверка**
-   - Запустите тесты: `pytest cli_tests/ -v`. Все тесты должны пройти
+   - Запустите тесты: `poetry run pytest cli_tests/`. Все тесты должны пройти
 
 ### Тестирование
 

@@ -1,6 +1,7 @@
 """E2E tests: TestUC006_NavigateToMenuFromChat."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_agent_by_name
 
 
 class TestUC006_NavigateToMenuFromChat:
@@ -30,13 +31,16 @@ class TestUC006_NavigateToMenuFromChat:
             "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
             "/menu\n"  # Return to menu
-            "3\n"  # Return to chat
-            "4\n"  # Exit
+            "5\n"  # Return to chat
+            "/menu\n"  # Return to menu
+            "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "МЕНЮ" in stdout or "AI CHAT CLI" in stdout
+        assert "--- МЕНЮ ---" in stdout
+        assert "[OK] Возврат в чат: MenuNav" in stdout
+        assert get_agent_by_name("MenuNav") is not None
 
     def test_tc_122_concurrent_chat_operations(self):
         """
@@ -81,6 +85,8 @@ class TestUC006_NavigateToMenuFromChat:
         assert returncode == 0, f"App exited with code {returncode}, stderr: {stderr}"
         assert "[OK] Чат 'Chat A' создан!" in stdout
         assert "[OK] Чат 'Chat B' создан!" in stdout
+        assert get_agent_by_name("Chat A") is not None
+        assert get_agent_by_name("Chat B") is not None
         # Option 2 selected Chat A explicitly
         assert "[OK] Выбран чат: Chat A" in stdout
         # Option 5 returns to the ACTIVE chat, which is A after selecting Chat A via option 2

@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 
 from config import (
@@ -48,7 +49,13 @@ class CLIChat:
         return self.current_chat.agent_id if self.current_chat else None
 
     def clear_screen(self):
-        """Очищает экран консоли."""
+        """Очищает экран консоли.
+
+        В неинтерактивной среде (stdout — pipe, как в e2e-тестах) очистка
+        пропускается: ``os.system`` запускал бы лишний процесс cmd.exe.
+        """
+        if not sys.stdout.isatty():
+            return
         os.system("cls" if os.name == "nt" else "clear")
 
     def print_header(self):

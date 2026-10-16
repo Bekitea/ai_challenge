@@ -1,6 +1,12 @@
 import sqlite3
+import sys
 
 from storage.extensions import sqlite_vec
+
+# На Windows консоль может использовать cp1251, в которую не влезает не-ASCII
+# вывод. Явно переключаем stdout на UTF-8, чтобы проверка не падала.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # 1. Создаем соединение
 conn = sqlite3.connect(":memory:")
@@ -22,4 +28,4 @@ result = conn.execute(
 ).fetchone()
 print(f"Результат поиска (distance): {result}")  # Ожидается: (0.0,)
 
-print("✅ Проверка прошла успешно!")
+print("[OK] Проверка прошла успешно!")

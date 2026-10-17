@@ -1,35 +1,12 @@
 import pickle
-from abc import ABC, abstractmethod
 from pathlib import Path
 
-from agents import GlobalMemory
+from core.domain.dtos.global_memory import GlobalMemory
 
 
-class GlobalMemoryRepository(ABC):
-    """Абстракция для хранения и управления глобальной памятью."""
-
-    @abstractmethod
-    def get_memory(self) -> GlobalMemory:
-        """
-        Получает глобальную память.
-
-        Returns:
-            GlobalMemory: Экземпляр глобальной памяти.
-        """
-
-    @abstractmethod
-    def save_memory(self, memory: GlobalMemory) -> None:
-        """
-        Сохраняет глобальную память.
-
-        Args:
-            memory: Глобальная память для сохранения.
-        """
-
-
-class FileGlobalMemoryRepository(GlobalMemoryRepository):
+class FileGlobalMemoryRepository:
     """
-    Реализация GlobalMemoryRepository с хранением в файле.
+    Хранилище глобальной памяти о пользователе в файле.
 
     Глобальная память сериализуется через pickle и сохраняется в файл.
     """

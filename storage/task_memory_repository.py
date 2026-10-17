@@ -8,32 +8,12 @@
 from __future__ import annotations
 
 import pickle
-from abc import ABC, abstractmethod
 from pathlib import Path
 
-from agents import TaskMemory
+from core.domain.dtos.task_memory import TaskMemory
 
 
-class TaskMemoryRepository(ABC):
-    """Абстрактное хранилище памяти задачи диалога."""
-
-    @abstractmethod
-    def get_memory(self, conversation_id: str) -> TaskMemory | None:
-        """Возвращает память задачи диалога или None, если её нет."""
-        ...
-
-    @abstractmethod
-    def save_memory(self, conversation_id: str, memory: TaskMemory) -> None:
-        """Сохраняет память задачи диалога."""
-        ...
-
-    @abstractmethod
-    def delete_memory(self, conversation_id: str) -> None:
-        """Удаляет память задачи диалога."""
-        ...
-
-
-class FileTaskMemoryRepository(TaskMemoryRepository):
+class FileTaskMemoryRepository:
     """Файловое хранилище памяти задачи (pickle по conversation_id)."""
 
     def __init__(self, base_dir: str):

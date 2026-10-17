@@ -6,7 +6,7 @@ CLI e2e-тестов на ground truth проверки. **Не исправля
 
 ## 1. Память задачи извлекается при выходе из чата вопреки порогу ходов
 
-- **Где**: `agents.py` (`update_task_memory`), `cli_app.py` (сохранение памяти
+- **Где**: `core/domain/entities/agent.py` (`update_task_memory`), `cli_app.py` (сохранение памяти
   при возврате в меню), `cli_tests/test_uc022_task_memory.py::test_tc_143`.
 - **Симптом**: `TASK_MEMORY_UPDATE_EVERY_N_MESSAGES` управляет обновлением
   памяти задачи *во время* хода, но при выходе из чата (`/menu`) память
@@ -20,7 +20,7 @@ CLI e2e-тестов на ground truth проверки. **Не исправля
 
 ## 2. Ветка чата получает память задачи после выхода, хотя на уровне логики — нет
 
-- **Где**: `agents.py` (ветвление агента), сохранение памяти при выходе,
+- **Где**: `core/domain/entities/agent.py` (ветвление агента), сохранение памяти при выходе,
   `cli_tests/test_uc022_task_memory.py::test_tc_144`,
   `cli_tests/test_task_memory.py::test_branch_does_not_copy_task_memory`.
 - **Симптом**: unit-тест утверждает, что ветка не наследует память задачи

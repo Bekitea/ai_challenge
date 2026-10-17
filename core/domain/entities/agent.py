@@ -3,299 +3,79 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
+from uuid import uuid4
 
 from config import (
-    DEFAULT_PROVIDER,
-    LLM_REQUEST_TIMEOUT,
     MEMORY_LLM_MAX_RETRIES,
     MEMORY_LLM_TIMEOUT,
     TASK_MEMORY_ENABLED,
     TASK_MEMORY_UPDATE_EVERY_N_MESSAGES,
     TASK_MEMORY_WINDOW_MESSAGES,
 )
-from context_strategies import (
-    ContextWindowStrategy,
-    DefaultStrategy,
+from core.domain.dtos.agent_settings import AgentSettings
+from core.domain.dtos.global_memory import GlobalMemory
+from core.domain.dtos.llm_response import LlmResponse
+from core.domain.dtos.prompt import Prompt
+from core.domain.dtos.prompt_sources import PromptSources
+from core.domain.dtos.rag_retrieval_result import RagRetrievalResult
+from core.domain.dtos.task_memory import TaskMemory
+from core.domain.dtos.task_profile import TaskProfile
+from core.domain.dtos.token_counters import TokenCounters
+from core.domain.dtos.tool_call_record import ToolCallRecord
+from core.domain.entities.agent_phase import AgentPhase
+from core.domain.entities.context_strategy_factory import create_strategy_from_dict
+from core.domain.entities.context_window_strategy import ContextWindowStrategy
+from core.domain.entities.default_strategy import DefaultStrategy
+from core.domain.entities.prompt_builder import PromptBuilder
+from core.domain.exceptions.agent_persistence_error import AgentPersistenceError
+from core.domain.exceptions.context_window_exceeded_error import (
+    ContextWindowExceededError,
 )
-from llm_providers import (
-    LlmProvider,
-    LlmProviderRegistry,
-    LlmResponse,
-    LlmTimeoutError,
-)
-from prompt_builder import PromptBuilder, PromptSources
-from rag_models import RagRetrievalResult
+from core.domain.exceptions.history_access_error import HistoryAccessError
+from core.domain.exceptions.llm_timeout_error import LlmTimeoutError
+from core.domain.exceptions.memory_access_error import MemoryAccessError
+from core.domain.protocols.agent_repository import AgentRepository
+from core.domain.protocols.llm_provider import LlmProvider
+from core.domain.protocols.tool_executor import ToolExecutor
 
 logger = logging.getLogger("agent.rag")
 
 
-class ContextWindowExceededError(Exception):
-    """Исключение, выбрасываемое при превышении лимита контекстного окна."""
-
-
-class AgentPhase(Enum):
-    """Фазы работы агента."""
-
-    PLAN = "plan"
-    EXECUTE = "execute"
-    VALIDATE = "validate"
-    REPORT = "report"
-
-    def get_description(self) -> str:
-        """Возвращает описание фазы."""
-        descriptions = {
-            AgentPhase.PLAN: (
-                "Фаза: Планирование\n"
-                "Действия: Обсуди со мной задачу, задавай вопросы, пока тебе не станут кристально ясны все нюансы. "
-                "Менять на этой фазе содержимое проекта строго запрещено. Переход в другую фазу только по согласию пользователя. "
-                "Если вопросов больше нет, то составь детальный план и явно запроси переход у пользователя."
-            ),
-            AgentPhase.EXECUTE: (
-                "Фаза: Исполнение\n"
-                "Действия: Нужно выполнять план. Выполняй, пока он не будет завершен полностью. "
-                "Если всё сделано, то явно запроси переход у пользователя."
-            ),
-            AgentPhase.VALIDATE: (
-                "Фаза: Тестирование\n"
-                "Действия: Нужно проверить результат на соответствие запросу пользователя. "
-                "Исправь проблемы. Если всё сделано, то явно запроси переход у пользователя."
-            ),
-            AgentPhase.REPORT: (
-                "Фаза: Отчет\nДействия: Нужно предоставить отчет по итогам работы."
-            ),
-        }
-        return descriptions.get(self, "")
-
-    @staticmethod
-    def serialize(phase: AgentPhase) -> str:
-        """Сериализует фазу в строку для хранения в БД."""
-        return phase.value
-
-    @staticmethod
-    def deserialize(value: str | None) -> AgentPhase:
-        """Десериализует фазу из строки БД."""
-        if value is None:
-            return AgentPhase.PLAN
-        for phase in AgentPhase:
-            if phase.value == value:
-                return phase
-        return AgentPhase.PLAN
-
-
-@dataclass
-class AgentSettings:
-    """Настройки агента для взаимодействия с LLM."""
-
-    model_id: str | None = None
-    provider: str | None = None
-    top_k: int | None = None
-    top_p: float | None = None
-    temperature: float | None = None
-    max_tokens: int | None = None
-    reasoning_effort: str | None = None
-    context_window_size: int | None = None
-    reranker_enabled: bool = True
-
-    def to_dict(self) -> dict[str, Any]:
-        """Преобразует настройки в словарь, отфильтровывая None значения."""
-        return {
-            k: v
-            for k, v in {
-                "model_id": self.model_id,
-                "provider": self.provider,
-                "top_k": self.top_k,
-                "top_p": self.top_p,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "reasoning_effort": self.reasoning_effort,
-                "context_window_size": self.context_window_size,
-                "reranker_enabled": self.reranker_enabled,
-            }.items()
-            if v is not None
-        }
-
-    def to_llm_request_properties(self) -> dict[str, Any]:
-        """Преобразует настройки в словарь, отфильтровывая None значения.
-
-        Таймаут задаётся явно (``LLM_REQUEST_TIMEOUT``): при включённом LLM
-        Gateway запрос может простоять в очереди к Ollama, поэтому стандартный
-        короткий таймаут провайдера не подходит.
-        """
-        return {
-            k: v
-            for k, v in {
-                "model_id": self.model_id,
-                "top_k": self.top_k,
-                "top_p": self.top_p,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "reasoning_effort": self.reasoning_effort,
-                "timeout": LLM_REQUEST_TIMEOUT,
-            }.items()
-            if v is not None
-        }
-
-
-@dataclass
-class TokenCounters:
-    """Счетчики токенов для чата."""
-
-    chat_prompt_tokens: int = 0
-    chat_completion_tokens: int = 0
-    tech_prompt_tokens: int = 0
-    tech_completion_tokens: int = 0
-
-    @property
-    def total_prompt_tokens(self) -> int:
-        """Общее количество prompt_tokens."""
-        return self.chat_prompt_tokens + self.tech_prompt_tokens
-
-    @property
-    def total_completion_tokens(self) -> int:
-        """Общее количество completion_tokens."""
-        return self.chat_completion_tokens + self.tech_completion_tokens
-
-
-@dataclass
-class ToolCallRecord:
-    """Запись о вызове инструмента (MCP), запрошенном моделью.
-
-    Хранится в истории сообщений, чтобы при повторных запросах к LLM
-    восстанавливать полный протокол tool calling.
-    """
-
-    id: str
-    name: str  # префиксованное имя инструмента: "<server>__<tool>"
-    arguments: str  # JSON-строка с аргументами
-
-
-@dataclass
-class Prompt:
-    """Сообщение в диалоге с агентом."""
-
-    role: str  # "system", "user", "assistant", "tool"
-    content: str
-    timestamp: datetime | None = (
-        None  # None для system, обязательно для user и assistant
-    )
-    reasoning: str | None = None  # Только для assistant
-    settings: AgentSettings | None = (
-        None  # Только для assistant (настройки на момент генерации)
-    )
-    prompt_tokens: int | None = None  # Только для assistant
-    completion_tokens: int | None = None  # Только для assistant
-    is_remembered: bool = False  # Пометка о прохождении через сохранение памяти
-    tool_calls: list[ToolCallRecord] | None = None  # Только для assistant
-    tool_call_id: str | None = None  # Только для role="tool"
-    name: str | None = None  # Только для role="tool" (имя инструмента)
-
-
-@dataclass
-class GlobalMemory:
-    """Общесистемная память о пользователе."""
-
-    facts: list[str] = field(default_factory=list)
-
-
-@dataclass
-class TaskProfile:
-    """Профиль задачи с памятью о фактах задачи."""
-
-    id: str
-    name: str
-    description: str
-    created_at: datetime | None
-    facts: list[str] = field(default_factory=list)
-    preferences: str = ""
-    invariants: list[str] = field(default_factory=list)
-
-
-@dataclass
-class TaskMemory:
-    """Память текущего диалога о задаче.
-
-    Хранится per-chat (по ``conversation_id``) и подмешивается в системный
-    блок на каждом сообщении, поэтому цель и зафиксированные договорённости
-    не теряются на длинных диалогах.
-    """
-
-    goal: str = ""
-    constraints: list[str] = field(default_factory=list)
-    terms: list[str] = field(default_factory=list)
-    clarifications: list[str] = field(default_factory=list)
-    updated_at: datetime | None = None
-
-    def is_empty(self) -> bool:
-        """Возвращает True, если память не содержит данных."""
-        return not (
-            self.goal or self.constraints or self.terms or self.clarifications
-        )
-
-
-@dataclass
-class AgentPreview:
-    """Превью агента для отображения в списке."""
-
-    agent_id: int
-    name: str
-    last_message_timestamp: datetime | None
-    message_count: int
-    last_message_preview: str | None = None
-
-
 class Agent:
-    """Агент для ведения диалога с пользователем через LLM."""
+    """Агент для ведения диалога с пользователем через LLM.
+
+    Домен-сущность: хранит только собственное состояние и знает о
+    репозитории, LLM-провайдере и исполнителе инструментов исключительно
+    через аргументы методов. Персистентность памяти и истории делегируется
+    репозиторию, переданному в метод; при его отсутствии агент падает
+    fail-fast с доменным исключением ``AgentPersistenceError``.
+    """
+
+    MAX_MCP_TOOL_ITERATIONS = 5  # защита от бесконечного цикла tool calling
 
     def __init__(
         self,
         agent_id: int | None,
         name: str,
-        llm_provider_registry: LlmProviderRegistry,
+        conversation_id: str | None,
         initial_settings: AgentSettings | None = None,
         system_prompt: str | None = None,
-        history_storage: Any | None = None,
         messages: list[Prompt] | None = None,
         strategy: ContextWindowStrategy | None = None,
-        auto_save: bool = True,
-        conversation_id: str | None = None,
-        global_memory_repository: Any | None = None,
         task_profile: TaskProfile | None = None,
-        task_profile_repository: Any | None = None,
         connected_mcp_servers: list[str] | None = None,
         initial_phase: AgentPhase | None = None,
         prompt_builder: PromptBuilder | None = None,
-        rag_service: Any | None = None,
-        task_memory_repository: Any | None = None,
     ):
-        if llm_provider_registry is None:
-            raise ValueError("llm_provider_registry is required")
-        if global_memory_repository is None:
-            raise ValueError("global_memory_repository is required")
-        if task_profile_repository is None:
-            raise ValueError("task_profile_repository is required")
-        if conversation_id is None:
-            raise ValueError("conversation_id is required")
-        if history_storage is None:
-            raise ValueError("history_storage is required")
-
-        self._llm_provider_registry = llm_provider_registry
-        self._repository = None  # Устанавливается при регистрации в репозитории
-        self._global_memory_repository = global_memory_repository
-        self._task_profile_repository = task_profile_repository
-        self.conversation_id = conversation_id  # UUID для связи с файловым хранилищем
-        self._history_storage = history_storage
-
         self.agent_id = agent_id
         self.name = name
+        self.conversation_id = conversation_id
         self._settings = initial_settings or AgentSettings()
         self._messages: list[Prompt] = messages if messages is not None else []
         self._strategy = strategy or DefaultStrategy()
         self._prompt_builder = prompt_builder or PromptBuilder()
-        self._auto_save = auto_save
 
         # Global memory fields
         self.global_memory = GlobalMemory()
@@ -305,7 +85,6 @@ class Agent:
         self.task_profile = task_profile
 
         # Память задачи текущего диалога (per-chat, по conversation_id).
-        self._task_memory_repository = task_memory_repository
         self.task_memory = TaskMemory()
         self._turns_since_task_memory = 0
 
@@ -314,12 +93,7 @@ class Agent:
         self._current_phase = initial_phase or AgentPhase.PLAN
 
         # Подключённые к чату MCP-серверы (машинные имена).
-        # По умолчанию пусто: у всех новых агентов/чатов MCP отсутствуют.
         self.connected_mcp_servers: list[str] = list(connected_mcp_servers or [])
-
-        # RAG-сервис: если задан и к чату подключены базы знаний, перед
-        # запросом к LLM подмешивается релевантный контекст.
-        self._rag_service = rag_service
 
         # Добавляем системный промпт только если сообщений ещё нет
         if system_prompt and not self._messages:
@@ -328,8 +102,39 @@ class Agent:
         self._last_message_timestamp: datetime | None = None
         self._token_counters = TokenCounters()
 
-        # Загружаем память из репозитория при инициализации
-        self.refresh_memory()
+    # ------------------------------------------------------------------
+    # Persistence guards (fail-fast)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _require_repository(
+        repository: AgentRepository | None,
+    ) -> AgentRepository:
+        """Возвращает репозиторий или падает fail-fast.
+
+        Память и история чата хранятся репозиторием; без него доступ к ним
+        невозможен, поэтому агент не деградирует молча, а бросает доменное
+        исключение.
+        """
+        if repository is None:
+            raise AgentPersistenceError(
+                "Репозиторий агента не передан — доступ к памяти и истории "
+                "чата невозможен."
+            )
+        return repository
+
+    def _require_conversation_id(self) -> str:
+        """Возвращает conversation_id или падает fail-fast, если он не задан."""
+        if self.conversation_id is None:
+            raise AgentPersistenceError(
+                f"У чата '{self.name}' отсутствует conversation_id — доступ к "
+                "истории и памяти задачи невозможен."
+            )
+        return self.conversation_id
+
+    # ------------------------------------------------------------------
+    # Свойства / состояние
+    # ------------------------------------------------------------------
 
     @property
     def token_counters(self) -> TokenCounters:
@@ -350,8 +155,8 @@ class Agent:
         """Счётчик ходов с последнего обновления памяти задачи.
 
         Персистится в репозитории, чтобы каденция обновления памяти задачи
-        сохранялась между загрузками агента (CLI теперь грузит агента на
-        каждый запрос по ``agent_id``).
+        сохранялась между загрузками агента (CLI грузит агента на каждый
+        запрос по ``agent_id``).
         """
         return self._turns_since_task_memory
 
@@ -362,22 +167,6 @@ class Agent:
     def get_settings(self) -> AgentSettings:
         """Возвращает текущие настройки агента."""
         return self._settings
-
-    @property
-    def _llm_provider(self) -> LlmProvider:
-        """Возвращает провайдера, выбранного в настройках чата.
-
-        Если провайдер не задан (старые чаты, созданные до появления выбора),
-        используется ``DEFAULT_PROVIDER``.
-        """
-        provider_name = self._settings.provider or DEFAULT_PROVIDER
-        provider = self._llm_provider_registry.get(provider_name)
-        if provider is None:
-            raise ValueError(
-                f"Провайдер '{provider_name}' недоступен. "
-                f"Доступные провайдеры: {', '.join(self._llm_provider_registry.all()) or 'нет'}."
-            )
-        return provider
 
     def _technical_model_id(self) -> str | None:
         """Модель для служебных запросов к LLM (память, факты, суммаризация).
@@ -392,199 +181,130 @@ class Agent:
             )
         return model_id
 
-    def update_settings(self, new_settings: AgentSettings) -> None:
-        """Обновляет настройки агента."""
+    def update_settings(
+        self, new_settings: AgentSettings, repository: AgentRepository
+    ) -> None:
+        """Обновляет настройки агента и сохраняет состояние."""
         self._settings = new_settings
-        if self._repository is not None and self._auto_save:
-            self.save()
+        self.save(repository)
 
     def get_history(self) -> list[Prompt]:
         """Возвращает всю историю диалога (включая системный промпт)."""
         return self._messages.copy()
 
-    MAX_MCP_TOOL_ITERATIONS = 5  # защита от бесконечного цикла tool calling
+    # ------------------------------------------------------------------
+    # MCP-состояние (без знания об инфраструктуре MCP)
+    # ------------------------------------------------------------------
 
-    def connect_mcp(self, server_name: str) -> tuple[bool, str]:
-        """Подключает MCP-сервер к чату.
-
-        Проверяет, что сервер существует в реестре и к нему можно подключиться,
-        затем сохраняет имя сервера в списке подключённых и автосохраняет агента.
-
-        Args:
-            server_name: Машинное имя MCP-сервера из реестра.
-
-        Returns:
-            Кортеж (успех, сообщение для пользователя).
-        """
-        from mcp_client import MCP_MANAGER, McpConnection
-        from mcp_registry import find_server
-
-        if self.agent_id is None:
-            return False, "Агент ещё не сохранён — подключите MCP позже."
-
-        server_info = find_server(server_name)
-        if server_info is None:
-            return False, f"MCP-сервер '{server_name}' не найден в реестре."
-
-        if server_name in self.connected_mcp_servers:
-            return False, f"MCP '{server_info.title}' уже подключен к этому чату."
-
-        connection = McpConnection(server_info)
-        tools = connection.connect_and_list_tools()
-        if not connection.connected:
-            return (
-                False,
-                f"Не удалось подключиться к MCP '{server_info.title}': {connection.connect_error or 'сервер не вернул инструменты'}",
-            )
-
-        MCP_MANAGER.add_connection(self.agent_id, connection)
-        self.connected_mcp_servers.append(server_name)
-        self.save()
-        tool_names = ", ".join(t.name for t in tools) if tools else "нет"
-        return (
-            True,
-            f"MCP '{server_info.title}' подключен. Доступные инструменты: {tool_names}",
-        )
-
-    def disconnect_mcp(self, server_name: str) -> tuple[bool, str]:
-        """Отключает MCP-сервер от чата."""
-        from mcp_client import MCP_MANAGER
-        from mcp_registry import find_server
-
+    def attach_mcp_server(
+        self, server_name: str, repository: AgentRepository
+    ) -> None:
+        """Добавляет имя подключённого MCP-сервера и сохраняет чат."""
         if server_name not in self.connected_mcp_servers:
-            return False, f"MCP '{server_name}' не подключен к этому чату."
+            self.connected_mcp_servers.append(server_name)
+        self.save(repository)
 
-        server_info = find_server(server_name)
-        title = server_info.title if server_info else server_name
+    def detach_mcp_server(
+        self, server_name: str, repository: AgentRepository
+    ) -> None:
+        """Убирает имя MCP-сервера из списка и сохраняет чат."""
+        if server_name in self.connected_mcp_servers:
+            self.connected_mcp_servers.remove(server_name)
+        self.save(repository)
 
-        if self.agent_id is not None:
-            MCP_MANAGER.remove_connection(self.agent_id, server_name)
-        self.connected_mcp_servers.remove(server_name)
-        self.save()
-        return True, f"MCP '{title}' отключен."
+    # ------------------------------------------------------------------
+    # Сохранение / память
+    # ------------------------------------------------------------------
 
-    def _collect_mcp_tools(self) -> list[dict]:
-        """Собирает OpenAI-compatible описания инструментов всех живых MCP-подключений.
-
-        Если сохранённый сервер ещё не имеет живого подключения в текущем
-        процессе (например, воркер Celery был перезапущен и пересоздал
-        MCP_MANAGER), выполняется попытка переподключения — иначе запрос к
-        LLM ушёл бы без tools, и модель ответила бы «у меня нет доступа к
-        инструменту». Причина неудачи пишется в лог, чтобы тихая деградация
-        была видна в логах воркера.
-        """
-        import logging
-
-        from mcp_client import MCP_MANAGER
-
-        logger = logging.getLogger("agent.mcp")
-
-        if not self.connected_mcp_servers or self.agent_id is None:
-            return []
-        tools: list[dict] = []
-        connections = MCP_MANAGER.get_connections(self.agent_id)
-        for server_name in self.connected_mcp_servers:
-            conn = connections.get(server_name)
-            if conn is None or not conn.connected:
-                conn, error = self._reconnect_mcp(server_name, MCP_MANAGER)
-                if conn is None:
-                    logger.warning(
-                        "MCP-сервер '%s' недоступен для чата #%s (%s): %s",
-                        server_name,
-                        self.agent_id,
-                        self.name,
-                        error or "неизвестная ошибка",
-                    )
-                    continue
-            tools.extend(tool.to_openai_tool() for tool in conn.tools)
-        return tools
-
-    def _reconnect_mcp(
-        self, server_name: str, manager
-    ) -> tuple[object | None, str | None]:
-        """Переподключает сохранённый MCP-сервер в текущем процессе.
-
-        Возвращает (подключение, None) при успехе или (None, причина ошибки)
-        при неудаче — вызывающий код решает, критично ли это (для периодических
-        отчётов отсутствие обязательного сервера должно приводить к retry,
-        а не к ответу LLM без инструментов).
-        """
-        from mcp_client import McpConnection
-        from mcp_registry import find_server
-
-        server_info = find_server(server_name)
-        if server_info is None:
-            return None, f"сервер '{server_name}' не найден в реестре"
-        connection = McpConnection(server_info)
-        connection.connect_and_list_tools()
-        if not connection.connected:
-            return None, connection.connect_error or "сервер не вернул инструменты"
-        manager.add_connection(self.agent_id, connection)
-        return connection, None
-
-    def _execute_mcp_tool_call(self, call) -> str:
-        """Выполняет один tool_call через живое подключение к нужному MCP-серверу."""
-        from mcp_client import MCP_MANAGER, parse_tool_arguments, strip_prefix
-
-        server_name, tool_name = strip_prefix(call.name)
-        connections = (
-            MCP_MANAGER.get_connections(self.agent_id)
-            if self.agent_id is not None
-            else {}
-        )
-        conn = connections.get(server_name)
-        if conn is None or not conn.connected:
-            return (
-                f"[MCP] Ошибка: сервер '{server_name}' не подключен к чату, "
-                f"инструмент '{tool_name}' недоступен."
-            )
-        arguments = parse_tool_arguments(call.arguments)
-        return conn.call_tool(tool_name, arguments)
-
-    def save(self) -> None:
-        """
-        Сохраняет текущее состояние агента.
-
-        Если агент зарегистрирован в репозитории и включен auto_save,
-        сохраняет метаданные и историю через репозиторий.
-        """
-        if self._repository is not None and self._auto_save:
-            self._repository.update_agent(self)
-
-    def _retrieve_rag_context(self, query: str) -> RagRetrievalResult:
-        """Поднимает RAG-контекст, деградируя без него при ошибке провайдера."""
-        if self._rag_service is None or self.agent_id is None:
-            return RagRetrievalResult(chunks=[], has_knowledge_bases=False)
+    def save(self, repository: AgentRepository) -> None:
+        """Сохраняет состояние агента (метаданные и историю) через репозиторий."""
+        repository = self._require_repository(repository)
         try:
-            return self._rag_service.retrieve(
-                self.agent_id,
-                query,
-                reranker_enabled=self._settings.reranker_enabled,
-            )
-        except Exception:
-            logger.debug(
-                "RAG-поиск недоступен, диалог продолжен без контекста",
-                exc_info=True,
-            )
-            return RagRetrievalResult(chunks=[], has_knowledge_bases=False)
+            repository.update_agent(self)
+        except AgentPersistenceError:
+            raise
+        except Exception as e:
+            raise HistoryAccessError(
+                f"Не удалось сохранить состояние/историю чата '{self.name}': {e}"
+            ) from e
+
+    def refresh_memory(self, repository: AgentRepository) -> None:
+        """Загружает общесистемную память и память задачи из репозитория.
+
+        Вызывается перед операциями, которые читают или изменяют память.
+        """
+        repository = self._require_repository(repository)
+        try:
+            self.global_memory = repository.get_global_memory()
+            self.task_memory = self._load_task_memory(repository)
+        except AgentPersistenceError:
+            raise
+        except Exception as e:
+            raise MemoryAccessError(
+                f"Не удалось загрузить память чата '{self.name}': {e}"
+            ) from e
+
+    def _load_task_memory(self, repository: AgentRepository) -> TaskMemory:
+        """Загружает память задачи текущего диалога из репозитория."""
+        conversation_id = self._require_conversation_id()
+        memory = repository.get_task_memory(conversation_id)
+        return memory if memory is not None else TaskMemory()
+
+    def _save_task_memory(self, repository: AgentRepository) -> None:
+        """Сохраняет память задачи текущего диалога через репозиторий."""
+        repository = self._require_repository(repository)
+        conversation_id = self._require_conversation_id()
+        self.task_memory.updated_at = datetime.now().astimezone()
+        try:
+            repository.save_task_memory(conversation_id, self.task_memory)
+        except AgentPersistenceError:
+            raise
+        except Exception as e:
+            raise MemoryAccessError(
+                f"Не удалось сохранить память задачи чата '{self.name}': {e}"
+            ) from e
+
+    # ------------------------------------------------------------------
+    # Диалог
+    # ------------------------------------------------------------------
 
     def continue_dialog(
         self,
         user_prompt: str,
+        *,
+        repository: AgentRepository,
+        llm_provider: LlmProvider,
+        rag_result: RagRetrievalResult | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_executor: ToolExecutor | None = None,
         on_memory_warning: Callable[[str], None] | None = None,
     ) -> LlmResponse:
         """
         Продолжает диалог: добавляет сообщение пользователя, делает запрос к LLM,
         сохраняет ответ и возвращает результат.
+
         Args:
             user_prompt: Текст сообщения от пользователя.
+            repository: Репозиторий агента (память и история).
+            llm_provider: Выбранный LLM-провайдер для этого запроса.
+            rag_result: Заранее поднятый RAG-контекст (None — RAG не задействован).
+            tools: Готовые OpenAI-описания инструментов (None — без инструментов).
+            tool_executor: Исполнитель tool-вызовов (обязателен, если модель
+                запрашивает инструменты).
             on_memory_warning: Необязательный колбэк для сообщений о сбое
                 обновления памяти задачи диалога (не прерывает диалог).
+
         Returns:
             LlmResponse: Ответ от LLM с контентом и reasoning.
+
         Raises:
-            ContextWindowExceededError: Если prompt_tokens превысил размер контекстного окна.
+            AgentPersistenceError: Если репозиторий недоступен.
+            ContextWindowExceededError: Если prompt_tokens превысил размер
+                контекстного окна.
         """
+        repository = self._require_repository(repository)
+        self.refresh_memory(repository)
+
         # Добавляем сообщение пользователя
         user_timestamp = datetime.now().astimezone()
         user_message = Prompt(
@@ -595,10 +315,8 @@ class Agent:
         self._messages.append(user_message)
         self._last_message_timestamp = user_timestamp
 
-        # RAG: если сервис задан и у чата есть подключённые базы знаний,
-        # поднимаем релевантные чанки. При отсутствии баз знаний сервис
-        # завершается сразу, без эмбеддинга запроса.
-        rag_result = self._retrieve_rag_context(user_prompt)
+        if rag_result is None:
+            rag_result = RagRetrievalResult(chunks=[], has_knowledge_bases=False)
 
         # Подготавливаем сообщения через PromptBuilder: он централизованно
         # подмешивает память, профиль задачи, RAG-контекст и фазу, а стратегия
@@ -615,7 +333,7 @@ class Agent:
             history=self._messages,
             sources=sources,
             strategy=self._strategy,
-            llm_provider=self._llm_provider,
+            llm_provider=llm_provider,
             model_id=self._settings.model_id,
         )
 
@@ -623,18 +341,21 @@ class Agent:
         settings = self._settings
         kwargs = settings.to_llm_request_properties()
 
-        # Инструменты подключённых MCP-серверов (пусто, если MCP не подключены)
-        mcp_tools = self._collect_mcp_tools()
-        if mcp_tools:
-            kwargs["tools"] = mcp_tools
+        if tools:
+            kwargs["tools"] = tools
 
         # Делаем запрос к LLM
-        response = self._llm_provider.generate(messages=messages_for_llm, **kwargs)
+        response = llm_provider.generate(messages=messages_for_llm, **kwargs)
 
-        # === Цикл tool calling: модель может просить вызвать инструменты MCP ===
+        # === Цикл tool calling: модель может просить вызвать инструменты ===
         for _ in range(self.MAX_MCP_TOOL_ITERATIONS):
             if not response.tool_calls:
                 break
+            if tool_executor is None:
+                raise ValueError(
+                    "Модель запросила вызов инструмента, но tool_executor не "
+                    "передан агенту."
+                )
 
             # Временный хвост протокола (assistant с tool_calls + результаты
             # инструментов). Он НЕ попадает в постоянную историю и не
@@ -666,7 +387,7 @@ class Agent:
 
             # Вызываем каждый инструмент и добавляем результаты как role="tool"
             for call in response.tool_calls:
-                tool_result = self._execute_mcp_tool_call(call)
+                tool_result = tool_executor.execute(call)
                 pending.append(
                     {
                         "role": "tool",
@@ -679,7 +400,7 @@ class Agent:
             # Повторный запрос к LLM уже с результатами инструментов:
             # постоянная история (уже очищенная стратегией) + временный хвост.
             followup_messages = messages_for_llm + pending
-            response = self._llm_provider.generate(messages=followup_messages, **kwargs)
+            response = llm_provider.generate(messages=followup_messages, **kwargs)
 
             # Ответ получен — группа завершена, переносим её в историю.
             for entry in pending:
@@ -776,12 +497,13 @@ class Agent:
         # контекста, чтобы цель диалога не терялась на длинных диалогах.
         self._maybe_update_task_memory(
             compressed=bool(prepared.summarization_tokens),
+            repository=repository,
+            llm_provider=llm_provider,
             on_warning=on_memory_warning,
         )
 
         # Автосохранение после каждого сообщения
-        if self._auto_save:
-            self.save()
+        self.save(repository)
 
         return response
 
@@ -822,6 +544,7 @@ class Agent:
     def branch(
         self,
         new_name: str | None = None,
+        repository: AgentRepository | None = None,
     ) -> Agent:
         """
         Создаёт нового агента-ветку на основе текущего.
@@ -831,59 +554,39 @@ class Agent:
 
         Args:
             new_name: Новое название для ветки (опционально).
+            repository: Репозиторий для сохранения новой ветки.
 
         Returns:
             Agent: Новый агент-ветка.
         """
-        from datetime import datetime
-        from uuid import uuid4
+        repository = self._require_repository(repository)
 
-        from context_strategies import create_strategy_from_dict
-
-        # Новый агент создается без ID - он будет установлен при сохранении в репозиторий
         if not new_name:
             timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
             new_name = f"{self.name} (branch {timestamp})"
 
         current_settings = self.get_settings()
         current_history = self.get_history()
-
         current_strategy = self.strategy
-        strategy_dict = current_strategy.to_dict()
-        new_strategy = create_strategy_from_dict(strategy_dict)
+        new_strategy = create_strategy_from_dict(current_strategy.to_dict())
 
         branched_agent = Agent(
             agent_id=None,
             conversation_id=str(uuid4()),
             name=new_name,
-            llm_provider_registry=self._llm_provider_registry,
             initial_settings=current_settings,
             system_prompt=None,
-            history_storage=self._history_storage,
             messages=current_history.copy(),
             strategy=new_strategy,
-            auto_save=True,
-            global_memory_repository=self._global_memory_repository,
+            # Ветка — чистый лист по памяти задачи (новый conversation_id).
             task_profile=self.task_profile,
-            task_profile_repository=self._task_profile_repository,
             connected_mcp_servers=list(self.connected_mcp_servers),
-            rag_service=self._rag_service,
-            # Ветка — чистый лист по памяти задачи: репозиторий передаём,
-            # но данные родителя не копируем (новый conversation_id).
-            task_memory_repository=self._task_memory_repository,
         )
 
-        branched_agent._repository = self._repository
-
-        # Переносим живые MCP-подключения на ветку (регистрация под новым ID)
-        if self.agent_id is not None and branched_agent.agent_id is not None:
-            from mcp_client import MCP_MANAGER
-
-            connections = MCP_MANAGER.get_connections(self.agent_id)
-            for server_name in branched_agent.connected_mcp_servers:
-                conn = connections.get(server_name)
-                if conn is not None:
-                    MCP_MANAGER.add_connection(branched_agent.agent_id, conn)
+        # Глобальная память общая для всех чатов — переносим факты.
+        branched_agent.global_memory = GlobalMemory(
+            facts=list(self.global_memory.facts)
+        )
 
         current_counters = self.token_counters
         branched_agent._token_counters.chat_prompt_tokens = (
@@ -904,37 +607,13 @@ class Agent:
             if non_system_msgs:
                 branched_agent._last_message_timestamp = non_system_msgs[-1].timestamp
 
-        if self._repository is not None:
-            self._repository.update_agent(branched_agent)
+        branched_agent.save(repository)
 
         return branched_agent
 
-    def refresh_memory(self) -> None:
-        """
-        Загружает общесистемную память и память задачи из репозиториев.
-
-        Вызывается при инициализации агента и при входе в чат.
-        Репозиторий глобальной памяти должен быть установлен (иначе агент
-        не будет создан).
-        """
-        self.global_memory = self._global_memory_repository.get_memory()
-        self.task_memory = self._load_task_memory()
-
-    def _load_task_memory(self) -> TaskMemory:
-        """Загружает память задачи текущего диалога из репозитория."""
-        if self._task_memory_repository is None or self.conversation_id is None:
-            return TaskMemory()
-        memory = self._task_memory_repository.get_memory(self.conversation_id)
-        return memory if memory is not None else TaskMemory()
-
-    def _save_task_memory(self) -> None:
-        """Сохраняет память задачи текущего диалога."""
-        if self._task_memory_repository is None or self.conversation_id is None:
-            return
-        self.task_memory.updated_at = datetime.now().astimezone()
-        self._task_memory_repository.save_memory(
-            self.conversation_id, self.task_memory
-        )
+    # ------------------------------------------------------------------
+    # Память задачи
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _as_str_list(value: Any) -> list[str]:
@@ -946,6 +625,9 @@ class Agent:
     def _maybe_update_task_memory(
         self,
         compressed: bool,
+        *,
+        repository: AgentRepository,
+        llm_provider: LlmProvider,
         on_warning: Callable[[str], None] | None = None,
     ) -> None:
         """Триггерит обновление памяти задачи по счётчику или при сжатии."""
@@ -956,11 +638,19 @@ class Agent:
             compressed
             or self._turns_since_task_memory >= TASK_MEMORY_UPDATE_EVERY_N_MESSAGES
         ):
-            self.update_task_memory(on_warning=on_warning)
+            self.update_task_memory(
+                repository=repository,
+                llm_provider=llm_provider,
+                on_warning=on_warning,
+            )
             self._turns_since_task_memory = 0
 
     def update_task_memory(
-        self, on_warning: Callable[[str], None] | None = None
+        self,
+        *,
+        repository: AgentRepository,
+        llm_provider: LlmProvider,
+        on_warning: Callable[[str], None] | None = None,
     ) -> bool:
         """Обновляет память задачи текущего диалога через LLM.
 
@@ -976,8 +666,10 @@ class Agent:
         Returns:
             True, если обновление прервано таймаутом модели; иначе False.
         """
-        if not TASK_MEMORY_ENABLED or self._task_memory_repository is None:
+        if not TASK_MEMORY_ENABLED:
             return False
+        self._require_repository(repository)
+        self._require_conversation_id()
 
         window = [
             msg for msg in self._messages if msg.role in ("user", "assistant")
@@ -988,8 +680,6 @@ class Agent:
         model_id = self._technical_model_id()
         if model_id is None:
             return False
-
-        import json
 
         dialog_text = ""
         for msg in window:
@@ -1037,7 +727,7 @@ class Agent:
         )
 
         try:
-            response = self._llm_provider.generate(
+            response = llm_provider.generate(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": "Обнови память задачи."},
@@ -1096,11 +786,15 @@ class Agent:
                 else self.task_memory.clarifications
             ),
         )
-        self._save_task_memory()
+        self._save_task_memory(repository)
         return False
 
     def save_memory(
-        self, on_warning: Callable[[str], None] | None = None
+        self,
+        *,
+        repository: AgentRepository,
+        llm_provider: LlmProvider,
+        on_warning: Callable[[str], None] | None = None,
     ) -> None:
         """
         Сохраняет общесистемную память о пользователе и память задачи.
@@ -1111,19 +805,23 @@ class Agent:
            - Для глобальной памяти: факты о личности пользователя
            - Для памяти задачи: факты, относящиеся к задаче (если агент привязан к профилю)
         3. Объединяет старые и новые факты
-        4. Сохраняет через соответствующие репозитории
+        4. Сохраняет через репозиторий
         5. Помечает все промпты и агент как remembered
 
         Расход токенов записывается в tech_prompt_tokens и tech_completion_tokens.
         Сбой обновления памяти задачи диалога передаётся в ``on_warning`` и не
         прерывает извлечение глобальной и профильной памяти.
         """
-        import json
+        repository = self._require_repository(repository)
+        self._require_conversation_id()
 
         if self.is_dialog_remembered:
             return  # Нечего сохранять
 
-        # Находим все непромпты с is_remembered == False (только user и assistant)
+        # Загружаем актуальное состояние памяти, чтобы не потерять его при merge.
+        self.refresh_memory(repository)
+
+        # Находим все промпты с is_remembered == False (только user и assistant)
         unremembered_prompts = [
             msg
             for msg in self._messages
@@ -1140,7 +838,11 @@ class Agent:
         # Фиксируем память задачи на выходе (перекрывающая семантика).
         # Если этот вызов упал по таймауту, остальные вызовы памяти для чата
         # не выполняем — прерываем сохранение, чтобы не ждать ещё раз.
-        task_memory_timed_out = self.update_task_memory(on_warning=on_warning)
+        task_memory_timed_out = self.update_task_memory(
+            repository=repository,
+            llm_provider=llm_provider,
+            on_warning=on_warning,
+        )
         self._turns_since_task_memory = 0
         if task_memory_timed_out:
             raise LlmTimeoutError("Таймаут обновления памяти задачи.")
@@ -1180,7 +882,7 @@ class Agent:
             },
         ]
 
-        response = self._llm_provider.generate(
+        response = llm_provider.generate(
             messages=messages_for_llm,
             temperature=0.1,
             max_tokens=1000,
@@ -1208,10 +910,17 @@ class Agent:
                 all_global_facts.append(fact)
 
         self.global_memory.facts = all_global_facts
-        self._global_memory_repository.save_memory(self.global_memory)
+        try:
+            repository.save_global_memory(self.global_memory)
+        except AgentPersistenceError:
+            raise
+        except Exception as e:
+            raise MemoryAccessError(
+                f"Не удалось сохранить глобальную память: {e}"
+            ) from e
 
         # === Сохранение памяти задачи (если агент привязан к профилю) ===
-        if self.task_profile and self._task_profile_repository:
+        if self.task_profile and self.task_profile.id:
             task_old_facts_text = ""
             if self.task_profile.facts:
                 task_old_facts_text = (
@@ -1241,7 +950,7 @@ class Agent:
                 {"role": "user", "content": "Извлеки факты о задаче из диалога выше."},
             ]
 
-            task_response = self._llm_provider.generate(
+            task_response = llm_provider.generate(
                 messages=messages_for_task_llm,
                 temperature=0.1,
                 max_tokens=1000,
@@ -1271,9 +980,16 @@ class Agent:
                     all_task_facts.append(fact)
 
             self.task_profile.facts = all_task_facts
-            self._task_profile_repository.save_facts(
-                self.task_profile.id, all_task_facts
-            )
+            try:
+                repository.save_task_profile_facts(
+                    self.task_profile.id, all_task_facts
+                )
+            except AgentPersistenceError:
+                raise
+            except Exception as e:
+                raise MemoryAccessError(
+                    f"Не удалось сохранить факты профиля задачи: {e}"
+                ) from e
 
         # Помечаем все промпты как remembered
         for msg in self._messages:
@@ -1282,12 +998,25 @@ class Agent:
         # Помечаем агента как remembered
         self.is_dialog_remembered = True
 
+    # ------------------------------------------------------------------
+    # Фазы
+    # ------------------------------------------------------------------
+
     @property
     def current_phase(self) -> AgentPhase:
         """Возвращает текущую фазу работы агента."""
         return self._current_phase
 
-    def set_phase(self, phase: AgentPhase) -> None:
+    _PHASE_ORDER: ClassVar[list[AgentPhase]] = [
+        AgentPhase.PLAN,
+        AgentPhase.EXECUTE,
+        AgentPhase.VALIDATE,
+        AgentPhase.REPORT,
+    ]
+
+    def set_phase(
+        self, phase: AgentPhase, repository: AgentRepository
+    ) -> None:
         """
         Устанавливает новую фазу работы агента.
 
@@ -1296,34 +1025,28 @@ class Agent:
         """
         old_phase = self._current_phase
 
-        # Проверка валидности перехода
-        # Можно перейти на следующий этап или на любой предыдущий
-        # Нельзя перескакивать этапы вперед
-        phase_order = [
-            AgentPhase.PLAN,
-            AgentPhase.EXECUTE,
-            AgentPhase.VALIDATE,
-            AgentPhase.REPORT,
-        ]
-        old_index = phase_order.index(old_phase)
-        new_index = phase_order.index(phase)
+        # Можно перейти на следующий этап или на любой предыдущий.
+        # Нельзя перескакивать этапы вперед.
+        old_index = self._PHASE_ORDER.index(old_phase)
+        new_index = self._PHASE_ORDER.index(phase)
 
-        # Если переход вперед (new_index > old_index), то только на один шаг
         if new_index > old_index and new_index != old_index + 1:
             raise ValueError(
                 f"Нельзя перескочить этап: переход из {old_phase.name} сразу в {phase.name} запрещен"
             )
 
         self._current_phase = phase
-        if self._repository is not None and self._auto_save:
-            self.save()
+        self.save(repository)
 
-    def handle_phase_command(self, command: str) -> tuple[bool, str]:
+    def handle_phase_command(
+        self, command: str, repository: AgentRepository
+    ) -> tuple[bool, str]:
         """
         Обрабатывает команды перехода по фазам.
 
         Args:
             command: Команда (/plan, /execute, /validate, /report)
+            repository: Репозиторий агента для сохранения состояния.
 
         Returns:
             Кортеж (успех, сообщение)
@@ -1341,19 +1064,9 @@ class Agent:
         new_phase = command_map[command.lower()]
         old_phase = self._current_phase
 
-        # Проверка валидности перехода
-        # Можно перейти на следующий этап или на любой предыдущий
-        # Нельзя перескакивать этапы вперед
-        phase_order = [
-            AgentPhase.PLAN,
-            AgentPhase.EXECUTE,
-            AgentPhase.VALIDATE,
-            AgentPhase.REPORT,
-        ]
-        old_index = phase_order.index(old_phase)
-        new_index = phase_order.index(new_phase)
+        old_index = self._PHASE_ORDER.index(old_phase)
+        new_index = self._PHASE_ORDER.index(new_phase)
 
-        # Если переход вперед (new_index > old_index), то только на один шаг
         if new_index > old_index and new_index != old_index + 1:
             return (
                 False,
@@ -1362,7 +1075,6 @@ class Agent:
 
         self._current_phase = new_phase
 
-        if self._repository is not None and self._auto_save:
-            self.save()
+        self.save(repository)
 
         return True, f"Фаза изменена: {old_phase.name} -> {new_phase.name}"

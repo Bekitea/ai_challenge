@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import requests
 
@@ -15,10 +13,12 @@ from config import (
     OLLAMA_OPENAI_BASE_URL,
     YANDEX_BASE_URL,
 )
+from core.domain.dtos.llm_model_info import LlmModelInfo
+from core.domain.dtos.llm_response import LlmResponse
+from core.domain.dtos.tool_call import ToolCall
+from core.domain.exceptions.llm_timeout_error import LlmTimeoutError
+from core.domain.protocols.llm_provider import LlmProvider
 from mock_llm import MockScenario, load_scenario_from_env
-
-if TYPE_CHECKING:
-    from rag_models import RagContextChunk
 
 logger = logging.getLogger(__name__)
 
@@ -36,53 +36,9 @@ def _openai():
     return openai
 
 
-class LlmTimeoutError(Exception):
-    """Таймаут запроса к LLM-провайдеру.
-
-    Доменная обёртка над ``openai.APITimeoutError``, чтобы верхние слои могли
-    отличать таймаут от прочих ошибок, не завися от SDK.
-    """
-
 # Базовые имена embedding-моделей Ollama, которые не должны попадать в список
 # чат-моделей (это модели для RAG, а не для генерации ответов).
 _EMBEDDING_MODEL_NAMES = set(AVAILABLE_EMBEDDING_MODELS)
-
-
-@dataclass
-class ToolCall:
-    """Вызов инструмента (tool call), запрошенный моделью."""
-
-    id: str
-    name: str
-    arguments: Any  # dict или JSON-строка с аргументами
-
-
-@dataclass
-class LlmResponse:
-    """Результат ответа от LLM."""
-
-    content: str
-    reasoning: str | None = None
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    tool_calls: list[ToolCall] | None = None  # Вызовы инструментов (MCP)
-    # Чанки, использованные как RAG-контекст. ``None`` — RAG не задействован
-    # (нет подключённых баз знаний), пустой список — базы есть, но ни один
-    # чанк не прошёл порог релевантности.
-    rag_sources: list[RagContextChunk] | None = None
-
-
-@dataclass
-class LlmModelInfo:
-    """Описание модели, доступной у конкретного провайдера.
-
-    ``model_id`` — нативный идентификатор модели у провайдера (то, что
-    сохраняется в ``AgentSettings.model_id`` и передаётся в запрос), а
-    ``display_name`` — человекочитаемое имя для CLI.
-    """
-
-    model_id: str
-    display_name: str
 
 
 def _parse_openai_response(response: Any) -> LlmResponse:
@@ -126,65 +82,7 @@ def _to_yandex_model_id(raw_id: str, folder_id: str) -> str:
     return raw_id
 
 
-class LlmProvider(ABC):
-    """Протокол для провайдеров LLM.
-
-    Позволяет добавлять новых провайдеров (OpenAI, Anthropic, Ollama, etc.)
-    без изменения основного кода приложения. Каждый провайдер имеет
-    ``provider_name`` — строковый ключ, который сохраняется в настройках чата,
-    и умеет перечислять доступные модели.
-    """
-
-    provider_name: str = ""
-
-    @abstractmethod
-    def list_models(self) -> list[LlmModelInfo]:
-        """Возвращает список доступных у провайдера моделей.
-
-        Реализация не должна бросать исключение при недоступности провайдера —
-        вместо этого возвращается пустой список (провайдер просто выпадает из
-        общего списка доступных моделей).
-        """
-
-    @abstractmethod
-    def generate(
-        self,
-        messages: list[dict],
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        timeout: int = 20,
-        top_p: float | None = None,
-        top_k: float | None = None,
-        response_format: dict | None = None,
-        reasoning_effort: str | None = None,
-        model_id: str | None = None,
-        tools: list[dict] | None = None,
-        max_retries: int | None = None,
-    ) -> LlmResponse:
-        """Генерирует ответ от LLM.
-
-        Args:
-            messages: Список сообщений в формате [{"role": "...", "content": "..."}].
-            temperature: Температура генерации (0.0 - 2.0).
-            max_tokens: Максимальное количество токенов в ответе.
-            timeout: Таймаут запроса в секундах.
-            top_p: Параметр выборки ядра (nucleus sampling).
-            top_k: Параметр топ-K выборки.
-            response_format: Формат ответа (например, JSON schema).
-            reasoning_effort: Уровень усилий рассуждений ("low", "medium", "high", "none").
-            model_id: Идентификатор модели (обязателен: дефолтной модели нет).
-            tools: Список инструментов (OpenAI-compatible) для function calling (MCP).
-            max_retries: Число повторов запроса в SDK (None — дефолт клиента).
-
-        Returns:
-            LlmResponse: Объект с содержимым ответа и текстом рассуждений.
-
-        Raises:
-            Exception: При ошибке запроса к API.
-        """
-
-
-class YandexCloudLlmProvider(LlmProvider):
+class YandexCloudLlmProvider:
     """Провайдер для работы с Yandex Cloud LLM API."""
 
     provider_name = "yandex"
@@ -295,7 +193,7 @@ class YandexCloudLlmProvider(LlmProvider):
         return _parse_openai_response(response)
 
 
-class OllamaLlmProvider(LlmProvider):
+class OllamaLlmProvider:
     """Провайдер для локальных моделей Ollama (OpenAI-совместимый ``/v1``).
 
     Генерация идёт через ``POST {OLLAMA_OPENAI_BASE_URL}/chat/completions`` (тот
@@ -421,7 +319,7 @@ MOCK_MODELS: dict[str, list[tuple[str, str]]] = {
 }
 
 
-class MockLlmProvider(LlmProvider):
+class MockLlmProvider:
     """Mock-провайдер для тестирования без реального API.
 
     Возвращает заглушки вместо реальных запросов к LLM. Имеет настраиваемое

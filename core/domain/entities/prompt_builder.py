@@ -14,41 +14,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from context_strategies import (
-    ContextWindowStrategy,
+from core.domain.dtos.prepared_messages import PreparedMessages
+from core.domain.dtos.prompt import Prompt
+from core.domain.dtos.prompt_sources import PromptSources
+from core.domain.dtos.task_memory import TaskMemory
+from core.domain.entities.context_window_helpers import (
     prompt_to_llm_dict,
     sanitize_llm_messages,
 )
+from core.domain.entities.context_window_strategy import ContextWindowStrategy
 
 if TYPE_CHECKING:
-    from agents import Prompt, TaskMemory, TaskProfile
-    from llm_providers import LlmProvider
-    from rag_models import RagContextChunk
-
-
-@dataclass
-class PreparedMessages:
-    """Результат подготовки сообщений для отправки в LLM."""
-
-    messages: list[dict[str, Any]]
-    summary: str | None = None
-    summarization_tokens: tuple[int, int] | None = None
-
-
-@dataclass
-class PromptSources:
-    """Источники, подмешиваемые в системную часть контекста."""
-
-    base_system_prompt: str | None = None
-    global_facts: list[str] = field(default_factory=list)
-    task_profile: TaskProfile | None = None
-    phase_description: str | None = None
-    rag_context: list[RagContextChunk] = field(default_factory=list)
-    rag_enabled: bool = False
-    task_memory: TaskMemory | None = None
+    from core.domain.dtos.rag_context_chunk import RagContextChunk
+    from core.domain.protocols.llm_provider import LlmProvider
 
 
 class PromptBuilder:

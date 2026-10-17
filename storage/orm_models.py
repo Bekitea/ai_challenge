@@ -15,7 +15,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from agents import AgentPhase, AgentSettings
+from core.domain.dtos.agent_settings import AgentSettings
+from core.domain.entities.agent_phase import AgentPhase
 
 
 class Base(DeclarativeBase):

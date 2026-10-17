@@ -1,8 +1,8 @@
 import pickle
 from pathlib import Path
 
-from agents import Prompt
 from config import FILE_STORAGE_DIR
+from core.domain.dtos.prompt import Prompt
 
 
 class ConversationRepository:

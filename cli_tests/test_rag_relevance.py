@@ -11,7 +11,8 @@ from pathlib import Path
 os.environ["APPLICATION_MODE"] = "TEST"
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from rag_models import RagContextChunk, RetrievedChunk
+from core.domain.dtos.rag_context_chunk import RagContextChunk
+from rag_models import RetrievedChunk
 from rag_service import RagService
 from reranker_providers import RerankResult
 from storage.vector_store import VectorSearchItem

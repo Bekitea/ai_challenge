@@ -208,11 +208,9 @@ def initialize_application() -> UseCasesBundle:
 
     # Initialize repository with session factory
     repository = PersistentAgentRepository(
-        llm_provider_registry=provider_registry,
         session_factory=db_connection.get_session,
         global_memory_repository=memory_repository,
         task_profile_repository=task_profile_repository,
-        rag_service=rag_service,
         task_memory_repository=task_memory_repository,
     )
 
@@ -221,7 +219,7 @@ def initialize_application() -> UseCasesBundle:
 
     # Create and return all use cases
     create_chat = CreateChatUseCase(repository, task_profile_repository)
-    send_message = SendMessageUseCase(repository)
+    send_message = SendMessageUseCase(repository, provider_registry, rag_service)
     connect_mcp = ConnectMcpUseCase(repository)
 
     return UseCasesBundle(
@@ -240,8 +238,10 @@ def initialize_application() -> UseCasesBundle:
         select_strategy=SelectContextStrategyUseCase(),
         view_global_memory=ViewGlobalMemoryUseCase(memory_repository),
         refresh_agent_memory=RefreshAgentMemoryUseCase(repository),
-        save_agent_memory=SaveAgentMemoryUseCase(repository),
-        save_unsaved_memories=SaveUnsavedMemoriesUseCase(repository),
+        save_agent_memory=SaveAgentMemoryUseCase(repository, provider_registry),
+        save_unsaved_memories=SaveUnsavedMemoriesUseCase(
+            repository, provider_registry
+        ),
         list_task_profiles=ListTaskProfilesUseCase(task_profile_repository),
         create_task_profile=CreateTaskProfileUseCase(task_profile_repository),
         get_task_profile_memory=GetTaskProfileMemoryUseCase(task_profile_repository),

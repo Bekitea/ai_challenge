@@ -15,16 +15,16 @@ from pathlib import Path
 os.environ["APPLICATION_MODE"] = "TEST"
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agents import Prompt, TaskProfile
-from context_strategies import (
-    KeyValueMemoryStrategy,
-    SlidingWindowStrategy,
-    SummarizationStrategy,
-    create_strategy_from_dict,
-)
-from llm_providers import LlmResponse
-from prompt_builder import PromptBuilder, PromptSources
-from rag_models import RagContextChunk
+from core.domain.dtos.llm_response import LlmResponse
+from core.domain.dtos.prompt import Prompt
+from core.domain.dtos.prompt_sources import PromptSources
+from core.domain.dtos.rag_context_chunk import RagContextChunk
+from core.domain.dtos.task_profile import TaskProfile
+from core.domain.entities.context_strategy_factory import create_strategy_from_dict
+from core.domain.entities.key_value_memory_strategy import KeyValueMemoryStrategy
+from core.domain.entities.prompt_builder import PromptBuilder
+from core.domain.entities.sliding_window_strategy import SlidingWindowStrategy
+from core.domain.entities.summarization_strategy import SummarizationStrategy
 
 
 class _StubLlmProvider:

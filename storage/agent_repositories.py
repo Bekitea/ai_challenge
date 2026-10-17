@@ -1,185 +1,129 @@
-from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from agents import (
-    Agent,
-    AgentPhase,
-    AgentPreview,
-    AgentSettings,
-    Prompt,
-)
-from context_strategies import (
-    ContextWindowStrategy,
-    DefaultStrategy,
-    create_strategy_from_dict,
-)
-from llm_providers import LlmProviderRegistry
+from core.domain.dtos.agent_preview import AgentPreview
+from core.domain.dtos.agent_settings import AgentSettings
+from core.domain.dtos.global_memory import GlobalMemory
+from core.domain.dtos.prompt import Prompt
+from core.domain.dtos.task_memory import TaskMemory
+from core.domain.entities.agent import Agent
+from core.domain.entities.agent_phase import AgentPhase
+from core.domain.entities.context_strategy_factory import create_strategy_from_dict
+from core.domain.entities.context_window_strategy import ContextWindowStrategy
+from core.domain.entities.default_strategy import DefaultStrategy
 from storage.conversation_repository import ConversationRepository
 from storage.orm_models import AgentORM
 
 
-class AgentRepository(ABC):
-    """Абстракция для хранения и управления агентами."""
-
-    @abstractmethod
-    def create_agent(
-        self,
-        name: str,
-        initial_settings: AgentSettings | None = None,
-        system_prompt: str | None = None,
-        strategy: ContextWindowStrategy | None = None,
-        task_profile_id: str | None = None,
-        initial_phase: AgentPhase | None = None,
-    ) -> Agent:
-        """
-        Создаёт нового агента с уникальным идентификатором.
-
-        Args:
-            name: Название агента.
-            llm_provider: Провайдер LLM для запросов.
-            initial_settings: Начальные настройки агента.
-            system_prompt: Системный промпт (опционально).
-            strategy: Стратегия управления контекстным окном (опционально).
-            task_profile_id: UUID профиля задачи (опционально).
-            initial_phase: Стартовая фаза агента (по умолчанию PLAN).
-
-        Returns:
-            Agent: Newly created agent instance.
-        """
-
-    @abstractmethod
-    def get_agent(self, agent_id: int) -> Agent | None:
-        """
-        Получает агента по идентификатору.
-
-        Args:
-            agent_id: Уникальный числовой идентификатор агента.
-
-        Returns:
-            Agent или None, если агент не найден.
-        """
-
-    @abstractmethod
-    def get_all_previews(self) -> list[AgentPreview]:
-        """
-        Получает превью всех агентов, отсортированные по дате последнего сообщения
-        (последние сверху).
-
-        Returns:
-            Список AgentPreview, отсортированный по last_message_timestamp (descending).
-        """
-
-    @abstractmethod
-    def update_agent(self, agent: Agent) -> None:
-        """
-        Обновляет метаданные и историю агента.
-        Вызывается после каждого изменения состояния агента.
-
-        Args:
-            agent: Агент для обновления.
-        """
-
-    @abstractmethod
-    def delete_agent(self, agent_id: int) -> bool:
-        """
-        Удаляет агента из БД и удаляет файл истории.
-
-        Args:
-            agent_id: Числовой ID агента.
-
-        Returns:
-            True, если агент был удалён, False если не найден.
-        """
-
-    @abstractmethod
-    def get_agents_with_unsaved_memory(self) -> list[Agent]:
-        """
-        Получает всех агентов с несохранённой памятью.
-        Агент считается имеющим несохранённую память, если:
-        - is_dialog_remembered == False
-        - Есть сообщения с is_remembered == False
-
-        Returns:
-            Список агентов с несохранённой памятью.
-        """
-
-
-class PersistentAgentRepository(AgentRepository):
+class PersistentAgentRepository:
     """
-    Реализация AgentRepository с хранением метаданных в SQLite и истории в файлах.
+    Репозиторий агентов: CRUD и персистентность памяти/истории.
 
     Метаданные (настройки, превью, системный промпт) хранятся в БД.
     Полная история сообщений (Prompt objects) хранится в pickle-файлах.
+    Глобальная память, память задачи и факты профилей делегируются
+    соответствующим хранилищам, которые репозиторий агрегирует как
+    единая точка доступа к персистентности агента.
     """
 
     def __init__(
         self,
-        llm_provider_registry: LlmProviderRegistry,
         session_factory: Callable[[], Session],
+        conversation_storage: ConversationRepository | None = None,
         global_memory_repository=None,
         task_profile_repository=None,
-        rag_service=None,
         task_memory_repository=None,
     ):
         """
         Инициализирует репозиторий.
 
         Args:
-            llm_provider_registry: Реестр LLM-провайдеров. Провайдер для
-                            конкретного чата выбирается по AgentSettings.provider.
             session_factory: Фабрика сессий БД. Внешняя зависимость,
-                            предоставляемая слоем инфраструктуры.
-            global_memory_repository: Репозиторий глобальной памяти (опционально).
-            task_profile_repository: Репозиторий профилей задач (опционально).
+                предоставляемая слоем инфраструктуры.
+            conversation_storage: Хранилище истории сообщений.
+            global_memory_repository: Хранилище глобальной памяти.
+            task_profile_repository: Хранилище профилей задач.
+            task_memory_repository: Хранилище памяти задачи диалога.
         """
         self._session_factory = session_factory
-        self._llm_provider_registry = llm_provider_registry
-        self._chat_storage = ConversationRepository()
+        self._chat_storage = conversation_storage or ConversationRepository()
         self._global_memory_repository = global_memory_repository
         self._task_profile_repository = task_profile_repository
-        self._rag_service = rag_service
         self._task_memory_repository = task_memory_repository
 
     def _get_session(self) -> Session:
         """Возвращает новую сессию БД."""
         return self._session_factory()
 
+    # ------------------------------------------------------------------
+    # Память и история (единая точка доступа для агента)
+    # ------------------------------------------------------------------
+
     @staticmethod
-    def _restore_mcp_connections(agent: Agent) -> None:
-        """Восстанавливает живые MCP-подключения агента из менеджера.
+    def _require(store, name: str):
+        """Возвращает хранилище или падает, если оно не настроено.
 
-        Если подключений в менеджере нет (например, приложение было
-        перезапущено), переподключается к каждому сохранённому серверу.
-        Серверы, отсутствующие в реестре или недоступные, молча пропускаются —
-        они останутся в списке и пользователь увидит статус через /mcp.
+        Репозиторий не бросает доменных исключений: это инфраструктурная
+        ошибка конфигурации, которую агент при вызове метода оборачивает в
+        доменное исключение доступа.
         """
-        from mcp_client import MCP_MANAGER, McpConnection
-        from mcp_registry import find_server
+        if store is None:
+            raise RuntimeError(f"Хранилище '{name}' не настроено")
+        return store
 
-        if not agent.connected_mcp_servers or agent.agent_id is None:
-            return
+    def get_global_memory(self) -> GlobalMemory:
+        """Загружает общесистемную память о пользователе."""
+        store = self._require(
+            self._global_memory_repository, "global_memory_repository"
+        )
+        return store.get_memory()
 
-        existing = MCP_MANAGER.get_connections(agent.agent_id)
-        for server_name in agent.connected_mcp_servers:
-            if server_name in existing and existing[server_name].connected:
-                continue
-            server_info = find_server(server_name)
-            if server_info is None:
-                continue
-            connection = McpConnection(server_info)
-            connection.connect_and_list_tools()
-            if connection.connected:
-                MCP_MANAGER.add_connection(agent.agent_id, connection)
+    def save_global_memory(self, memory: GlobalMemory) -> None:
+        """Сохраняет общесистемную память о пользователе."""
+        store = self._require(
+            self._global_memory_repository, "global_memory_repository"
+        )
+        store.save_memory(memory)
+
+    def get_task_memory(self, conversation_id: str) -> TaskMemory | None:
+        """Загружает память задачи диалога или None, если её нет."""
+        store = self._require(
+            self._task_memory_repository, "task_memory_repository"
+        )
+        return store.get_memory(conversation_id)
+
+    def save_task_memory(self, conversation_id: str, memory: TaskMemory) -> None:
+        """Сохраняет память задачи диалога."""
+        store = self._require(
+            self._task_memory_repository, "task_memory_repository"
+        )
+        store.save_memory(conversation_id, memory)
+
+    def delete_task_memory(self, conversation_id: str) -> None:
+        """Удаляет память задачи диалога."""
+        store = self._require(
+            self._task_memory_repository, "task_memory_repository"
+        )
+        store.delete_memory(conversation_id)
+
+    def save_task_profile_facts(self, profile_id: str, facts: list[str]) -> None:
+        """Сохраняет факты профиля задачи."""
+        store = self._require(
+            self._task_profile_repository, "task_profile_repository"
+        )
+        store.save_facts(profile_id, facts)
+
+    # ------------------------------------------------------------------
+    # Гидратация / сохранение агента
+    # ------------------------------------------------------------------
 
     def _agent_orm_to_agent(
         self,
         orm: AgentORM,
         *,
-        restore_mcp: bool = True,
         history: list[Prompt] | None = None,
     ) -> Agent:
         """
@@ -187,9 +131,6 @@ class PersistentAgentRepository(AgentRepository):
 
         Args:
             orm: ORM объект агента.
-            restore_mcp: Восстанавливать ли живые MCP-подключения. Отключается
-                при загрузке агентов только ради сохранения памяти, чтобы не
-                запускать MCP-серверы на старте приложения.
             history: Заранее загруженная история (чтобы не читать файл дважды).
 
         Returns:
@@ -224,27 +165,13 @@ class PersistentAgentRepository(AgentRepository):
             agent_id=orm.id,
             conversation_id=orm.conversation_id,
             name=orm.name,
-            llm_provider_registry=self._llm_provider_registry,
             initial_settings=settings,
             system_prompt=orm.system_prompt,
-            history_storage=self._chat_storage,
             messages=history if history else None,
             strategy=strategy,
-            auto_save=True,
-            global_memory_repository=self._global_memory_repository,
-            task_profile=task_profile,  # ✅ ДОБАВЛЕНО
-            task_profile_repository=self._task_profile_repository,  # ✅ ДОБАВЛЕНО
+            task_profile=task_profile,
             connected_mcp_servers=orm.get_mcp_servers(),
-            rag_service=self._rag_service,
-            task_memory_repository=self._task_memory_repository,
         )
-
-        # Восстанавливаем живые MCP-подключения (если серверы есть в реестре)
-        if restore_mcp:
-            self._restore_mcp_connections(agent)
-
-        # Устанавливаем ссылку на репозиторий для автосохранения
-        agent._repository = self
 
         # Восстанавливаем счетчики токенов
         agent._token_counters.chat_prompt_tokens = orm.chat_prompt_tokens
@@ -331,7 +258,7 @@ class PersistentAgentRepository(AgentRepository):
 
             session.commit()
 
-            # После commit получаем сгенерированный ID и conversation_id, если это новый агент
+            # После commit получаем сгенерированный ID, если это новый агент
             if agent.agent_id is None:
                 agent.agent_id = orm.id
 
@@ -358,15 +285,6 @@ class PersistentAgentRepository(AgentRepository):
         """
         Создаёт нового агента и сохраняет в БД и файл.
 
-        Args:
-            name: Название агента.
-            llm_provider: Провайдер LLM.
-            initial_settings: Начальные настройки.
-            system_prompt: Системный промпт.
-            strategy: Стратегия управления контекстным окном (по умолчанию DefaultStrategy).
-            task_profile_id: UUID профиля задачи (опционально).
-            initial_phase: Стартовая фаза агента (по умолчанию PLAN).
-
         Returns:
             Agent: Новый экземпляр агента.
         """
@@ -386,22 +304,12 @@ class PersistentAgentRepository(AgentRepository):
             agent_id=None,  # Будет установлен после сохранения в БД
             conversation_id=temp_conversation_id,  # Временный ID, заменится после commit
             name=name,
-            llm_provider_registry=self._llm_provider_registry,
             initial_settings=initial_settings,
             system_prompt=system_prompt,
-            history_storage=self._chat_storage,
             strategy=strategy,
-            auto_save=True,  # Включаем автосохранение для новых агентов
-            global_memory_repository=self._global_memory_repository,
             task_profile=task_profile,
-            task_profile_repository=self._task_profile_repository,
             initial_phase=initial_phase,
-            rag_service=self._rag_service,
-            task_memory_repository=self._task_memory_repository,
         )
-
-        # Устанавливаем ссылку на репозиторий для автосохранения
-        agent._repository = self
 
         # Сохраняем метаданные в БД и получаем сгенерированные ID
         with self._get_session() as session:
@@ -507,7 +415,7 @@ class PersistentAgentRepository(AgentRepository):
     def update_agent(self, agent: Agent) -> None:
         """
         Обновляет метаданные и историю агента.
-        Вызывается после каждого изменения состояния агента.
+        Вызывается агентом после каждого изменения состояния.
 
         Args:
             agent: Агент для обновления.
@@ -540,13 +448,7 @@ class PersistentAgentRepository(AgentRepository):
         self._chat_storage.delete_history(conversation_id)
 
         # Удаляем память задачи диалога
-        if self._task_memory_repository is not None:
-            self._task_memory_repository.delete_memory(conversation_id)
-
-        # Закрываем живые MCP-подключения, привязанные к удалённому чату
-        from mcp_client import MCP_MANAGER
-
-        MCP_MANAGER.clear_agent(agent_id)
+        self.delete_task_memory(conversation_id)
         return True
 
     def get_agents_with_unsaved_memory(self) -> list[Agent]:
@@ -558,9 +460,7 @@ class PersistentAgentRepository(AgentRepository):
 
         Сначала делаем SQL запрос для получения агентов с is_dialog_remembered == False,
         затем загружаем их историю из файлового хранилища и фильтруем тех,
-        у кого есть сообщения с is_remembered == False. Агенты, у которых нет
-        несохранённых сообщений, не гидратируются и не восстанавливают
-        MCP-подключения (это ускоряет старт приложения).
+        у кого есть сообщения с is_remembered == False.
 
         Returns:
             Список агентов с несохранённой памятью.
@@ -582,9 +482,7 @@ class PersistentAgentRepository(AgentRepository):
                 ]
                 if unremembered_prompts:
                     agents_with_unsaved.append(
-                        self._agent_orm_to_agent(
-                            orm, restore_mcp=False, history=history
-                        )
+                        self._agent_orm_to_agent(orm, history=history)
                     )
 
             return agents_with_unsaved

@@ -1,22 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 
-from agents import (
-    Agent,
-    AgentPhase,
-    AgentSettings,
-    ContextWindowExceededError,  # noqa: F401 — реэкспорт для слоя представления
-    TaskMemory,
-    TaskProfile,
-)
 from chunking import chunk_text
 from config import (
+    DEFAULT_PROVIDER,
     DEFAULT_REPORT_MODEL,
     DEFAULT_REPORT_PROVIDER,
     RAG_CHUNK_OVERLAP,
@@ -25,15 +19,28 @@ from config import (
     RAG_FILE_MAX_BYTES,
     RAG_FOLDER_MAX_FILES,
 )
-from context_strategies import (
-    ContextWindowStrategy,
-    DefaultStrategy,
-    KeyValueMemoryStrategy,
-    SlidingWindowStrategy,
-    SummarizationStrategy,
+from core.domain.dtos.agent_settings import AgentSettings
+from core.domain.dtos.llm_response import LlmResponse
+from core.domain.dtos.rag_context_chunk import RagContextChunk
+from core.domain.dtos.rag_retrieval_result import RagRetrievalResult
+from core.domain.dtos.task_memory import TaskMemory
+from core.domain.dtos.task_profile import TaskProfile
+from core.domain.dtos.tool_call import ToolCall
+from core.domain.entities.agent import Agent
+from core.domain.entities.agent_phase import AgentPhase
+from core.domain.entities.context_window_strategy import ContextWindowStrategy
+from core.domain.entities.default_strategy import DefaultStrategy
+from core.domain.entities.key_value_memory_strategy import KeyValueMemoryStrategy
+from core.domain.entities.sliding_window_strategy import SlidingWindowStrategy
+from core.domain.entities.summarization_strategy import SummarizationStrategy
+from core.domain.exceptions.context_window_exceeded_error import (  # noqa: F401
+    ContextWindowExceededError,
 )
+from core.domain.exceptions.llm_timeout_error import LlmTimeoutError
+from core.domain.protocols.agent_repository import AgentRepository
+from core.domain.protocols.llm_provider import LlmProvider
 from file_extractor import extract_from_path
-from llm_providers import LlmProviderRegistry, LlmResponse, LlmTimeoutError
+from llm_providers import LlmProviderRegistry
 from rag_errors import (
     DocumentIndexingError,
     EmbeddingDimensionMismatchError,
@@ -45,10 +52,8 @@ from rag_models import (
     ChunkDTO,
     DocumentDTO,
     KnowledgeBaseDTO,
-    RagContextChunk,
 )
 from rag_service import RagModelService, RagService
-from storage.agent_repositories import AgentRepository
 from storage.api_key_repository import DatabaseApiKeyRepository
 from storage.rag_repositories import (
     AgentKnowledgeBaseRepository,
@@ -354,6 +359,121 @@ def _require_agent(repository: AgentRepository, agent_id: int) -> Agent:
     return agent
 
 
+def _resolve_llm_provider(
+    registry: LlmProviderRegistry, agent: Agent
+) -> LlmProvider:
+    """Возвращает провайдера, выбранного в настройках чата.
+
+    Если провайдер не задан (старые чаты), используется ``DEFAULT_PROVIDER``.
+    """
+    provider_name = agent.get_settings().provider or DEFAULT_PROVIDER
+    provider = registry.get(provider_name)
+    if provider is None:
+        available = ", ".join(registry.all()) or "нет"
+        raise ValueError(
+            f"Провайдер '{provider_name}' недоступен. "
+            f"Доступные провайдеры: {available}."
+        )
+    return provider
+
+
+def _retrieve_rag_context(
+    rag_service: RagService | None, agent: Agent, query: str
+) -> RagRetrievalResult:
+    """Поднимает RAG-контекст, деградируя без него при ошибке провайдера."""
+    if rag_service is None or agent.agent_id is None:
+        return RagRetrievalResult(chunks=[], has_knowledge_bases=False)
+    try:
+        return rag_service.retrieve(
+            agent.agent_id,
+            query,
+            reranker_enabled=agent.get_settings().reranker_enabled,
+        )
+    except Exception:
+        logging.getLogger("agent.rag").debug(
+            "RAG-поиск недоступен, диалог продолжен без контекста",
+            exc_info=True,
+        )
+        return RagRetrievalResult(chunks=[], has_knowledge_bases=False)
+
+
+def _collect_mcp_tools(agent: Agent) -> list[dict]:
+    """Собирает OpenAI-описания инструментов живых MCP-подключений чата.
+
+    Если сохранённый сервер ещё не имеет живого подключения в текущем
+    процессе, выполняется попытка переподключения — иначе запрос к LLM ушёл
+    бы без tools, и модель ответила бы «у меня нет доступа к инструменту».
+    """
+    from mcp_client import MCP_MANAGER
+
+    logger = logging.getLogger("agent.mcp")
+
+    if not agent.connected_mcp_servers or agent.agent_id is None:
+        return []
+    tools: list[dict] = []
+    connections = MCP_MANAGER.get_connections(agent.agent_id)
+    for server_name in agent.connected_mcp_servers:
+        conn = connections.get(server_name)
+        if conn is None or not conn.connected:
+            conn, error = _reconnect_mcp(agent, server_name, MCP_MANAGER)
+            if conn is None:
+                logger.warning(
+                    "MCP-сервер '%s' недоступен для чата #%s (%s): %s",
+                    server_name,
+                    agent.agent_id,
+                    agent.name,
+                    error or "неизвестная ошибка",
+                )
+                continue
+        tools.extend(tool.to_openai_tool() for tool in conn.tools)
+    return tools
+
+
+def _reconnect_mcp(agent: Agent, server_name: str, manager):
+    """Переподключает сохранённый MCP-сервер в текущем процессе."""
+    from mcp_client import McpConnection
+    from mcp_registry import find_server
+
+    server_info = find_server(server_name)
+    if server_info is None:
+        return None, f"сервер '{server_name}' не найден в реестре"
+    connection = McpConnection(server_info)
+    connection.connect_and_list_tools()
+    if not connection.connected:
+        return None, connection.connect_error or "сервер не вернул инструменты"
+    manager.add_connection(agent.agent_id, connection)
+    return connection, None
+
+
+class _McpToolExecutor:
+    """Исполнитель tool-вызовов через живые MCP-подключения чата.
+
+    Скрывает от домена инфраструктуру MCP: агент лишь просит исполнить
+    ``ToolCall`` и не знает, откуда пришёл инструмент.
+    """
+
+    def __init__(self, agent: Agent):
+        self._agent = agent
+
+    def execute(self, call: ToolCall) -> str:
+        from mcp_client import MCP_MANAGER, parse_tool_arguments, strip_prefix
+
+        server_name, tool_name = strip_prefix(call.name)
+        connections = (
+            MCP_MANAGER.get_connections(self._agent.agent_id)
+            if self._agent.agent_id is not None
+            else {}
+        )
+        conn = connections.get(server_name)
+        if conn is None or not conn.connected:
+            return (
+                f"[MCP] Ошибка: сервер '{server_name}' не подключен к чату, "
+                f"инструмент '{tool_name}' недоступен."
+            )
+        arguments = parse_tool_arguments(call.arguments)
+        return conn.call_tool(tool_name, arguments)
+
+
 def _build_strategy(selection: StrategySelection) -> ContextWindowStrategy:
     """Создаёт стратегию управления контекстом из DTO-описания выбора."""
     if selection.strategy_type == "SummarizationStrategy":
@@ -543,8 +663,15 @@ class SelectChatUseCase:
 class SendMessageUseCase:
     """Use case для отправки сообщения и получения ответа."""
 
-    def __init__(self, repository: AgentRepository):
+    def __init__(
+        self,
+        repository: AgentRepository,
+        registry: LlmProviderRegistry,
+        rag_service: RagService | None = None,
+    ):
         self.repository = repository
+        self._registry = registry
+        self._rag_service = rag_service
 
     def execute(
         self,
@@ -568,8 +695,18 @@ class SendMessageUseCase:
             ContextWindowExceededError: Если превышен лимит контекстного окна.
         """
         agent = _require_agent(self.repository, agent_id)
+        llm_provider = _resolve_llm_provider(self._registry, agent)
+        rag_result = _retrieve_rag_context(self._rag_service, agent, user_message)
+        tools = _collect_mcp_tools(agent)
+        tool_executor = _McpToolExecutor(agent) if tools else None
         response = agent.continue_dialog(
-            user_message, on_memory_warning=on_memory_warning
+            user_message,
+            repository=self.repository,
+            llm_provider=llm_provider,
+            rag_result=rag_result,
+            tools=tools or None,
+            tool_executor=tool_executor,
+            on_memory_warning=on_memory_warning,
         )
         return _response_to_dto(response, agent)
 
@@ -603,7 +740,9 @@ class ChangeSettingsUseCase:
             new_settings: Новые настройки (DTO).
         """
         agent = _require_agent(self.repository, agent_id)
-        agent.update_settings(_settings_to_agent_settings(new_settings))
+        agent.update_settings(
+            _settings_to_agent_settings(new_settings), self.repository
+        )
 
 
 class SetRerankerEnabledUseCase:
@@ -616,7 +755,9 @@ class SetRerankerEnabledUseCase:
         """Обновляет per-chat флаг реранкинга, сохраняя остальные настройки."""
         agent = _require_agent(self.repository, agent_id)
         current = agent.get_settings()
-        agent.update_settings(replace(current, reranker_enabled=bool(enabled)))
+        agent.update_settings(
+            replace(current, reranker_enabled=bool(enabled)), self.repository
+        )
         return bool(enabled)
 
 
@@ -711,6 +852,7 @@ class ShowChatInfoUseCase:
         agent = _load_agent(self.repository, agent_id)
         if agent is None:
             return None
+        agent.refresh_memory(self.repository)
 
         counters = agent.token_counters
         strategy = agent.strategy
@@ -765,7 +907,20 @@ class CreateBranchUseCase:
             ChatDTO: Новая ветка.
         """
         parent_agent = _require_agent(self.repository, agent_id)
-        branch = parent_agent.branch(new_name=new_name)
+        branch = parent_agent.branch(
+            new_name=new_name, repository=self.repository
+        )
+
+        # Переносим живые MCP-подключения на ветку (регистрация под новым ID)
+        if parent_agent.agent_id is not None and branch.agent_id is not None:
+            from mcp_client import MCP_MANAGER
+
+            connections = MCP_MANAGER.get_connections(parent_agent.agent_id)
+            for server_name in branch.connected_mcp_servers:
+                conn = connections.get(server_name)
+                if conn is not None:
+                    MCP_MANAGER.add_connection(branch.agent_id, conn)
+
         return _agent_to_chat_dto(branch)
 
 
@@ -778,7 +933,7 @@ class ChangePhaseUseCase:
     def execute(self, agent_id: int, command: str) -> PhaseChangeResultDTO:
         """Обрабатывает команду перехода по фазам (``/plan``, ``/execute``, …)."""
         agent = _require_agent(self.repository, agent_id)
-        success, message = agent.handle_phase_command(command)
+        success, message = agent.handle_phase_command(command, self.repository)
         return PhaseChangeResultDTO(
             success=success,
             message=message,
@@ -834,7 +989,7 @@ class RefreshAgentMemoryUseCase:
         """
         agent = _load_agent(self.repository, agent_id)
         if agent is not None:
-            agent.refresh_memory()
+            agent.refresh_memory(self.repository)
 
 
 @dataclass
@@ -857,12 +1012,20 @@ class MemorySaveResult:
 
 
 def _save_agent_memory(
-    agent: Agent, on_warning: Callable[[str], None] | None = None
+    agent: Agent,
+    repository: AgentRepository,
+    registry: LlmProviderRegistry,
+    on_warning: Callable[[str], None] | None = None,
 ) -> MemorySaveResult:
     """Заполняет глобальную и профильную память агента с замером времени."""
     start = time.perf_counter()
     try:
-        agent.save_memory(on_warning=on_warning)
+        llm_provider = _resolve_llm_provider(registry, agent)
+        agent.save_memory(
+            repository=repository,
+            llm_provider=llm_provider,
+            on_warning=on_warning,
+        )
     except Exception as e:  # noqa: BLE001
         return MemorySaveResult(
             chat_name=agent.name,
@@ -881,8 +1044,11 @@ def _save_agent_memory(
 class SaveAgentMemoryUseCase:
     """Use case для сохранения памяти агента при выходе из чата."""
 
-    def __init__(self, repository: AgentRepository):
+    def __init__(
+        self, repository: AgentRepository, registry: LlmProviderRegistry
+    ):
         self.repository = repository
+        self._registry = registry
 
     def execute(
         self,
@@ -900,14 +1066,19 @@ class SaveAgentMemoryUseCase:
             Результат заполнения памяти чата (успех, длительность, ошибка).
         """
         agent = _require_agent(self.repository, agent_id)
-        return _save_agent_memory(agent, on_warning=on_warning)
+        return _save_agent_memory(
+            agent, self.repository, self._registry, on_warning=on_warning
+        )
 
 
 class SaveUnsavedMemoriesUseCase:
     """Use case для сохранения всех несохранённых памятей при старте приложения."""
 
-    def __init__(self, repository: AgentRepository):
+    def __init__(
+        self, repository: AgentRepository, registry: LlmProviderRegistry
+    ):
         self.repository = repository
+        self._registry = registry
 
     def execute(
         self,
@@ -942,7 +1113,9 @@ class SaveUnsavedMemoriesUseCase:
         for index, agent in enumerate(agents):
             if on_agent_start is not None:
                 on_agent_start(agent.name)
-            result = _save_agent_memory(agent, on_warning=on_warning)
+            result = _save_agent_memory(
+                agent, self.repository, self._registry, on_warning=on_warning
+            )
             results.append(result)
             if on_result is not None:
                 on_result(result)
@@ -1225,9 +1398,40 @@ class ConnectMcpUseCase:
         self.repository = repository
 
     def execute(self, agent_id: int, server_name: str) -> tuple[bool, str]:
-        """Подключает MCP-сервер к чату (см. Agent.connect_mcp)."""
+        """Подключает MCP-сервер к чату: соединение + сохранение списка серверов."""
+        from mcp_client import MCP_MANAGER, McpConnection
+        from mcp_registry import find_server
+
         agent = _require_agent(self.repository, agent_id)
-        return agent.connect_mcp(server_name)
+
+        if agent.agent_id is None:
+            return False, "Агент ещё не сохранён — подключите MCP позже."
+
+        server_info = find_server(server_name)
+        if server_info is None:
+            return False, f"MCP-сервер '{server_name}' не найден в реестре."
+
+        if server_name in agent.connected_mcp_servers:
+            return False, f"MCP '{server_info.title}' уже подключен к этому чату."
+
+        connection = McpConnection(server_info)
+        tools = connection.connect_and_list_tools()
+        if not connection.connected:
+            return (
+                False,
+                (
+                    f"Не удалось подключиться к MCP '{server_info.title}': "
+                    f"{connection.connect_error or 'сервер не вернул инструменты'}"
+                ),
+            )
+
+        MCP_MANAGER.add_connection(agent.agent_id, connection)
+        agent.attach_mcp_server(server_name, self.repository)
+        tool_names = ", ".join(t.name for t in tools) if tools else "нет"
+        return (
+            True,
+            f"MCP '{server_info.title}' подключен. Доступные инструменты: {tool_names}",
+        )
 
 
 class DisconnectMcpUseCase:
@@ -1237,9 +1441,22 @@ class DisconnectMcpUseCase:
         self.repository = repository
 
     def execute(self, agent_id: int, server_name: str) -> tuple[bool, str]:
-        """Отключает MCP-сервер от чата (см. Agent.disconnect_mcp)."""
+        """Отключает MCP-сервер от чата."""
+        from mcp_client import MCP_MANAGER
+        from mcp_registry import find_server
+
         agent = _require_agent(self.repository, agent_id)
-        return agent.disconnect_mcp(server_name)
+
+        if server_name not in agent.connected_mcp_servers:
+            return False, f"MCP '{server_name}' не подключен к этому чату."
+
+        server_info = find_server(server_name)
+        title = server_info.title if server_info else server_name
+
+        if agent.agent_id is not None:
+            MCP_MANAGER.remove_connection(agent.agent_id, server_name)
+        agent.detach_mcp_server(server_name, self.repository)
+        return True, f"MCP '{title}' отключен."
 
 
 @dataclass

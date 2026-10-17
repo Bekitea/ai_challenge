@@ -1,98 +1,12 @@
 import pickle
-from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 
-from agents import TaskProfile
+from core.domain.dtos.task_profile import TaskProfile
 from storage.orm_models import TaskProfileInvariantORM
 
 
-class TaskProfileRepository(ABC):
-    """Абстракция для хранения и управления профилями задач."""
-
-    @abstractmethod
-    def get_all_profiles(self) -> list[TaskProfile]:
-        """
-        Получает все профили задач.
-
-        Returns:
-            Список всех профилей задач.
-        """
-
-    @abstractmethod
-    def get_profile_by_id(self, profile_id: str) -> TaskProfile | None:
-        """
-        Получает профиль задачи по UUID.
-
-        Args:
-            profile_id: UUID профиля задачи.
-
-        Returns:
-            TaskProfile или None, если профиль не найден.
-        """
-
-    @abstractmethod
-    def create_profile(self, name: str, description: str, preferences: str = "", nvariants: list[str] | None = None) -> TaskProfile:
-        """
-        Создаёт новый профиль задачи.
-
-        Args:
-            name: Название профиля.
-            description: Описание задачи.
-            preferences: Инструкции и предпочтения пользователя (опционально).
-
-        Returns:
-            TaskProfile: Созданный профиль задачи.
-        """
-
-    @abstractmethod
-    def delete_profile(self, profile_id: str) -> bool:
-        """
-        Удаляет профиль задачи.
-
-        Args:
-            profile_id: UUID профиля для удаления.
-
-        Returns:
-            True, если профиль был удалён, False если не найден.
-        """
-
-    @abstractmethod
-    def save_facts(self, profile_id: str, facts: list[str]) -> None:
-        """
-        Сохраняет факты в профиль задачи.
-
-        Args:
-            profile_id: UUID профиля задачи.
-            facts: Список фактов для сохранения.
-        """
-
-    @abstractmethod
-    def is_profile_linked_to_agents(self, profile_id: str) -> bool:
-        """
-        Проверяет, привязан ли профиль к каким-либо агентам.
-
-        Args:
-            profile_id: UUID профиля задачи.
-
-        Returns:
-            True, если профиль привязан к агентам, False иначе.
-        """
-
-    @abstractmethod
-    def add_invariant(self, profile_id: str, text: str) -> int:
-        """Добавляет инвариант в профиль. Возвращает ID нового инварианта."""
-    
-    @abstractmethod
-    def remove_invariant(self, invariant_id: int) -> bool:
-        """Удаляет инвариант по ID. Возвращает True если удалён."""
-    
-    @abstractmethod
-    def get_invariants(self, profile_id: str) -> list[dict]:
-        """Возвращает список инвариантов профиля."""
-
-
-class DatabaseTaskProfileRepository(TaskProfileRepository):
+class DatabaseTaskProfileRepository:
     """
     Реализация TaskProfileRepository с хранением метаданных в БД и фактов в файлах.
 

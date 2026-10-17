@@ -14,9 +14,10 @@ import logging
 import math
 from collections.abc import Sequence
 
+from core.domain.dtos.rag_context_chunk import RagContextChunk
+from core.domain.dtos.rag_retrieval_result import RagRetrievalResult
 from embedding_providers import EmbeddingProvider
 from rag_errors import EmbeddingDimensionMismatchError, RerankerProviderError
-from rag_models import RagContextChunk, RagRetrievalResult
 from reranker_providers import RerankerProvider
 from storage.rag_repositories import (
     AgentKnowledgeBaseRepository,

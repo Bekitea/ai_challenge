@@ -71,7 +71,7 @@
   `YandexCloudLlmProvider`, `OllamaLlmProvider`, `MockLlmProvider`,
   `LlmProviderRegistry`
 - `core/application/use_cases/list_models.py`: `AvailableModel`, `ListModelsUseCase`
-- `cli_app.py`: `_select_model()`
+- `core/presentation/cli/cli_app.py`: `_select_model()`
 - `config.py`: `DEFAULT_REPORT_PROVIDER` / `DEFAULT_REPORT_MODEL` (non-interactive
   Celery reports), `OLLAMA_OPENAI_BASE_URL`, `MODEL_LIST_TIMEOUT`,
   `DEFAULT_PROVIDER`

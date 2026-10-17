@@ -13,7 +13,7 @@ This document provides a comprehensive specification for the Command Line Interf
 
 ### 1.2 Scope
 
-- **In Scope**: CLI interface (`cli_app.py`, class `CLIChat`), menu navigation, chat management, message handling, settings configuration, slash-command processing, task profiles management, global/task memory viewing, MCP connection management from the chat loop
+- **In Scope**: CLI interface (`core/presentation/cli/cli_app.py`, class `CLIChat`), menu navigation, chat management, message handling, settings configuration, slash-command processing, task profiles management, global/task memory viewing, MCP connection management from the chat loop
 - **Out of Scope**: Backend LLM provider implementation, other frontends, API specifications, Celery workers/beat and scheduled tasks (they are not part of the CLI application)
 
 ### 1.3 Definitions
@@ -33,7 +33,7 @@ This document provides a comprehensive specification for the Command Line Interf
 
 ## 2. Architecture
 
-The presentation layer (`CLIChat` in `cli_app.py`) is separated from application initialization (`app_factory.py`, `main_cli.py`). `CLIChat` receives all its functionality through a `UseCasesBundle` container of use cases (`core/application/use_cases/`) and never touches repositories or the LLM provider directly.
+The presentation layer (`CLIChat` in `core/presentation/cli/cli_app.py`) is separated from application initialization (`core/di/app_factory.py`, `main_cli.py`). `CLIChat` receives all its functionality through a `UseCasesBundle` container of use cases (`core/application/use_cases/`) and never touches repositories or the LLM provider directly.
 
 The presentation layer is **DTO-only**: it never sees the business object `Agent`. All inputs and outputs of use cases are DTOs defined in `core/application/dtos/` (e.g. `ChatDTO`, `ChatPreviewDTO`, `SettingsDTO`, `MessageResponseDTO`, `HistoryMessageDTO`, `ChatInfo`, `McpServerStatus`, `PhaseChangeResultDTO`). A use case loads the agent internally by `agent_id`.
 
@@ -812,3 +812,4 @@ this document.
 | UC-023 | List Available Models And Providers | Fetch models dynamically from Yandex Cloud and Ollama, label each with its provider and let the user pick one. | [uc-023-list-available-models-and-providers.md](uc/uc-023-list-available-models-and-providers.md) |
 | UC-024 | Memory Save Feedback | Show a start notice and a timed finish/error notice when global and task-profile memory is filled; per-chat feedback at application start. | [uc-024-memory-save-feedback.md](uc/uc-024-memory-save-feedback.md) |
 | UC-025 | Manage API Keys (menu 6) | Issue and revoke REST API keys; the secret is shown once and otherwise stored only as a hash. | [uc-025-manage-api-keys.md](uc/uc-025-manage-api-keys.md) |
+| UC-026 | Edge Cases and Robustness | Graceful termination on end of input and handling of very long messages. | [uc-026-edge-cases-and-robustness.md](uc/uc-026-edge-cases-and-robustness.md) |

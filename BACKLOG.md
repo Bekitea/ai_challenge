@@ -1,13 +1,12 @@
 # BACKLOG
 
-Известные несоответствия и потенциальные баги, обнаруженные при переводе
-CLI e2e-тестов на ground truth проверки. **Не исправлять без явного указания
+Известные несоответствия и потенциальные баги, обнаруженные при работе с приложением. **Не исправлять без явного указания
 пользователя** (см. `AGENTS.md`).
 
 ## 1. Память задачи извлекается при выходе из чата вопреки порогу ходов
 
-- **Где**: `core/domain/entities/agent.py` (`update_task_memory`), `cli_app.py` (сохранение памяти
-  при возврате в меню), `cli_tests/test_uc022_task_memory.py::test_tc_143`.
+- **Где**: `core/domain/entities/agent.py` (`update_task_memory`), `core/presentation/cli/cli_app.py` (сохранение памяти
+  при возврате в меню), `core/tests/cli_tests/test_uc022_task_memory.py::test_tc_143`.
 - **Симптом**: `TASK_MEMORY_UPDATE_EVERY_N_MESSAGES` управляет обновлением
   памяти задачи *во время* хода, но при выходе из чата (`/menu`) память
   извлекается и сохраняется всегда. В результате `/info` до порога её не
@@ -21,8 +20,8 @@ CLI e2e-тестов на ground truth проверки. **Не исправля
 ## 2. Ветка чата получает память задачи после выхода, хотя на уровне логики — нет
 
 - **Где**: `core/domain/entities/agent.py` (ветвление агента), сохранение памяти при выходе,
-  `cli_tests/test_uc022_task_memory.py::test_tc_144`,
-  `cli_tests/test_task_memory.py::test_branch_does_not_copy_task_memory`.
+  `core/tests/cli_tests/test_uc022_task_memory.py::test_tc_144`,
+  `core/tests/core_tests/test_task_memory.py::test_branch_does_not_copy_task_memory`.
 - **Симптом**: unit-тест утверждает, что ветка не наследует память задачи
   (`test_branch_does_not_copy_task_memory`), однако в e2e после создания ветки
   и выхода из чата ветка получает собственную память задачи — она извлекается
@@ -36,7 +35,11 @@ CLI e2e-тестов на ground truth проверки. **Не исправля
 ## 3. MCP-серверы падают с `ImportError MCPServer` в контейнере
 
 - **Где**: `mcp/time_mcp.py`, `mcp/open_alex_mcp.py`,
-  `cli_tests/test_uc019_tc101_110_mcp_menu.py`.
+  `core/tests/cli_tests/test_uc019_tc101_110_mcp_menu.py`,
+  `mcp/tests/test_time_mcp.py`, `mcp/tests/test_open_alex_mcp.py`.
+- **Обновление**: в pytest-обёртках `mcp/tests/` добавлен `pytest.skip`, если
+  сервер не спавнится (в контейнере — `ImportError MCPServer`); при недоступности
+  сети сетевой кейс OpenAlex также скипается.
 - **Симптом**: в контейнерной среде `mcp/*_mcp.py` завершаются с
   `ImportError: MCPServer` (класс недоступен/не тот пакет). Из-за этого e2e
   тесты, требующие живого подключения к MCP (TC-103/104/105/109), пропускаются
@@ -49,8 +52,8 @@ CLI e2e-тестов на ground truth проверки. **Не исправля
 
 ## 4. Периодические задачи Celery временно законсервированы (нужна переработка)
 
-- **Где**: `celery_app.py` (`SCHEDULED_REPORTS`, `CELERY_BEAT_SCHEDULE`),
-  `tasks.py` (`run_agent_report`),
+- **Где**: `core/presentation/celery/celery_app.py` (`SCHEDULED_REPORTS`, `CELERY_BEAT_SCHEDULE`),
+  `core/presentation/celery/tasks.py` (`run_agent_report`),
   `core/application/use_cases/run_scheduled_agent_task.py`
   (`RunScheduledAgentTaskUseCase`, DTO `ScheduledReport`), `config.py`
   (`SCHEDULED_REPORTS_ENABLED`, `DEFAULT_REPORT_*`, `CELERY_*`),

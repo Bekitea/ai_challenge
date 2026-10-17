@@ -11,7 +11,7 @@
 
 Переопределяется переменными окружения ``APPLICATION_MODE``, ``API_HOST``,
 ``API_PORT``. Модуль отвечает только за бутстрап: создаёт use cases через
-фабрику и передаёт их слою представления (``api.app``).
+фабрику и передаёт их слою представления (``core.presentation.api.app``).
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ os.environ.setdefault("APPLICATION_MODE", "LOCAL")
 
 from fastapi import FastAPI
 
-from api.app import FRONTEND_DIST, build_app
-from app_factory import initialize_application
+from core.di.app_factory import initialize_application
+from core.presentation.api.app import FRONTEND_DIST, build_app
 
 
 def create_app() -> FastAPI:

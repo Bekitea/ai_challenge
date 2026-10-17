@@ -82,12 +82,12 @@ cp /tmp/sqlite_vec_win/sqlite_vec/vec0.dll core/infrastructure/persistence/exten
 
 ## Проверка
 
-Для быстрой проверки в корне проекта лежит скрипт `test_vec.py`: он создаёт
-in-memory соединение, грузит расширение через загрузчик и проверяет
+Для быстрой проверки есть скрипт `scripts/check_sqlite_vec.py` (не тест): он
+создаёт in-memory соединение, грузит расширение через загрузчик и проверяет
 `vec_version()`, создание `vec0`-таблицы и векторный поиск.
 
 ```sh
-poetry run python test_vec.py
+poetry run python scripts/check_sqlite_vec.py
 ```
 
 Ожидаемый вывод: версия `('v0.1.9',)`, `distance = (0.0,)`.

@@ -83,8 +83,8 @@
 
 **Related UC**: UC-021 steps 3–4
 
-Unit-level test (no network) in `cli_tests/test_rag_relevance.py` and
-`cli_tests/test_prompt_builder.py`:
+Unit-level test (no network) in `core/tests/core_tests/test_rag_relevance.py` and
+`core/tests/core_tests/test_prompt_builder.py`:
 
 | Step | Action                                            | Expected Result                                       |
 | ---- | ------------------------------------------------- | ----------------------------------------------------- |

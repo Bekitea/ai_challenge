@@ -10,8 +10,8 @@ It knows nothing about business logic, repositories, or LLM providers.
 
 import sys
 
-from app_factory import initialize_application
-from cli_app import CLIChat
+from core.di.app_factory import initialize_application
+from core.presentation.cli.cli_app import CLIChat
 
 
 def main():

@@ -111,7 +111,7 @@ APPLICATION_MODE=PROD API_HOST=0.0.0.0 python main_api.py
 ### Тесты API
 
 ```bash
-poetry run pytest api_tests/test_api_smoke.py api_tests/test_api_auth.py -v
+poetry run pytest core/tests/api_tests -v
 ```
 
 ## Запуск всего проекта через Docker Compose
@@ -200,7 +200,7 @@ docker run -d --name redis-celery -p 6379:6379 redis:alpine
 В отдельном терминале из корня проекта:
 
 ```bash
-celery -A celery_app worker --loglevel=info --pool=solo
+celery -A core.presentation.celery.celery_app worker --loglevel=info --pool=solo
 ```
 
 > Флаг `--pool=solo` обязателен на Windows, так как Celery не поддерживает там пулы `prefork`/`gevent`.
@@ -210,10 +210,10 @@ celery -A celery_app worker --loglevel=info --pool=solo
 В ещё одном отдельном терминале:
 
 ```bash
-celery -A celery_app beat --loglevel=info
+celery -A core.presentation.celery.celery_app beat --loglevel=info
 ```
 
-После запуска всех процессов периодические задачи будут выполняться по расписанию, заданному в `celery_app.py`.
+После запуска всех процессов периодические задачи будут выполняться по расписанию, заданному в `core/presentation/celery/celery_app.py`.
 
 ## Реранкинг (RAG)
 
@@ -281,57 +281,42 @@ curl -X POST http://127.0.0.1:18080/rerank \
 
 ## Тестирование
 
-### Запуск E2E тестов CLI
+Полное описание набора тестов, политики и команд — в
+[`docs/testing.md`](docs/testing.md). Кратко:
 
-Проект включает набор End-to-End тестов, которые эмулируют поведение реального пользователя через CLI интерфейс. Тесты спавнят реальные subprocess'ы `main_cli.py`, а проверки по возможности опираются на **ground truth** — фактическое состояние после ввода (таблицы `agents.db` и pickle-файлы), а не только на подстроки в выводе.
-
-#### Требования
-
-- Python 3.14+
-- Зависимости из `poetry.lock` (включая `pytest` и `pytest-xdist`): `poetry install`
-- Приложение должно быть в рабочем состоянии
-
-#### Запуск тестов
-
-Полный прогон идёт **параллельно по умолчанию** (`pytest-xdist`, `-n auto`) и занимает ~1 минуту. Каждый воркер пишет в свою директорию `test-data-<worker>/`, поэтому тесты не мешают друг другу.
+- **CLI e2e** (`core/tests/cli_tests/`) — пользовательские сценарии по спецификации (`docs/uc/`): реальные subprocess'ы `main_cli.py` + проверки по **ground truth** (состояние `agents.db` и pickle-файлы). Это основной способ проверки.
+- **Core unit/integration** (`core/tests/core_tests/`), **REST API** (`core/tests/api_tests/`), **LLM Gateway** (`llm_gateway/tests/`), **Reranker** (`reranker_service/tests/`), **MCP** (`mcp/tests/`) — для логики, которую нецелесообразно проверять через CLI.
 
 ```bash
-# Запустить все E2E тесты (параллельно)
-poetry run pytest cli_tests/ -v
+# Полный прогон (параллельно, все наборы)
+poetry run pytest
 
-# Последовательно (для отладки одного кейса)
-poetry run pytest cli_tests/ -n0 -v
+# Последовательно, для отладки одного кейса
+poetry run pytest core/tests/cli_tests -n0 -v
 
-# Запустить тесты конкретного Use Case
-poetry run pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings -n0 -v
-
-# Запустить конкретный тесткейс
-poetry run pytest cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -n0 -v
-
-# Запустить smoke тест (набор ключевых тестов)
-poetry run python cli_tests/smoke_test.py
+# Smoke (standalone-обёртка над ключевыми e2e)
+poetry run python core/tests/cli_tests/smoke_test.py
 ```
 
-#### Ключевые механизмы
-
-- **Ground truth** (`cli_tests/ground_truth.py`) — read-only доступ к `agents.db` и файловому хранилищу: чаты, настройки, стратегии, история, память (глобальная/задача/профили), API-ключи, RAG.
-- **Сценарные моки** (`core/infrastructure/llm/mock_scenario.py` + `run_cli_command(..., mock=...)`) — разные ответы LLM на тест через `MOCK_LLM_SCENARIO`: последовательность ответов, `json_object` для извлечения памяти, ошибки, tool calls.
-- **Изоляция и скорость** — `APPLICATION_MODE=TEST`, per-worker `test-data-<worker>/` (`AI_CHAT_TEST_DATA_DIR`), ленивый импорт `openai`, `-n auto`.
-
-Полное руководство (best practices, troubleshooting, Windows/cp1251, производительность): [`docs/cli_e2e_testing_guide.md`](docs/cli_e2e_testing_guide.md).
+Детали e2e-подхода (ground truth, сценарные моки, изоляция данных,
+Windows/cp1251) — [`docs/cli_e2e_testing_guide.md`](docs/cli_e2e_testing_guide.md).
 
 ## Руководство для новых разработчиков
 
 ### Архитектурные принципы
 
 #### Чистая архитектура
-Приложение построено по принципу **чистой архитектуры** с четким разделением ответственности между слоями. Ядро вынесено в `core/` и разделено на три слоя (в каждом — правило «одному классу свой файл»):
+Приложение построено по принципу **чистой архитектуры** с четким разделением ответственности между слоями. Ядро вынесено в `core/` и разделено на слои (в каждом — правило «одному классу свой файл»):
 
 - `core/domain/` — `entities/` (бизнес-сущности), `dtos/` (простые структуры данных), `exceptions/` (доменные исключения), `protocols/` (структурные `Protocol`-интерфейсы);
 - `core/application/` — `use_cases/` (сценарии, по одному use case на файл), `dtos/`, `protocols/` (порты, реализуемые инфраструктурой), `exceptions/`, `services/` (RAG-сервисы), `mappers/`, `adapters/`;
-- `core/infrastructure/` — `llm/`, `embeddings/`, `reranking/`, `persistence/`, `mcp/`, `files/` (провайдеры и репозитории).
+- `core/infrastructure/` — `llm/`, `embeddings/`, `reranking/`, `persistence/`, `mcp/`, `files/` (провайдеры и репозитории);
+- `core/di/` — `app_factory.py` (DI: сборка `UseCasesBundle`), `app_mode.py` (режимы работы приложения);
+- `core/presentation/` — слои представления: `cli/` (`cli_app.py`), `api/` (FastAPI REST), `celery/` (`celery_app.py`, `tasks.py`).
 
-Домен не знает о слое приложения и инфраструктуре: провайдер LLM, репозиторий агента, исполнитель инструментов и RAG-результат передаются в методы сущностей как аргументы и хранятся в use cases. Приложение зависит только от протоколов (доменных или собственных), а конкретные реализации собираются фабрикой `app_factory.py`.
+Точки входа (`main_cli.py`, `main_api.py`) и константы (`config.py`) остаются в корне.
+
+Домен не знает о слое приложения и инфраструктуре: провайдер LLM, репозиторий агента, исполнитель инструментов и RAG-результат передаются в методы сущностей как аргументы и хранятся в use cases. Приложение зависит только от протоколов (доменных или собственных), а конкретные реализации собираются фабрикой `core/di/app_factory.py`.
 
 #### Инкапсуляция сохранения состояния агента
 **Важное архитектурное решение:** сохранение состояния, памяти и истории агента выполняет репозиторий агента (`PersistentAgentRepository`), который агент получает **аргументом нужного метода** (use cases хранят репозиторий и передают его).
@@ -361,7 +346,7 @@ poetry run python cli_tests/smoke_test.py
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│                  app_factory.py                         │
+│               core/di/app_factory.py                     │
 │    (Фабрика: инициализация компонентов по режиму)       │
 │  - Определяет режим (production/test)                   │
 │  - Создает реестр LLM провайдеров (YandexCloud/Ollama/Mock) │
@@ -371,7 +356,7 @@ poetry run python cli_tests/smoke_test.py
                      │ UseCasesBundle
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│                   cli_app.py                            │
+│         core/presentation/cli/cli_app.py                │
 │            (CLI слой представления)                     │
 │  - Отображение меню и ввод пользователя                 │
 │  - Форматирование вывода                                │
@@ -409,9 +394,9 @@ poetry run python cli_tests/smoke_test.py
 
 **Важно:** Этот модуль не содержит никакой бизнес-логики.
 
-#### 2. `app_factory.py` — Фабрика приложений
+#### 2. `core/di/app_factory.py` — Фабрика приложений
 **Ответственность:**
-- Определение режима работы через `app_mode` (production/test)
+- Определение режима работы через `core/di/app_mode` (production/test)
 - Валидация переменных окружения для production режима
 - Создание реестра LLM провайдеров (`LlmProviderRegistry`)
 - Инициализация репозиториев
@@ -419,7 +404,7 @@ poetry run python cli_tests/smoke_test.py
 
 **Ключевой принцип:** CLI слой не знает о режимах работы — фабрика инкапсулирует эту логику.
 
-#### 3. `cli_app.py` — CLI слой представления
+#### 3. `core/presentation/cli/cli_app.py` — CLI слой представления
 **Ответственность:**
 - Отображение меню, форм, результатов пользователю
 - Сбор ввода пользователя
@@ -430,8 +415,8 @@ poetry run python cli_tests/smoke_test.py
 `config` и stdlib. Не импортирует:
 - Инфраструктуру (`core.infrastructure.*`)
 - Домен (`core.domain.*`)
-- Режимы приложения (`app_mode.*`)
-- Фабрику (`app_factory.*`)
+- Режимы приложения (`core.di.app_mode.*`)
+- Фабрику (`core.di.app_factory.*`)
 
 **DTO-only:** слой представления никогда не видит бизнес-объект `Agent`. Он хранит
 только `agent_id`/`chat_id` и обменивается с use cases исключительно DTO, определёнными
@@ -581,11 +566,11 @@ N ходов и при сжатии контекста; новые уточне�
    - **Логика сохранения состояния агента должна быть инкапсулирована в самом агенте**, а не в use cases
 
 2. **CLI слой работает только с use cases**
-   - `cli_app.py` должен импортировать только из `core.application` (DTO/`use_cases`) и `config`
+   - `core/presentation/cli/cli_app.py` должен импортировать только из `core.application` (DTO/`use_cases`) и `config`
    - Запрещены прямые импорты репозиториев, LLM провайдеров, агентов в CLI слое (`core.infrastructure.*`, `core.domain.*`)
 
 3. **Используйте фабрику для инициализации**
-   - Вся логика создания объектов — в `app_factory.py`
+   - Вся логика создания объектов — в `core/di/app_factory.py`
    - CLI получает уже готовые use cases из фабрики
 
 4. **Пишите e2e тесты для новой функциональности**
@@ -595,9 +580,9 @@ N ходов и при сжатии контекста; новые уточне�
 
 5. **Следуйте принципу единственной ответственности**
    - Каждый модуль делает только свою работу
-   - main_cli → оркестрация и точка входа
-   - app_factory → инициализация
-   - cli_app → UI/UX
+   - main_cli / main_api → оркестрация и точка входа
+   - core/di (app_factory) → инициализация
+   - core/presentation (cli/api/celery) → UI/UX
    - core.application / core.domain (agents) → бизнес-логика
    - core.infrastructure → инфраструктура
 
@@ -618,7 +603,7 @@ N ходов и при сжатии контекста; новые уточне�
 
 1. **Не добавляйте бизнес-логику в CLI слой**
    ```python
-   # ПЛОХО: в cli_app.py
+   # ПЛОХО: в core/presentation/cli/cli_app.py
    agent = repository.get_agent(agent_id)  # Прямой вызов репозитория
 
    # ХОРОШО: через use case
@@ -627,7 +612,7 @@ N ходов и при сжатии контекста; новые уточне�
 
 2. **Не импортируйте инфраструктурные зависимости в CLI**
    ```python
-   # ПЛОХО: в cli_app.py
+   # ПЛОХО: в core/presentation/cli/cli_app.py
    from core.infrastructure.persistence.persistent_agent_repository import PersistentAgentRepository
    from core.infrastructure.llm.yandex_cloud_llm_provider import YandexCloudLlmProvider
 
@@ -637,7 +622,7 @@ N ходов и при сжатии контекста; новые уточне�
 
 3. **Не создавайте бизнес-объекты напрямую в CLI**
    ```python
-   # ПЛОХО: в cli_app.py
+   # ПЛОХО: в core/presentation/cli/cli_app.py
    strategy = SummarizationStrategy(non_compressible_count=2, buffer_size=3)
 
    # ХОРОШО: через use case
@@ -647,7 +632,7 @@ N ходов и при сжатии контекста; новые уточне�
 
 4. **Не смешивайте режимы работы в CLI**
    ```python
-   # ПЛОХО: в cli_app.py
+   # ПЛОХО: в core/presentation/cli/cli_app.py
    if os.environ.get("APPLICATION_MODE") == "TEST":
        provider = MockLlmProvider()
 
@@ -731,8 +716,8 @@ N ходов и при сжатии контекста; новые уточне�
 
 2. **Напишите тесты**
    - Добавьте test case в соответствующий файл use case в `docs/uc/`
-   - Реализуйте e2e тест в `cli_tests/` (отдельный файл на класс тестов)
-   - Запустите тесты: `poetry run pytest cli_tests/`. Все тесты, кроме нового, должны пройти
+   - Реализуйте e2e тест в `core/tests/cli_tests/` (отдельный файл на класс тестов)
+   - Запустите тесты: `poetry run pytest core/tests/cli_tests`. Все тесты, кроме нового, должны пройти
 
 3. **Определите use case**
    - Создайте новый класс в `core/application/use_cases/<snake_case>.py` (один use case на файл) и добавьте реэкспорт в `core/application/use_cases/__init__.py`
@@ -743,16 +728,17 @@ N ходов и при сжатии контекста; новые уточне�
    - Добавьте поле для нового use case
 
 5. **Инициализируйте в фабрике**
-   - В `app_factory.py` создайте экземпляр use case (конкретные зависимости — из `core.infrastructure`)
+   - В `core/di/app_factory.py` создайте экземпляр use case (конкретные зависимости — из `core.infrastructure`)
    - Передайте его в `UseCasesBundle`
 
 6. **Используйте в CLI**
-   - В `cli_app.py` вызовите `self.use_cases.<new_use_case>.execute(...)`
+   - В `core/presentation/cli/cli_app.py` вызовите `self.use_cases.<new_use_case>.execute(...)`
    - Обрабатывайте результат и отображайте пользователю
 
 7. **Проверка**
-   - Запустите тесты: `poetry run pytest cli_tests/`. Все тесты должны пройти
+   - Запустите тесты: `poetry run pytest core/tests/cli_tests`. Все тесты должны пройти
 
 ### Тестирование
 
-Все изменения должны проходить e2e тесты.
+Все изменения должны проходить e2e тесты. Полное описание — в
+[`docs/testing.md`](docs/testing.md).

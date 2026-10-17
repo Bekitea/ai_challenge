@@ -85,7 +85,7 @@
 | ---- | -------------------------------------------- | ------------------------------------------------ |
 | 1    | Fill memory, exit via `/menu`, re-enter chat | `/info` shows the persisted goal                 |
 
-Unit-level tests (no network) in `cli_tests/test_task_memory.py` cover the
+Unit-level tests (no network) in `core/tests/core_tests/test_task_memory.py` cover the
 repository roundtrip, overriding semantics, missing-field preservation and the
-prompt section; `cli_tests/test_prompt_builder.py` covers the
+prompt section; `core/tests/core_tests/test_prompt_builder.py` covers the
 `--- ПАМЯТЬ ЗАДАЧИ ---` section presence/absence.

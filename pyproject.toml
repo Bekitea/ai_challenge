@@ -38,4 +38,9 @@ target-version = "py313"
 # e2e-тесты запускают приложение отдельными subprocess'ами и не делят состояние:
 # каждый воркер xdist пишет в свою директорию test-data-<worker>.
 addopts = "-n auto"
-testpaths = ["cli_tests", "api_tests"]
+testpaths = [
+    "core/tests",
+    "llm_gateway/tests",
+    "reranker_service/tests",
+    "mcp/tests",
+]

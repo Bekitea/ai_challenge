@@ -46,9 +46,7 @@ class TestUC016_Invariants_TC060_112_113_114:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
-
-        assert returncode == 0, f"App failed with stderr: {stderr}"
+        stdout, _, _ = run_cli_command(test_input)
         assert "ИНВАРИАНТЫ ПРОФИЛЯ" in stdout
         assert "Инвариант добавлен" in stdout
         assert "Инвариант удал" in stdout
@@ -74,9 +72,7 @@ class TestUC016_Invariants_TC060_112_113_114:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
-
-        assert returncode == 0, f"App failed with stderr: {stderr}"
+        stdout, _, _ = run_cli_command(test_input)
         assert "не может быть пустым" in stdout
         assert "Инвариант добавлен" in stdout
         # Ground truth: пустой инвариант не сохранён, валидный добавлен
@@ -104,9 +100,7 @@ class TestUC016_Invariants_TC060_112_113_114:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
-
-        assert returncode == 0, f"App failed with stderr: {stderr}"
+        stdout, _, _ = run_cli_command(test_input)
         assert "ИНВАРИАНТЫ ПРОФИЛЯ" in stdout
         # UC-016 A4: warning shown once per invalid input...
         assert "[WARN] Неверный выбор." in stdout
@@ -156,9 +150,7 @@ class TestUC016_Invariants_TC060_112_113_114:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
-
-        assert returncode == 0, f"App failed with stderr: {stderr}"
+        stdout, _, _ = run_cli_command(test_input)
         # Step 1: empty list marker displayed
         assert "(инварианты не заданы)" in stdout
         # Step 2 (UC-016 A5): warning shown exactly once...

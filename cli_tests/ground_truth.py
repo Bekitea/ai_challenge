@@ -102,6 +102,41 @@ def get_strategy(agent: sqlite3.Row | None) -> dict:
     return {"strategy_type": agent["strategy_type"], **params}
 
 
+def get_phase(agent: sqlite3.Row | None) -> str | None:
+    """Текущая фаза агента (``current_phase``) или None."""
+    return agent["current_phase"] if agent is not None else None
+
+
+def get_phase_by_name(name: str) -> str | None:
+    """Текущая фаза агента с указанным именем."""
+    return get_phase(get_agent_by_name(name))
+
+
+def get_agent_profile_id(name: str) -> str | None:
+    """id привязанного профиля задачи агента (None, если не привязан)."""
+    agent = get_agent_by_name(name)
+    return agent["task_profile_id"] if agent is not None else None
+
+
+def get_mcp_servers(agent: sqlite3.Row | None) -> list[str]:
+    """Машинные имена подключённых MCP-серверов агента."""
+    if agent is None:
+        return []
+    raw = agent["mcp_servers_json"]
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return [str(name) for name in data] if isinstance(data, list) else []
+
+
+def get_mcp_servers_by_name(name: str) -> list[str]:
+    """Машинные имена подключённых MCP-серверов агента с указанным именем."""
+    return get_mcp_servers(get_agent_by_name(name))
+
+
 # --- История переписки (файловое хранилище) ---------------------------------
 
 

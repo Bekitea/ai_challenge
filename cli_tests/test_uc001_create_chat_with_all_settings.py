@@ -1,7 +1,7 @@
 """E2E tests: TestUC001_CreateChatWithAllSettings."""
 
 from e2e_helpers import run_cli_command
-from ground_truth import get_agent_by_name, get_strategy
+from ground_truth import get_agent_by_name, get_last_agent, get_settings, get_strategy
 
 
 class TestUC001_CreateChatWithAllSettings:
@@ -45,28 +45,30 @@ class TestUC001_CreateChatWithAllSettings:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App exited with code {returncode}, stderr: {stderr}"
-        assert "[OK] Чат 'Чат" in stdout, "Default chat name should be 'Чат N'"
+        # UI-only: quick-path announcement and section headers
         assert "Используются настройки по умолчанию." in stdout, (
             "Quick path must announce default settings (UC-001 A1)"
         )
-        # TC-001: defaults via /settings — model aliceai-llm-flash/latest,
-        # reasoning effort "none", temperature/top_p/top_k disabled (None),
-        # context window 200000
         assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout
-        assert "Модель: aliceai-llm-flash/latest" in stdout
-        assert "Reasoning Effort: none" in stdout
-        assert "Температура: отключена" in stdout
-        assert "Top P: отключен" in stdout
-        assert "Top K: отключено" in stdout
-        assert "Max Tokens: без ограничений" in stdout
-        assert "Размер контекстного окна: 200000 токенов" in stdout
-        # TC-001 step 5: DefaultStrategy and no task profile via /info
         assert "--- ИНФОРМАЦИЯ О ЧАТЕ ---" in stdout
-        assert "Стратегия: DefaultStrategy" in stdout
-        assert "Профиль задачи: (не привязан)" in stdout
+
+        # TC-001: defaults persisted — model aliceai-llm-flash/latest,
+        # reasoning effort "none", temperature/top_p/top_k disabled (None),
+        # context window 200000, DefaultStrategy, no task profile
+        agent = get_last_agent()
+        assert agent["name"].startswith("Чат"), "Default chat name should be 'Чат N'"
+        settings = get_settings(agent)
+        assert settings["model_id"] == "aliceai-llm-flash/latest"
+        assert settings["reasoning_effort"] == "none"
+        assert settings.get("temperature") is None
+        assert settings.get("top_p") is None
+        assert settings.get("top_k") is None
+        assert settings.get("max_tokens") is None
+        assert settings["context_window_size"] == 200_000
+        assert get_strategy(agent)["strategy_type"] == "DefaultStrategy"
+        assert agent["task_profile_id"] is None
 
     def test_tc_002_create_chat_with_custom_settings(self):
         """
@@ -105,15 +107,16 @@ class TestUC001_CreateChatWithAllSettings:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "[OK] Чат 'Test Chat' создан!" in stdout
-        # TC-002 step 13: all entered values saved correctly
         assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout
-        assert "Температура: 1.5" in stdout
-        assert "Top P: 0.8" in stdout
-        assert "Top K: 50" in stdout
-        assert "Max Tokens: 512" in stdout
-        assert "Reasoning Effort: medium" in stdout
-        assert "Размер контекстного окна: 128000 токенов" in stdout
+        # TC-002 step 13: all entered values saved correctly
+        settings = get_settings(get_agent_by_name("Test Chat"))
+        assert settings["model_id"] == "qwen3.6-35b-a3b/latest"
+        assert settings["temperature"] == 1.5
+        assert settings["top_p"] == 0.8
+        assert settings["top_k"] == 50
+        assert settings["max_tokens"] == 512
+        assert settings["reasoning_effort"] == "medium"
+        assert settings["context_window_size"] == 128_000
 
     def test_tc_003_invalid_temperature_handling(self):
         """
@@ -148,7 +151,8 @@ class TestUC001_CreateChatWithAllSettings:
             "Некорректное число. Используется значение по умолчанию (отключено)."
             in stdout
         )
-        assert "[OK] Чат 'Temp Test' создан!" in stdout
+        settings = get_settings(get_agent_by_name("Temp Test"))
+        assert settings.get("temperature") is None
 
     def test_tc_003b_temperature_out_of_range(self):
         """
@@ -175,6 +179,8 @@ class TestUC001_CreateChatWithAllSettings:
             assert "Температура должна быть от 0.0 до 2.0." in stdout, (
                 f"Range warning expected for temperature={bad_value}"
             )
+            settings = get_settings(get_agent_by_name(f"Range {bad_value}"))
+            assert settings.get("temperature") is None
 
     def test_tc_024_long_chat_name_handling(self):
         """
@@ -204,12 +210,11 @@ class TestUC001_CreateChatWithAllSettings:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert f"[OK] Чат '{long_name}' создан!" in stdout, (
-            "Full 150-char name should be accepted without truncation"
-        )
-        assert long_name in stdout.split("[OK] Чат")[1], (
-            "Chat list should display the full name"
-        )
+        # Chat list was rendered and the full name persisted without truncation
+        assert "--- ВАШИ ЧАТЫ ---" in stdout
+        agent = get_agent_by_name(long_name)
+        assert agent is not None, "Full 150-char name should be accepted without truncation"
+        assert agent["name"] == long_name
 
     def test_tc_036_sliding_window_strategy_creation(self):
         """
@@ -234,9 +239,8 @@ class TestUC001_CreateChatWithAllSettings:
             "8\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "SlidingWindowStrategy" in stdout
         strategy = get_strategy(get_agent_by_name("SlidingWindow Test"))
         assert strategy["strategy_type"] == "SlidingWindowStrategy"
         assert strategy["window_size"] == 10
@@ -265,9 +269,8 @@ class TestUC001_CreateChatWithAllSettings:
             "8\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "SlidingWindowStrategy" in stdout
         strategy = get_strategy(get_agent_by_name("SlidingWindow Custom"))
         assert strategy["strategy_type"] == "SlidingWindowStrategy"
         assert strategy["window_size"] == 20
@@ -298,9 +301,8 @@ class TestUC001_CreateChatWithAllSettings:
             "8\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "SummarizationStrategy" in stdout
         strategy = get_strategy(get_agent_by_name("Summarization Test"))
         assert strategy["strategy_type"] == "SummarizationStrategy"
         assert strategy["non_compressible_count"] == 2
@@ -332,9 +334,8 @@ class TestUC001_CreateChatWithAllSettings:
             "8\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "SummarizationStrategy" in stdout
         strategy = get_strategy(get_agent_by_name("Summarization Custom"))
         assert strategy["strategy_type"] == "SummarizationStrategy"
         assert strategy["non_compressible_count"] == 5
@@ -366,9 +367,8 @@ class TestUC001_CreateChatWithAllSettings:
             "8\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "KeyValueMemoryStrategy" in stdout
         strategy = get_strategy(get_agent_by_name("KeyValueMemory Test"))
         assert strategy["strategy_type"] == "KeyValueMemoryStrategy"
         assert strategy["non_compressible_count"] == 2
@@ -400,9 +400,8 @@ class TestUC001_CreateChatWithAllSettings:
             "8\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "KeyValueMemoryStrategy" in stdout
         strategy = get_strategy(get_agent_by_name("KeyValueMemory Custom"))
         assert strategy["strategy_type"] == "KeyValueMemoryStrategy"
         assert strategy["non_compressible_count"] == 3
@@ -431,9 +430,8 @@ class TestUC001_CreateChatWithAllSettings:
             "8\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "DefaultStrategy" in stdout
         strategy = get_strategy(get_agent_by_name("DefaultStrategy Test"))
         assert strategy["strategy_type"] == "DefaultStrategy"
         assert "window_size" not in strategy

@@ -3,6 +3,8 @@
 Выпуск и отзыв API-ключей через главное меню (пункт 6).
 """
 
+import hashlib
+
 from e2e_helpers import run_cli_command
 from ground_truth import get_api_keys
 
@@ -69,8 +71,8 @@ class TestUC025_ApiKeysMenu:
         keys = get_api_keys()
         assert len(keys) == 1
         assert keys[0]["name"] == "Key List"
-        assert full_key not in keys[0]["key_hash"]
-        assert keys[0]["key_hash"] != full_key
+        # В БД хранится именно SHA-256 открытого секрета
+        assert hashlib.sha256(full_key.encode()).hexdigest() == keys[0]["key_hash"]
 
     def test_tc_152_delete_key(self):
         """TC-152: Отзыв ключа удаляет его из списка."""

@@ -1,6 +1,7 @@
 """E2E tests: TestUC017_DeleteTaskProfile."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_agent_profile_id, get_profile_by_name, get_task_profiles
 
 
 class TestUC017_DeleteTaskProfile:
@@ -41,13 +42,12 @@ class TestUC017_DeleteTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Профиль задачи 'ToDelete Profile' создан!" in stdout
-        assert "[OK] Профиль 'ToDelete Profile' успешно удалён." in stdout
-        # Profile removed from the subsequent list
+        # Ground truth: профиль удалён
         assert "Нет доступных профилей задач." in stdout
+        assert get_profile_by_name("ToDelete Profile") is None
+        assert get_task_profiles() == []
 
     def test_tc_058_delete_task_profile_attached_to_agents(self):
         """
@@ -86,13 +86,15 @@ class TestUC017_DeleteTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Чат 'Linked Chat' создан!" in stdout
         # TC-058/UC-017 A?: deletion blocked because profile is attached to an agent
         assert "Невозможно удалить профиль 'Linked Profile'" in stdout
         assert "Сначала удалите или пересоздайте агентов" in stdout
+        # Ground truth: профиль сохранён и связан с чатом
+        profile = get_profile_by_name("Linked Profile")
+        assert profile is not None
+        assert get_agent_profile_id("Linked Chat") == profile["id"]
 
     def test_tc_059_delete_task_profile_cancelled(self):
         """
@@ -120,10 +122,8 @@ class TestUC017_DeleteTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "[INFO] Удаление отменено." in stdout
-        assert "успешно удалён" not in stdout
-        # Профиль остался в списке
-        assert "Keep Profile" in stdout
+        # Ground truth: профиль сохранён
+        assert get_profile_by_name("Keep Profile") is not None

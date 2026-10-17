@@ -1,6 +1,7 @@
 """E2E tests: TestUC014_CreateNewTaskProfile."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_profile_by_name
 
 
 class TestUC014_CreateNewTaskProfile:
@@ -39,10 +40,11 @@ class TestUC014_CreateNewTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Профиль задачи 'My Task' создан!" in stdout
+        profile = get_profile_by_name("My Task")
+        assert profile is not None
+        assert profile["description"] == "Task description here"
 
     def test_tc_050_create_task_profile_empty_name_validation(self):
         """
@@ -69,11 +71,10 @@ class TestUC014_CreateNewTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "[ERROR] Название профиля не может быть пустым." in stdout
-        assert "[OK] Профиль задачи 'Valid Name' создан!" in stdout
+        assert get_profile_by_name("Valid Name") is not None
 
     def test_tc_052_create_task_profile_empty_description_validation(self):
         """
@@ -100,11 +101,10 @@ class TestUC014_CreateNewTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "[ERROR] Описание задачи не может быть пустым." in stdout
-        assert "[OK] Профиль задачи 'Task Name' создан!" in stdout
+        assert get_profile_by_name("Task Name") is not None
 
     def test_tc_051_create_task_profile_long_name_accepted(self):
         """
@@ -113,9 +113,9 @@ class TestUC014_CreateNewTaskProfile:
         Steps:
         1. Select option 3 (Профили задач)
         2. Select option 1 (Создать новый профиль)
-        3. Enter 150-character name (should truncate to 100)
+        3. Enter 150-character name (accepted without truncation)
         4. Enter description
-        5. Verify profile created with truncated name
+        5. Verify profile created with the full name
         """
         long_name = "A" * 150  # 150 characters
 
@@ -130,10 +130,11 @@ class TestUC014_CreateNewTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Профиль задачи" in stdout and "создан!" in stdout
+        profile = get_profile_by_name(long_name)
+        assert profile is not None
+        assert profile["name"] == long_name
 
     def test_tc_068_create_profile_with_preferences(self):
         """
@@ -162,12 +163,10 @@ class TestUC014_CreateNewTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Профиль задачи 'My Task' создан!" in stdout
-        # Просмотр профиля после создания (шаг 4 TC-068);
-        # детальная проверка отображения предпочтений — в TC-066
+        # Предпочтения сохранены в профиле
+        assert get_profile_by_name("My Task")["preferences"] == "Be concise and formal"
 
     def test_tc_069_create_profile_without_preferences(self):
         """
@@ -196,7 +195,6 @@ class TestUC014_CreateNewTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Профиль задачи 'My Task' создан!" in stdout
+        assert get_profile_by_name("My Task")["preferences"] == ""

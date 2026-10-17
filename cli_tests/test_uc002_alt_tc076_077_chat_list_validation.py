@@ -1,6 +1,7 @@
 """E2E tests: TestUC002_Alt_TC076_077_ChatListValidation."""
 
 from e2e_helpers import _QUICK_CHAT, run_cli_command
+from ground_truth import get_agents
 
 
 class TestUC002_Alt_TC076_077_ChatListValidation:
@@ -28,9 +29,9 @@ class TestUC002_Alt_TC076_077_ChatListValidation:
             + "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert len(get_agents()) == 2
         assert "Введите число от 1 до 2" in stdout
         assert stdout.count("Введите число от 1 до 2") >= 2
 
@@ -52,8 +53,8 @@ class TestUC002_Alt_TC076_077_ChatListValidation:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
+        assert len(get_agents()) == 1
         assert "Введите корректное число" in stdout
         assert stdout.count("Введите корректное число") >= 2

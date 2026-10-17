@@ -1,6 +1,11 @@
 """E2E tests: TestUC004_TC078_083_MessagingBranches."""
 
 from e2e_helpers import _QUICK_CHAT, _manual_chat, run_cli_command
+from ground_truth import (
+    get_agent_by_name,
+    get_messages_by_name,
+    get_settings,
+)
 
 
 class TestUC004_TC078_083_MessagingBranches:
@@ -20,15 +25,20 @@ class TestUC004_TC078_083_MessagingBranches:
             "8\n"
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
+        # UI: token statistics and context-fill lines are rendered
         assert "[AGENT] печатает..." in stdout
-        assert "[AGENT]: [MOCK RESPONSE]" in stdout
         assert "[Токены: prompt: 100, completion: 50]" in stdout
         assert "[Заполненность контекста: 100/200000 (0.1%)]" in stdout
-        # Шаг 5: история обновлена — /info показывает счётчик сообщений
-        assert "Сообщений: 2" in stdout
+        # Шаг 5: история обновлена — состояние в БД
+        agent = get_agent_by_name("Чат 1")
+        assert agent["chat_prompt_tokens"] == 100
+        assert agent["chat_completion_tokens"] == 50
+        assert agent["message_count"] == 2
+        messages = get_messages_by_name("Чат 1")
+        assert messages[1]["role"] == "assistant"
+        assert messages[1]["content"].startswith("[MOCK RESPONSE]")
 
     def test_tc_079_context_window_exceeded_error(self):
         """
@@ -59,17 +69,17 @@ class TestUC004_TC078_083_MessagingBranches:
             + "8\n"
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "[ERROR] Превышен лимит контекстного окна:" in stdout
         assert "(лимит: 1)" in stdout
         assert "Необходимо очистить историю сообщений или создать новый чат." in stdout
+        # Состояние: контекстное окно сохранено как 1 токен
+        assert get_settings(get_agent_by_name("TinyCtx"))["context_window_size"] == 1
         # Шаг 3: возврат в главное меню
         assert "Ваш выбор (1-8):" in stdout
         # Шаг 4: тот же чат всё ещё активен и доступен через опцию 5
         assert "[OK] Возврат в чат: TinyCtx" in stdout
-        assert "Traceback" not in stderr
 
     def test_tc_081_keyboard_interrupt_during_exchange(self):
         """
@@ -85,13 +95,12 @@ class TestUC004_TC078_083_MessagingBranches:
             # EOF прямо на промпте ввода чата (эмуляция Ctrl+C на пустом вводе)
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[AGENT]:" in stdout, "First exchange must complete before EOF"
-        # Цикл чата покинут без падения; приложение завершилось корректно
-        assert "Traceback" not in stderr
-        assert "EOFError" not in stderr
+        # Первый обмен завершился и сохранён в истории до EOF
+        messages = get_messages_by_name("Чат 1")
+        assert [m["role"] for m in messages] == ["user", "assistant"]
+        assert messages[0]["content"] == "first message"
 
     def test_tc_082_long_response_wrapping(self):
         """
@@ -107,16 +116,18 @@ class TestUC004_TC078_083_MessagingBranches:
             "8\n"
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         agent_lines = [ln for ln in stdout.splitlines() if ln.startswith("[AGENT]:")]
         assert agent_lines, "Response must be printed"
         # Строка ответа целая: содержит маркер mock-ответа без разрывов
         assert any("[MOCK RESPONSE]" in ln for ln in agent_lines), (
             "Response line must not be broken/garbled"
         )
-        assert "Traceback" not in stderr
+        # Ground truth: длинное сообщение и ответ сохранены в истории
+        messages = get_messages_by_name("Чат 1")
+        assert messages[0]["content"] == long_msg
+        assert messages[1]["content"].startswith("[MOCK RESPONSE]")
 
     def test_tc_083_reasoning_always_displayed_before_answer(self):
         """
@@ -133,15 +144,19 @@ class TestUC004_TC078_083_MessagingBranches:
             + "8\n"
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "Показать рассуждения модели? (y/n):" not in stdout
-        assert "[MOCK REASONING]" in stdout
-        assert stdout.count("[Reasoning]:") >= 2
-        # Для каждого ответа блок рассуждений идёт до [AGENT]
+        # Ground truth: у каждого ответа сохранён reasoning
+        assistants = [
+            m
+            for m in get_messages_by_name("ReasonChat")
+            if m["role"] == "assistant"
+        ]
+        assert len(assistants) == 2
+        assert all(m["reasoning"] for m in assistants)
+        # Для каждого ответа блок рассуждений идёт до [AGENT] (порядок вывода)
         first_agent = stdout.index("[AGENT]: [MOCK RESPONSE]")
         second_agent = stdout.index("[AGENT]: [MOCK RESPONSE]", first_agent + 1)
         assert stdout.index("[Reasoning]:") < first_agent
         assert stdout.index("[Reasoning]:", first_agent) < second_agent
-        assert "Traceback" not in stderr

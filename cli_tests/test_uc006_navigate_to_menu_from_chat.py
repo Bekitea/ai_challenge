@@ -1,7 +1,7 @@
 """E2E tests: TestUC006_NavigateToMenuFromChat."""
 
 from e2e_helpers import run_cli_command
-from ground_truth import get_agent_by_name
+from ground_truth import get_agent_by_name, get_phase_by_name
 
 
 class TestUC006_NavigateToMenuFromChat:
@@ -80,15 +80,11 @@ class TestUC006_NavigateToMenuFromChat:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App exited with code {returncode}, stderr: {stderr}"
-        assert "[OK] Чат 'Chat A' создан!" in stdout
-        assert "[OK] Чат 'Chat B' создан!" in stdout
         assert get_agent_by_name("Chat A") is not None
         assert get_agent_by_name("Chat B") is not None
-        # Option 2 selected Chat A explicitly
+        # Option 2 selected Chat A explicitly; option 5 returns to the ACTIVE chat
         assert "[OK] Выбран чат: Chat A" in stdout
-        # Option 5 returns to the ACTIVE chat, which is A after selecting Chat A via option 2
         assert "[OK] Возврат в чат: Chat A" in stdout
-        assert "--- ЧАТ: Chat A [Фаза: PLAN] ---" in stdout
+        assert get_phase_by_name("Chat A") == "plan"

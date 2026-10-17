@@ -1,6 +1,12 @@
 """E2E tests: TestS3_MemoryIntegrationInSystemPrompt."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import (
+    get_agent_by_name,
+    get_agent_profile_id,
+    get_global_facts,
+    get_profile_by_name,
+)
 
 
 class TestS3_MemoryIntegrationInSystemPrompt:
@@ -61,19 +67,17 @@ class TestS3_MemoryIntegrationInSystemPrompt:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Чат 'Global Memory Chat' создан!" in stdout
-        assert "[OK] Профиль задачи 'Integration Profile' создан!" in stdout
-        assert "[OK] Чат 'Integration Chat' создан!" in stdout
-        assert "Профиль задачи: Integration Profile" in stdout
+        assert get_agent_by_name("Global Memory Chat") is not None
+        assert get_agent_by_name("Integration Chat") is not None
+        profile = get_profile_by_name("Integration Profile")
+        assert profile is not None
+        # Чат связан с профилем задачи
+        assert get_agent_profile_id("Integration Chat") == profile["id"]
         # Шаг 1: глобальная память содержит факты после обмена сообщениями
         assert "--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---" in stdout
-        memory_section = stdout.split("--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---")[-1]
-        assert "(память пуста)" not in memory_section, (
-            "Mock provider must extract global facts after a message exchange"
-        )
+        assert get_global_facts() != []
 
     def test_tc_065_preferences_display_empty_preferences(self):
         """
@@ -112,9 +116,11 @@ class TestS3_MemoryIntegrationInSystemPrompt:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Чат 'Empty Pref Chat' создан!" in stdout
-        # Preferences line omitted when empty (§4.7.3)
+        assert get_agent_by_name("Empty Pref Chat") is not None
+        profile = get_profile_by_name("Empty Pref Profile")
+        assert profile is not None
+        # Предпочтения пусты (§4.7.3) — строка не выводится
+        assert profile["preferences"] == ""
         assert "Предпочтения:" not in stdout

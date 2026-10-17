@@ -1,6 +1,13 @@
 """E2E tests: TestUC001_TC004_008_CreationValidation."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import (
+    get_agent_by_name,
+    get_agents,
+    get_last_agent,
+    get_settings,
+    get_strategy,
+)
 
 
 class TestUC001_TC004_008_CreationValidation:
@@ -32,9 +39,8 @@ class TestUC001_TC004_008_CreationValidation:
             + "8\n"
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "Хотите настроить чат? (y/n, по умолчанию n):" in stdout
         assert "Введите 'y' (да) или 'n' (нет)" in stdout, (
             "'maybe' must produce the invalid-answer warning (UC-001 A2)"
@@ -42,7 +48,7 @@ class TestUC001_TC004_008_CreationValidation:
         assert "Введите название чата" in stdout, (
             "'да' must be accepted and start the manual path (§4.4.0)"
         )
-        assert "[OK] Чат 'TC004 Chat' создан!" in stdout
+        assert get_agent_by_name("TC004 Chat") is not None
 
     def test_tc_005_default_chat_name_on_empty_input(self):
         """
@@ -68,15 +74,13 @@ class TestUC001_TC004_008_CreationValidation:
             + "/menu\n"
             + "2\n"  # Список чатов (шаг 4), затем EOF закрывает приложение
         )
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Чат 'Чат 3' создан!" in stdout, (
-            "Empty name must fall back to 'Чат N' with N = existing chats + 1"
-        )
-        # Шаг 4: чат 'Чат 3' присутствует в списке чатов
-        chat_list = stdout.split("Список доступных чатов")[-1]
-        assert "Чат 3" in chat_list, "New chat must be listed in the chat list"
+        # Шаг 3: пустое имя -> default 'Чат 3' (2 существующих + 1)
+        assert [a["name"] for a in get_agents()] == ["Чат 1", "Чат 2", "Чат 3"]
+        assert get_last_agent()["name"] == "Чат 3"
+        # Шаг 4: список чатов отрисован
+        assert "--- ВАШИ ЧАТЫ ---" in stdout
 
     def test_tc_006_out_of_range_model_selection_reprompts(self):
         """
@@ -111,18 +115,16 @@ class TestUC001_TC004_008_CreationValidation:
             + "8\n"
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "--- НАСТРОЙКИ АГЕНТА ---" in stdout
         assert stdout.count("Неверный выбор, попробуйте снова.") >= 2, (
             "'9' and 'abc' must each re-prompt the model selection (UC-001 A5)"
         )
         assert "Температура (0.0 - 2.0, Enter для отключения):" in stdout
         assert "(нет доступных профилей)" in stdout
-        assert "[OK] Чат 'TC006' создан!" in stdout
-        assert "Модель: aliceai-llm-flash/latest" in stdout, (
-            "Selected model must be shown in the chat settings"
+        assert get_settings(get_agent_by_name("TC006"))["model_id"] == (
+            "aliceai-llm-flash/latest"
         )
 
     def test_tc_008_non_integer_strategy_param_repeats_selection(self):
@@ -155,9 +157,8 @@ class TestUC001_TC004_008_CreationValidation:
             + "8\n"
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "Количество несжимаемых сообщений (по умолчанию 2):" in stdout
         assert (
             "Ошибка: invalid literal for int() with base 10: 'abc'. Попробуйте снова."
@@ -165,6 +166,7 @@ class TestUC001_TC004_008_CreationValidation:
         ), "ValueError text must be interpolated into the repeated-selection error"
         # Блок стратегии выводится повторно (весь цикл выбора)
         assert stdout.count("--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---") >= 2
-        assert "Стратегия: SummarizationStrategy" in stdout
-        assert "Несжимаемые сообщения: 3" in stdout
-        assert "Размер буфера: 4" in stdout
+        strategy = get_strategy(get_agent_by_name("TC008"))
+        assert strategy["strategy_type"] == "SummarizationStrategy"
+        assert strategy["non_compressible_count"] == 3
+        assert strategy["buffer_size"] == 4

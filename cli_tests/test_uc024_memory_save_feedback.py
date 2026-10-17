@@ -6,6 +6,7 @@ UC-024: индикация заполнения глобальной и проф
 """
 
 from e2e_helpers import _QUICK_CHAT, _manual_chat, run_cli_command
+from ground_truth import get_global_facts
 
 
 class TestUC024_MemorySaveFeedback:
@@ -57,3 +58,5 @@ class TestUC024_MemorySaveFeedback:
         assert "[INFO] Проверка несохранённой памяти..." in stdout
         assert "[INFO] Несохранённой памяти нет." in stdout
         assert "Сохранение памяти чата '" not in stdout
+        # Ground truth: глобальная память не заполнялась
+        assert get_global_facts() == []

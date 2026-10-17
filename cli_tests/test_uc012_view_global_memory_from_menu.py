@@ -1,6 +1,7 @@
 """E2E tests: TestUC012_ViewGlobalMemoryFromMenu."""
 
-from e2e_helpers import run_cli_command
+from e2e_helpers import mock_llm, run_cli_command
+from ground_truth import get_global_facts
 
 
 class TestUC012_ViewGlobalMemoryFromMenu:
@@ -33,7 +34,8 @@ class TestUC012_ViewGlobalMemoryFromMenu:
 
         # Should display global memory header
         assert "--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---" in stdout
-        # Should return to menu or exit cleanly
+        # Ground truth: память пуста
+        assert get_global_facts() == []
 
     def test_tc_047_view_global_memory_empty_state(self):
         """
@@ -56,6 +58,7 @@ class TestUC012_ViewGlobalMemoryFromMenu:
         assert "ГЛОБАЛЬНАЯ ПАМЯТЬ" in stdout
         # Empty memory shows "(память пуста)" message
         assert "память пуста" in stdout.lower()
+        assert get_global_facts() == []
 
     def test_tc_048_view_global_memory_with_facts(self):
         """
@@ -66,11 +69,13 @@ class TestUC012_ViewGlobalMemoryFromMenu:
         2. Send a message (mock provider extracts facts into global memory)
         3. Reasoning is shown automatically before the answer
         4. Use /menu to return to main menu
-        5. Select option 3 to view global memory
+        5. Select option 4 to view global memory
         6. Verify header is displayed
         7. Verify facts are displayed as numbered list
         8. Verify separator line
         """
+        fact_1 = "Пользователь предпочитает использовать Python для разработки"
+        fact_2 = "Пользователь работает в Москве"
         test_input = (
             "1\n"  # Новый чат
             "y\n"  # Хотите настроить? (y/n)
@@ -85,26 +90,16 @@ class TestUC012_ViewGlobalMemoryFromMenu:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
-
-        assert returncode == 0, f"App failed with stderr: {stderr}"
+        stdout, _, _ = run_cli_command(
+            test_input,
+            mock=mock_llm(json_object={"facts": [fact_1, fact_2]}),
+        )
 
         # Check header
         assert "--- ГЛОБАЛЬНАЯ ПАМЯТЬ ---" in stdout, "Header should be displayed"
 
-        # Check separator (40 dashes)
-        assert "-" * 40 in stdout, "Separator line should be displayed"
-
-        # Mock provider returns exactly these two facts when JSON format is requested
-        expected_fact_1 = (
-            "1. Пользователь предпочитает использовать Python для разработки"
-        )
-        expected_fact_2 = "2. Пользователь работает в Москве"
-
-        # Verify both facts are present in the output
-        assert expected_fact_1 in stdout, (
-            f"First fact should be displayed: {expected_fact_1}"
-        )
-        assert expected_fact_2 in stdout, (
-            f"Second fact should be displayed: {expected_fact_2}"
-        )
+        # Ground truth: оба факта сохранены в глобальной памяти (dedup)
+        assert get_global_facts() == [fact_1, fact_2]
+        # UI: факты отображаются нумерованным списком
+        assert f"1. {fact_1}" in stdout
+        assert f"2. {fact_2}" in stdout

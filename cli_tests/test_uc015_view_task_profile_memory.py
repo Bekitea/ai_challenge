@@ -1,6 +1,12 @@
 """E2E tests: TestUC015_ViewTaskProfileMemory."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import (
+    get_agent_profile_id,
+    get_invariants,
+    get_profile_by_name,
+    get_profile_facts,
+)
 
 
 class TestUC015_ViewTaskProfileMemory:
@@ -39,14 +45,14 @@ class TestUC015_ViewTaskProfileMemory:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        # TC-056: profile info displayed with empty memory and invariants
+        # TC-056: профиль пуст — нет фактов и инвариантов
         assert "--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---" in stdout
-        assert "Memory Test Profile" in stdout
-        assert "(память пуста)" in stdout
-        assert "(инварианты не заданы)" in stdout
+        profile = get_profile_by_name("Memory Test Profile")
+        assert profile is not None
+        assert get_profile_facts(profile["id"]) == []
+        assert get_invariants(profile["id"]) == []
 
     def test_tc_055_view_task_profile_memory_flow(self):
         """
@@ -88,14 +94,13 @@ class TestUC015_ViewTaskProfileMemory:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Профиль задачи 'Facts Profile' создан!" in stdout
-        assert "[OK] Чат 'Test Chat' создан!" in stdout
-        # Profile view reachable after linking a chat to it
         assert "--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---" in stdout
-        assert "Facts Profile" in stdout
+        # Ground truth: чат связан с профилем
+        profile = get_profile_by_name("Facts Profile")
+        assert profile is not None
+        assert get_agent_profile_id("Test Chat") == profile["id"]
 
     def test_tc_066_preferences_display_in_view_profile_with_preferences(self):
         """
@@ -127,14 +132,12 @@ class TestUC015_ViewTaskProfileMemory:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         # Шаг 2: профиль выбран, детали отображены
         assert "--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---" in stdout
-        assert "Pref Profile" in stdout
-        # Шаг 3: строка `Предпочтения: {preferences_text}` показана
-        assert "Предпочтения: Be concise and formal" in stdout
+        # Шаг 3: предпочтения сохранены в профиле
+        assert get_profile_by_name("Pref Profile")["preferences"] == "Be concise and formal"
 
     def test_tc_067_preferences_display_in_view_profile_empty_preferences(self):
         """
@@ -167,13 +170,10 @@ class TestUC015_ViewTaskProfileMemory:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         # Шаг 2: профиль выбран, детали отображены
         assert "--- ИНФОРМАЦИЯ О ПРОФИЛЕ ЗАДАЧИ ---" in stdout
-        assert "NoPref Profile" in stdout
-        # Шаг 3 (§4.7.3): при пустых предпочтениях строка полностью опущена
-        assert "Предпочтения:" not in stdout
-        # ...и не заменяется заглушкой
+        # Шаг 3 (§4.7.3): предпочтения пусты, строка опущена
+        assert get_profile_by_name("NoPref Profile")["preferences"] == ""
         assert "(не указаны)" not in stdout

@@ -42,10 +42,22 @@ class TestUC004_SendMessageAndReceiveResponse:
             "4\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "[USER]:" in stdout
-        assert "[AGENT]" in stdout
+        messages = get_messages_by_name("MultiMessage")
+        assert [m["role"] for m in messages] == [
+            "user",
+            "assistant",
+            "user",
+            "assistant",
+            "user",
+            "assistant",
+        ]
+        assert [m["content"] for m in messages if m["role"] == "user"] == [
+            "Message 1",
+            "Message 2",
+            "Message 3",
+        ]
 
     def test_tc_015_empty_and_whitespace_only_message_handling(self):
         """
@@ -71,9 +83,8 @@ class TestUC004_SendMessageAndReceiveResponse:
             "4\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "[USER]:" in stdout
         # Ground truth: пустые сообщения не попали в историю
         messages = get_messages_by_name("EmptyMessage")
         assert messages[0]["role"] == "user"
@@ -101,14 +112,14 @@ class TestUC004_SendMessageAndReceiveResponse:
             "4\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "[AGENT]: [MOCK RESPONSE]" in stdout
         # UC-004 A2: неизвестная команда — обычное сообщение для агента
         messages = get_messages_by_name("UnknownCmd")
         assert messages[0]["role"] == "user"
         assert messages[0]["content"] == "/unknown"
         assert messages[1]["role"] == "assistant"
+        assert messages[1]["content"].startswith("[MOCK RESPONSE]")
 
     def test_tc_022_system_prompt_in_history(self):
         """
@@ -132,9 +143,8 @@ class TestUC004_SendMessageAndReceiveResponse:
             "4\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "[USER]:" in stdout
         # Ground truth: системный промпт первым в истории, затем реплики
         messages = get_messages_by_name("SystemPromptTest")
         assert messages[0]["role"] == "system"
@@ -165,6 +175,8 @@ class TestUC004_SendMessageAndReceiveResponse:
             "4\n"  # Exit
         )
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "[USER]:" in stdout
+        messages = get_messages_by_name("SpecialChars")
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"] == special_message

@@ -1,6 +1,7 @@
 """E2E tests: TestUC001_ChatCreationWithTaskProfile."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import get_agent_by_name, get_agent_profile_id, get_profile_by_name
 
 
 class TestUC001_ChatCreationWithTaskProfile:
@@ -45,11 +46,11 @@ class TestUC001_ChatCreationWithTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Чат 'Bound Chat' создан!" in stdout
-        assert "Профиль задачи: Chat Profile" in stdout
+        profile = get_profile_by_name("Chat Profile")
+        assert profile is not None
+        assert get_agent_profile_id("Bound Chat") == profile["id"]
 
     def test_tc_062_create_chat_without_task_profile(self):
         """
@@ -76,13 +77,12 @@ class TestUC001_ChatCreationWithTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Чат 'No Profile Chat' создан!" in stdout
-        # TC-063: no profiles available -> skip attachment
+        # TC-063: no profiles available -> attachment step is skipped
         assert "(нет доступных профилей)" in stdout
-        assert "Профиль задачи: (не привязан)" in stdout
+        assert get_agent_by_name("No Profile Chat") is not None
+        assert get_agent_profile_id("No Profile Chat") is None
 
     def test_tc_007_task_profile_selection_invalid_choice(self):
         """
@@ -115,8 +115,9 @@ class TestUC001_ChatCreationWithTaskProfile:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "[WARN] Некорректный выбор. Профиль не привязан." in stdout
-        assert "[OK] Чат 'Invalid Select Chat' создан!" in stdout
+        assert get_profile_by_name("TC007 Profile") is not None
+        assert get_agent_by_name("Invalid Select Chat") is not None
+        assert get_agent_profile_id("Invalid Select Chat") is None

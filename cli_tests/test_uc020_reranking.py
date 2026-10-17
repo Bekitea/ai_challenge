@@ -7,6 +7,7 @@ UC-020: per-chat управление реранкингом командой ``
 """
 
 from e2e_helpers import _QUICK_CHAT, run_cli_command
+from ground_truth import get_agent_by_name, get_settings
 
 
 class TestUC020_Reranking:
@@ -19,6 +20,7 @@ class TestUC020_Reranking:
         stdout, _, _ = run_cli_command(test_input)
 
         assert "[INFO] Реранкинг: включён." in stdout
+        assert get_settings(get_agent_by_name("Чат 1"))["reranker_enabled"] is True
 
     def test_tc_136_toggle_reranking(self):
         """TC-136: /rerank off и /rerank on переключают состояние."""
@@ -37,6 +39,8 @@ class TestUC020_Reranking:
         assert "[INFO] Реранкинг: отключён." in stdout
         assert "[OK] Реранкинг включён." in stdout
         assert "[INFO] Реранкинг: включён." in stdout
+        # Итоговое состояние сохранено (включён)
+        assert get_settings(get_agent_by_name("Чат 1"))["reranker_enabled"] is True
 
     def test_tc_137_reranking_invalid_argument(self):
         """TC-137: неверный аргумент -> подсказка по использованию."""
@@ -59,3 +63,4 @@ class TestUC020_Reranking:
 
         assert "--- БАЗЫ ЗНАНИЙ ЧАТА:" in stdout
         assert "[INFO] Реранкинг: отключён." in stdout
+        assert get_settings(get_agent_by_name("Чат 1"))["reranker_enabled"] is False

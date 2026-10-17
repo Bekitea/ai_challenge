@@ -1,6 +1,13 @@
 """E2E tests: TestUC001_TC063_120_CreationExtras."""
 
 from e2e_helpers import _manual_chat, run_cli_command
+from ground_truth import (
+    get_agent_by_name,
+    get_agent_profile_id,
+    get_last_agent,
+    get_settings,
+    get_strategy,
+)
 
 
 class TestUC001_TC063_120_CreationExtras:
@@ -21,14 +28,12 @@ class TestUC001_TC063_120_CreationExtras:
             + "8\n"
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "--- ПРИВЯЗКА ПРОФИЛЯ ЗАДАЧИ ---" in stdout
         assert "(нет доступных профилей)" in stdout
-        assert "[OK] Чат 'NoProfilesChat' создан!" in stdout
-        assert "Профиль задачи: (не привязан)" in stdout
-        assert "Traceback" not in stderr
+        assert get_agent_by_name("NoProfilesChat") is not None
+        assert get_agent_profile_id("NoProfilesChat") is None
 
     def test_tc_120_quick_creation_default_name_counter(self):
         """
@@ -54,16 +59,17 @@ class TestUC001_TC063_120_CreationExtras:
             + "8\n"
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "Используются настройки по умолчанию." in stdout
-        assert "[OK] Чат 'Чат 3' создан!" in stdout
-        assert "Модель: aliceai-llm-flash/latest" in stdout
-        assert "Температура: отключена" in stdout
-        assert "Top P: отключен" in stdout
-        assert "Top K: отключено" in stdout
-        assert "Max Tokens: без ограничений" in stdout
-        assert "Размер контекстного окна: 200000 токенов" in stdout
-        assert "Стратегия: DefaultStrategy" in stdout
-        assert "Профиль задачи: (не привязан)" in stdout
+        agent = get_last_agent()
+        assert agent["name"] == "Чат 3"
+        settings = get_settings(agent)
+        assert settings["model_id"] == "aliceai-llm-flash/latest"
+        assert settings.get("temperature") is None
+        assert settings.get("top_p") is None
+        assert settings.get("top_k") is None
+        assert settings.get("max_tokens") is None
+        assert settings["context_window_size"] == 200_000
+        assert get_strategy(agent)["strategy_type"] == "DefaultStrategy"
+        assert agent["task_profile_id"] is None

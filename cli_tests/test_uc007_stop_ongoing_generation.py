@@ -37,8 +37,8 @@ class TestUC007_StopOngoingGeneration:
 
         stdout, _, _ = run_cli_command(test_input)
 
-        # CLI shows "Генерация остановлена." even when idle in mock mode
-        assert "Генерация" in stdout
+        # /stop при простое всегда сообщает, что генерация не активна
+        assert "Генерация не активна." in stdout
         # Ground truth: idle stop не создаёт сообщений
         agent = get_agent_by_name("StopIdle")
         assert agent is not None

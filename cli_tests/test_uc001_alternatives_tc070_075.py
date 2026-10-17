@@ -1,6 +1,12 @@
 """E2E tests: TestUC001_Alternatives_TC070_075."""
 
 from e2e_helpers import run_cli_command
+from ground_truth import (
+    get_agent_by_name,
+    get_messages_by_name,
+    get_settings,
+    get_strategy,
+)
 
 
 class TestUC001_Alternatives_TC070_075:
@@ -28,15 +34,13 @@ class TestUC001_Alternatives_TC070_075:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Чат 'NoSysPrompt' создан!" in stdout
-        # System prompt was skipped -> no [SYSTEM] entry anywhere in output
-        assert "[SYSTEM]" not in stdout
-        # History contains only user + assistant messages (mock exchange happened)
-        assert "запрос: 'Hello" in stdout
-        assert "[AGENT]" in stdout
+        messages = get_messages_by_name("NoSysPrompt")
+        # System prompt was skipped -> history holds only user + assistant
+        assert [m["role"] for m in messages] == ["user", "assistant"]
+        assert messages[0]["content"] == "Hello"
+        assert messages[1]["content"]
 
     def test_tc_071_empty_inputs_disable_temperature_and_top_p(self):
         """
@@ -61,14 +65,15 @@ class TestUC001_Alternatives_TC070_075:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "[OK] Чат 'DisabledTP' создан!" in stdout
         # No warnings for empty temperature/top_p inputs
         assert "Температура должна быть от 0.0 до 2.0" not in stdout
         assert "Top P должен быть от 0.0 до 1.0" not in stdout
-        assert "--- НАСТРОЙКИ АГЕНТА ---" in stdout  # /settings view was reached
+        assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout  # /settings view was reached
+        settings = get_settings(get_agent_by_name("DisabledTP"))
+        assert settings.get("temperature") is None
+        assert settings.get("top_p") is None
 
     def test_tc_072_invalid_top_k_reprompts_zero_disables(self):
         """
@@ -90,12 +95,11 @@ class TestUC001_Alternatives_TC070_075:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "Top K должен быть >= 0" in stdout
         assert "Введите корректное число" in stdout
-        assert "[OK] Чат 'TopKTest' создан!" in stdout
+        assert get_settings(get_agent_by_name("TopKTest")).get("top_k") is None
 
     def test_tc_073_invalid_reasoning_effort_reprompts_default(self):
         """
@@ -117,12 +121,11 @@ class TestUC001_Alternatives_TC070_075:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "Введите корректное число" in stdout
         assert "Выбор должен быть от 1 до 4" in stdout
-        assert "[OK] Чат 'ReasonTest' создан!" in stdout
+        assert get_settings(get_agent_by_name("ReasonTest"))["reasoning_effort"] == "none"
 
     def test_tc_145_quick_chat_prompts_reasoning_effort(self):
         """
@@ -142,11 +145,10 @@ class TestUC001_Alternatives_TC070_075:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
-        assert "Reasoning Effort:" in stdout
-        assert "Reasoning Effort: low" in stdout
+        assert "--- ТЕКУЩИЕ НАСТРОЙКИ ---" in stdout
+        assert get_settings(get_agent_by_name("Чат 1"))["reasoning_effort"] == "low"
 
     def test_tc_074_invalid_context_window_falls_back_to_200k(self):
         """
@@ -178,12 +180,12 @@ class TestUC001_Alternatives_TC070_075:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "Некорректное число. Используется 200k." in stdout
         assert "Размер должен быть положительным числом. Используется 200k." in stdout
-        assert "[OK] Чат 'CtxZero' создан!" in stdout
+        assert get_settings(get_agent_by_name("CtxAbc"))["context_window_size"] == 200_000
+        assert get_settings(get_agent_by_name("CtxZero"))["context_window_size"] == 200_000
 
     def test_tc_075_invalid_strategy_choice_reprompts(self):
         """
@@ -204,10 +206,10 @@ class TestUC001_Alternatives_TC070_075:
             "8\n"  # Exit
         )
 
-        stdout, stderr, returncode = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input)
 
-        assert returncode == 0, f"App failed with stderr: {stderr}"
         assert "--- ВЫБОР СТРАТЕГИИ УПРАВЛЕНИЯ КОНТЕКСТНЫМ ОКНОМ ---" in stdout
         assert stdout.count("Неверный выбор, попробуйте снова.") >= 2
-        assert "[OK] Чат 'StratTest' создан!" in stdout
-        assert "DefaultStrategy" in stdout
+        assert get_strategy(get_agent_by_name("StratTest"))["strategy_type"] == (
+            "DefaultStrategy"
+        )

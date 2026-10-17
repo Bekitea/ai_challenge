@@ -115,4 +115,5 @@ class TestUC002_SelectExistingChatFromList:
 
         stdout, _, _ = run_cli_command(select_input)
 
+        assert "--- ВАШИ ЧАТЫ ---" in stdout
         assert "PreviewTest" in stdout

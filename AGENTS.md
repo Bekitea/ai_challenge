@@ -6,6 +6,10 @@ AI Chat CLI — консольное приложение для взаимод�
 
 **Language**: общение с пользователем и все ответы вести на русском языке.
 
+## Backlog
+
+- `BACKLOG.md` в корне содержит известные несоответствия/потенциальные баги. **Пункты из `BACKLOG.md` НЕ выполнять (не исправлять, не менять код по ним) без явного указания пользователя.** Читать можно для контекста; при обнаружении новых проблем — дописывать в файл.
+
 ## Setup & commands
 
 - `poetry install` — mandatory first step. Poetry's env is NOT in-project (configured `virtualenvs.in-project false`); the `.venv/` directory in the repo root is a stale artifact, ignore it. Run everything via `poetry run ...`.

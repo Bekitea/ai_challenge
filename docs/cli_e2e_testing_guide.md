@@ -123,9 +123,12 @@ class TestUC001_CreateChatWithAllSettings:
         #              -> "3" (model is required, no default) -> Enter (reasoning effort)
         test_input = _QUICK_CHAT + "/menu\n8\n"  # back to menu, then exit
 
-        stdout, _, _ = run_cli_command(test_input)
+        run_cli_command(test_input)
 
-        assert "[OK] Чат 'Чат" in stdout
+        # Ground truth: the chat is persisted with a default name
+        from ground_truth import get_last_agent
+
+        assert get_last_agent()["name"].startswith("Чат")
 ```
 
 ### Manual Testing with Different Modes

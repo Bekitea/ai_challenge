@@ -109,6 +109,15 @@ RERANKER_BATCH_SIZE = int(os.getenv("RERANKER_BATCH_SIZE", "32"))
 RERANKER_TIMEOUT = int(os.getenv("RERANKER_TIMEOUT", "60"))
 RERANKER_RETRY_COUNT = int(os.getenv("RERANKER_RETRY_COUNT", "1"))
 
+# --- Периодические отчёты Celery ---
+# По умолчанию ВЫКЛ: при включённом расписании beat раз в минуту создаёт новый
+# чат и дёргает LLM/MCP (засоряет ./data, грузит модель). Функция временно
+# законсервирована и включается явно переменной окружения после переработки
+# (см. BACKLOG.md, раздел 4).
+SCHEDULED_REPORTS_ENABLED = os.getenv(
+    "SCHEDULED_REPORTS_ENABLED", "false"
+).lower() in ("1", "true", "yes")
+
 RAG_CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "800"))
 RAG_CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "120"))
 RAG_VECTOR_TOP_K_PER_KB = int(os.getenv("RAG_VECTOR_TOP_K_PER_KB", "20"))

@@ -39,14 +39,23 @@ SCHEDULED_REPORTS: dict[str, dict] = {
 }
 
 # Every registered report runs once a minute by default.
-CELERY_BEAT_SCHEDULE = {
-    report_id: {
-        "task": "tasks.run_agent_report",
-        "schedule": timedelta(minutes=1),
-        "args": [report_id],
+#
+# Расписание строится только при включённой функции: она временно
+# законсервирована (по умолчанию без явного SCHEDULED_REPORTS_ENABLED=true
+# beat ничего не диспатчит). Реестр отчётов и задача tasks.run_agent_report
+# сохранены без изменений — см. BACKLOG.md, раздел 4.
+CELERY_BEAT_SCHEDULE = (
+    {
+        report_id: {
+            "task": "tasks.run_agent_report",
+            "schedule": timedelta(minutes=1),
+            "args": [report_id],
+        }
+        for report_id in SCHEDULED_REPORTS
     }
-    for report_id in SCHEDULED_REPORTS
-}
+    if config.SCHEDULED_REPORTS_ENABLED
+    else {}
+)
 
 celery_app.conf.update(
     timezone="UTC",

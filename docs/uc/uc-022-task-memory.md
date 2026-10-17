@@ -43,8 +43,12 @@
   - Step 2: the update is skipped, the previous memory is preserved
 
 - **A4: Branch created**
-  - Step 4: `/branch` starts with **empty** task memory (new
-    `conversation_id`); branch and parent keep separate memories
+  - Step 4: `/branch` starts with **empty** task memory and an independent
+    copy of the history (new `conversation_id`); branch and parent keep
+    separate memories. The branch does not inherit the parent's stored task
+    memory, but on the final flush (step 5) it derives its own memory from
+    the copied dialogue — so a branch left without new turns still gets a
+    task memory that reflects the inherited dialogue
 
 - **A5: Task profile attached**
   - Step 2: the profile name/description is passed to the extractor as extra
@@ -54,7 +58,9 @@
 
 - Task memory lives exactly as long as its dialogue and is deleted with the chat
 - `TaskProfile` (facts/preferences/invariants) is unchanged and independent;
-  branches share the profile but not the per-chat task memory
+  branches share the profile but not the per-chat task memory (each branch owns
+  a separate `conversation_id`, an empty stored memory at creation and its own
+  memory derived from the copied dialogue on the final flush)
 
 ## Related Test Cases
 
@@ -88,6 +94,16 @@
 | Step | Action                                       | Expected Result                                  |
 | ---- | -------------------------------------------- | ------------------------------------------------ |
 | 1    | Fill memory, exit via `/menu`, re-enter chat | `/info` shows the persisted goal                 |
+
+---
+
+### TC-156: Branch Derives Its Own Task Memory
+
+**Related UC**: UC-022 steps 4–5, A4
+
+| Step | Action                                             | Expected Result                                                                 |
+| ---- | -------------------------------------------------- | ------------------------------------------------------------------------------- |
+| 1    | Send a message, `/branch`, stay, exit via `/menu`  | The branch starts with empty memory but the final flush extracts it from the copied dialogue under the branch's own `conversation_id`; the parent chat keeps no task memory |
 
 Unit-level tests (no network) in `core/tests/core_tests/test_task_memory.py` cover the
 repository roundtrip, overriding semantics, missing-field preservation and the

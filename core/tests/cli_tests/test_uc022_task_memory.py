@@ -5,7 +5,12 @@ UC-022: память задачи диалога (цель, ограничени
 """
 
 from e2e_helpers import _QUICK_CHAT, run_cli_command
-from ground_truth import get_task_memory_by_name
+from ground_truth import (
+    get_agent_by_name,
+    get_agents,
+    get_task_memory,
+    get_task_memory_by_name,
+)
 
 
 class TestUC022_TaskMemory:
@@ -73,3 +78,35 @@ class TestUC022_TaskMemory:
         stdout, _, _ = run_cli_command(second)
 
         assert "Цель: уточнить детали проекта" in stdout
+
+    def test_tc_156_branch_derives_task_memory_from_copied_history(self):
+        """TC-156: ветка извлекает свою память задачи из скопированной истории.
+
+        Ветка стартует с пустой памятью задачи (новый ``conversation_id``), но
+        при выходе из чата финальный flush извлекает память из копии диалога
+        (UC-022 шаг 5). Родитель при этом остаётся без сохранённой памяти —
+        чаты независимы.
+        """
+        test_input = (
+            _QUICK_CHAT
+            + "Расскажи о задаче\n"
+            + "/branch\n"
+            + "\n"  # Автоимя ветки
+            + "n\n"  # Остаться (current_chat уже переключён на ветку)
+            + "/menu\n"  # Финальный flush памяти ветки
+            + "8\n"  # Выход
+        )
+
+        run_cli_command(test_input)
+
+        parent = get_agent_by_name("Чат 1")
+        assert parent is not None
+        branch = next(a for a in get_agents() if a["id"] != parent["id"])
+        assert "branch" in branch["name"]
+
+        branch_memory = get_task_memory(branch["conversation_id"])
+        assert branch_memory is not None
+        assert branch_memory.goal == "уточнить детали проекта"
+
+        # Память родителя не извлекалась — чаты хранят память раздельно.
+        assert get_task_memory(parent["conversation_id"]) is None

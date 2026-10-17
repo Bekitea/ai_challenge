@@ -50,7 +50,7 @@ Memory facts are injected into the system prompt constructed for every message e
 3. Per-chat task memory — section header `--- ПАМЯТЬ ЗАДАЧИ ---` with `Цель`, `Ограничения`, `Термины` and `Уже уточнено` (omitted when empty). Maintained per `conversation_id` by `Agent.update_task_memory` every `TASK_MEMORY_UPDATE_EVERY_N_MESSAGES` turns and on context compression (in-dialogue cadence only); new clarifications override outdated values (see UC-022);
 4. RAG context — section header `--- КОНТЕКСТ ИЗ БАЗ ЗНАНИЙ ---` (only when knowledge bases are attached, see UC-021).
 
-Facts are extracted into global and task-profile memory by the `save_agent_memory` use case whenever the chat loop exits (via `/menu`, Ctrl+C or application start — see UC-004 exit rule), and on application start by the `save_unsaved_memories` use case (§4.2.3). The per-chat task memory is additionally refreshed on exit by the same use case, **unconditionally** (regardless of `TASK_MEMORY_UPDATE_EVERY_N_MESSAGES`): the threshold controls only the in-dialogue cadence, so `/info` before the threshold shows no task memory while the state persisted on exit already contains it (see UC-022, TC-143).
+Facts are extracted into global and task-profile memory by the `save_agent_memory` use case whenever the chat loop exits (via `/menu`, Ctrl+C or application start — see UC-004 exit rule), and on application start by the `save_unsaved_memories` use case (§4.2.3). The per-chat task memory is additionally refreshed on exit by the same use case, **unconditionally** (regardless of `TASK_MEMORY_UPDATE_EVERY_N_MESSAGES`): the threshold controls only the in-dialogue cadence, so `/info` before the threshold shows no task memory while the state persisted on exit already contains it (see UC-022, TC-143). A branch starts with empty task memory under its own `conversation_id`; on exit it derives its own memory from the copied dialogue (see UC-022, TC-156).
 
 ---
 
@@ -473,7 +473,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
 - **Flow**:
   1. Display header `--- СОЗДАНИЕ ВЕТКИ ОТ '{current_name}' ---`
   2. Prompt for branch name: `Введите название ветки (Enter для автогенерации):`; empty → auto-name `{current_name} (branch {YYYY-MM-DD HH:MM:SS})`
-  3. Copy all messages, settings, token counters and strategy (with its accumulated state); the branch receives a new `conversation_id` (UUID) and no ID until saved
+  3. Copy all messages, settings, token counters and strategy (with its accumulated state); the branch receives a new `conversation_id` (UUID) and no ID until saved. Messages are copied independently (deep copy), so later memory marking on the branch does not affect the original chat
   4. `current_chat` is switched to the branch immediately after creation (the new `ChatDTO`)
   5. Ask: `Продолжить в новой ветке? (y/n):`
   6. If 'y': enter the chat loop for the branch

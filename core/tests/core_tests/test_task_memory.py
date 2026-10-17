@@ -189,6 +189,35 @@ def test_branch_does_not_copy_task_memory(tmp_path):
     assert branched.task_memory.is_empty()
 
 
+def test_branch_derives_own_task_memory_on_flush(tmp_path):
+    """Ветка извлекает свою память задачи из скопированной истории.
+
+    Сразу после ``branch`` память пуста, но финальный flush на выходе
+    (``save_memory``) извлекает память из копии диалога под собственным
+    ``conversation_id`` и не затрагивает родителя.
+    """
+    repository = _FakeAgentRepository(tmp_path)
+    agent = _make_agent(repository)
+    provider = _StubLlmProvider(
+        '{"goal": "цель из копии", "constraints": ["из копии"], '
+        '"terms": [], "clarifications": []}'
+    )
+
+    branched = agent.branch(new_name="branch", repository=repository)
+    assert branched.task_memory.is_empty()
+
+    branched.save_memory(repository=repository, llm_provider=provider)
+
+    assert branched.task_memory.goal == "цель из копии"
+    stored = repository.get_task_memory(branched.conversation_id)
+    assert stored is not None
+    assert stored.goal == "цель из копии"
+
+    # Родитель не затронут: у него нет сохранённой памяти задачи.
+    assert agent.task_memory.is_empty()
+    assert repository.get_task_memory(agent.conversation_id) is None
+
+
 def test_save_memory_preserves_previously_stored_global_facts(tmp_path):
     """Регресс: сохранение памяти не должно затирать ранее накопленные факты.
 

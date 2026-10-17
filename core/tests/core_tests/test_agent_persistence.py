@@ -18,6 +18,7 @@ from core.domain.dtos.global_memory import GlobalMemory
 from core.domain.dtos.llm_response import LlmResponse
 from core.domain.dtos.prompt import Prompt
 from core.domain.dtos.task_memory import TaskMemory
+from core.domain.dtos.tool_call_record import ToolCallRecord
 from core.domain.entities.agent import Agent
 from core.domain.entities.agent_phase import AgentPhase
 from core.domain.exceptions.agent_persistence_error import AgentPersistenceError
@@ -106,6 +107,38 @@ def test_handle_phase_command_without_repository_raises():
 def test_branch_without_repository_raises():
     with pytest.raises(AgentPersistenceError):
         _agent().branch(new_name="b", repository=None)
+
+
+def test_branch_history_is_independent_from_parent():
+    """Ветка владеет собственной копией истории, а не ссылками родителя.
+
+    Иначе пометка ``is_remembered`` при ``save_memory`` ветки мутировала бы
+    сообщения родителя через общие ``Prompt``-объекты.
+    """
+    parent = Agent(
+        agent_id=1,
+        name="Test",
+        conversation_id="conv-1",
+        initial_settings=AgentSettings(model_id="m", provider="stub"),
+        messages=[
+            Prompt(role="user", content="привет"),
+            Prompt(
+                role="assistant",
+                content="ок",
+                tool_calls=[ToolCallRecord(id="1", name="t", arguments="{}")],
+            ),
+        ],
+    )
+
+    branched = parent.branch(new_name="b", repository=_BreakyRepository())
+
+    parent_history = parent.get_history()
+    branch_history = branched.get_history()
+    assert branch_history[0] is not parent_history[0]
+    assert branch_history[1].tool_calls is not parent_history[1].tool_calls
+
+    branch_history[0].is_remembered = True
+    assert parent_history[0].is_remembered is False
 
 
 def test_attach_mcp_server_without_repository_raises():

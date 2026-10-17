@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from collections.abc import Callable
@@ -551,6 +552,13 @@ class Agent:
 
         Копируются настройки, вся история сообщений, счетчики токенов и стратегия.
         Ветка получает новый conversation_id (UUID) для отдельного хранения истории.
+        История копируется независимо (включая ``Prompt``-объекты и их
+        ``tool_calls``), чтобы мутации ветки (например, пометка
+        ``is_remembered`` при сохранении памяти) не задевали родителя.
+
+        Ветка стартует с пустой памятью задачи (новый conversation_id). Свою
+        память задачи она извлекает из скопированной истории при финальном
+        flush на выходе (см. ``save_memory``), а не наследует от родителя.
 
         Args:
             new_name: Новое название для ветки (опционально).
@@ -566,7 +574,7 @@ class Agent:
             new_name = f"{self.name} (branch {timestamp})"
 
         current_settings = self.get_settings()
-        current_history = self.get_history()
+        current_history = copy.deepcopy(self.get_history())
         current_strategy = self.strategy
         new_strategy = create_strategy_from_dict(current_strategy.to_dict())
 
@@ -576,7 +584,7 @@ class Agent:
             name=new_name,
             initial_settings=current_settings,
             system_prompt=None,
-            messages=current_history.copy(),
+            messages=current_history,
             strategy=new_strategy,
             # Ветка — чистый лист по памяти задачи (новый conversation_id).
             task_profile=self.task_profile,

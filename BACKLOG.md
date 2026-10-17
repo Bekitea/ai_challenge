@@ -44,13 +44,14 @@ CLI e2e-тестов на ground truth проверки. **Не исправля
 - **Следствие**: подключение MCP-серверов не покрыто e2e в CI/контейнере;
   проверяется только «чёрный ящик» меню и ошибочные ветки.
 - **Возможное направление**: починить импорт/зависимость MCP SDK в окружении
-  или скорректировать `mcp_registry.py`/скрипты серверов, после чего включить
+  или скорректировать `core/infrastructure/mcp/mcp_registry.py`/скрипты серверов, после чего включить
   пропущенные тесты.
 
 ## 4. Периодические задачи Celery временно законсервированы (нужна переработка)
 
 - **Где**: `celery_app.py` (`SCHEDULED_REPORTS`, `CELERY_BEAT_SCHEDULE`),
-  `tasks.py` (`run_agent_report`), `use_cases.py`
+  `tasks.py` (`run_agent_report`),
+  `core/application/use_cases/run_scheduled_agent_task.py`
   (`RunScheduledAgentTaskUseCase`, DTO `ScheduledReport`), `config.py`
   (`SCHEDULED_REPORTS_ENABLED`, `DEFAULT_REPORT_*`, `CELERY_*`),
   `docker-compose.yml` (сервисы `worker`/`beat`).

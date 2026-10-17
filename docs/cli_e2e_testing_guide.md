@@ -657,7 +657,7 @@ In `TEST` mode the app uses `MockLlmProvider`. Its default behaviour is a determ
 
 **How it is wired:**
 
-- `mock_llm.py` defines `MockScenario` and `load_scenario_from_env()` (reads `MOCK_LLM_SCENARIO`).
+- `core/infrastructure/llm/mock_scenario.py` defines `MockScenario` and `load_scenario_from_env()` (reads `MOCK_LLM_SCENARIO`).
 - `MockLlmProvider` loads the scenario at construction (no env → previous default behaviour, fully backward compatible).
 - `e2e_helpers.run_cli_command(input, mock=...)` serialises the scenario to JSON into `MOCK_LLM_SCENARIO`.
 - `e2e_helpers.mock_llm(...)` builds the dict; `cli_tests/test_mock_llm_scenarios.py` is the reference example.
@@ -1015,7 +1015,7 @@ poetry run pytest cli_tests/test_mock_llm_scenarios.py -n0 -v
 | `cli_tests/test_mock_llm_scenarios.py` | Reference tests for scenario mocks |
 | `cli_tests/smoke_test.py` | Standalone smoke test (wraps a few critical cases) |
 | `cli_tests/test_ucXXX_*.py` | Full E2E suite, one file per test class |
-| `mock_llm.py` | Scenario parser (`MockScenario`, `load_scenario_from_env`) |
+| `core/infrastructure/llm/mock_scenario.py` | Scenario parser (`MockScenario`, `load_scenario_from_env`) |
 | `pyproject.toml` | `[tool.pytest.ini_options]`: `addopts = "-n auto"`, `testpaths` |
 | `docs/cli_spec.md` | CLI specification + use case index |
 | `docs/uc/` | One use case per file with alternative flows and related test cases |

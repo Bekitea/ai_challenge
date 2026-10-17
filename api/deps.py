@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from use_cases import UseCasesBundle
+from core.application.use_cases import UseCasesBundle
 
 
 def get_use_cases(request: Request) -> UseCasesBundle:

@@ -23,7 +23,7 @@ from api.routers import (
     task_profiles,
 )
 from api.security import require_api_key
-from use_cases import UseCasesBundle
+from core.application.use_cases import UseCasesBundle
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 

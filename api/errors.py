@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from use_cases import (
+from core.application.exceptions import (
     ContextWindowExceededError,
     LlmTimeoutError,
     RagError,

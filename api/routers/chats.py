@@ -22,11 +22,8 @@ from api.schemas import (
     Settings,
     SummaryResponse,
 )
-from use_cases import (
-    SettingsDTO,
-    StrategySelection,
-    UseCasesBundle,
-)
+from core.application.dtos import SettingsDTO, StrategySelection
+from core.application.use_cases import UseCasesBundle
 
 router = APIRouter(tags=["chats"])
 

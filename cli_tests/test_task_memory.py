@@ -22,7 +22,9 @@ from core.domain.dtos.task_memory import TaskMemory
 from core.domain.entities.agent import Agent
 from core.domain.entities.prompt_builder import PromptBuilder
 from core.domain.entities.sliding_window_strategy import SlidingWindowStrategy
-from storage.task_memory_repository import FileTaskMemoryRepository
+from core.infrastructure.persistence.file_task_memory_repository import (
+    FileTaskMemoryRepository,
+)
 
 
 class _StubLlmProvider:

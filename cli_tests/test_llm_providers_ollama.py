@@ -14,7 +14,7 @@ from types import SimpleNamespace
 os.environ["APPLICATION_MODE"] = "TEST"
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from llm_providers import OllamaLlmProvider
+from core.infrastructure.llm.ollama_llm_provider import OllamaLlmProvider
 
 
 class _RecordingCompletions:

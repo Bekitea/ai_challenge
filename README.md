@@ -315,7 +315,7 @@ poetry run python cli_tests/smoke_test.py
 #### Ключевые механизмы
 
 - **Ground truth** (`cli_tests/ground_truth.py`) — read-only доступ к `agents.db` и файловому хранилищу: чаты, настройки, стратегии, история, память (глобальная/задача/профили), API-ключи, RAG.
-- **Сценарные моки** (`mock_llm.py` + `run_cli_command(..., mock=...)`) — разные ответы LLM на тест через `MOCK_LLM_SCENARIO`: последовательность ответов, `json_object` для извлечения памяти, ошибки, tool calls.
+- **Сценарные моки** (`core/infrastructure/llm/mock_scenario.py` + `run_cli_command(..., mock=...)`) — разные ответы LLM на тест через `MOCK_LLM_SCENARIO`: последовательность ответов, `json_object` для извлечения памяти, ошибки, tool calls.
 - **Изоляция и скорость** — `APPLICATION_MODE=TEST`, per-worker `test-data-<worker>/` (`AI_CHAT_TEST_DATA_DIR`), ленивый импорт `openai`, `-n auto`.
 
 Полное руководство (best practices, troubleshooting, Windows/cp1251, производительность): [`docs/cli_e2e_testing_guide.md`](docs/cli_e2e_testing_guide.md).
@@ -325,7 +325,13 @@ poetry run python cli_tests/smoke_test.py
 ### Архитектурные принципы
 
 #### Чистая архитектура
-Приложение построено по принципу **чистой архитектуры** с четким разделением ответственности между слоями. Это обеспечивает тестируемость, поддерживаемость и независимость слоев друг от друга. Доменный слой выделен в `core/domain/`: `entities/` (бизнес-сущности), `dtos/` (простые структуры данных), `exceptions/` (доменные исключения) и `protocols/` (структурные `Protocol`-интерфейсы вместо старых ABC). Домен не знает о слое приложения и инфраструктуре: провайдер LLM, репозиторий агента, исполнитель инструментов и RAG-результат передаются в методы сущностей как аргументы и хранятся в use cases.
+Приложение построено по принципу **чистой архитектуры** с четким разделением ответственности между слоями. Ядро вынесено в `core/` и разделено на три слоя (в каждом — правило «одному классу свой файл»):
+
+- `core/domain/` — `entities/` (бизнес-сущности), `dtos/` (простые структуры данных), `exceptions/` (доменные исключения), `protocols/` (структурные `Protocol`-интерфейсы);
+- `core/application/` — `use_cases/` (сценарии, по одному use case на файл), `dtos/`, `protocols/` (порты, реализуемые инфраструктурой), `exceptions/`, `services/` (RAG-сервисы), `mappers/`, `adapters/`;
+- `core/infrastructure/` — `llm/`, `embeddings/`, `reranking/`, `persistence/`, `mcp/`, `files/` (провайдеры и репозитории).
+
+Домен не знает о слое приложения и инфраструктуре: провайдер LLM, репозиторий агента, исполнитель инструментов и RAG-результат передаются в методы сущностей как аргументы и хранятся в use cases. Приложение зависит только от протоколов (доменных или собственных), а конкретные реализации собираются фабрикой `app_factory.py`.
 
 #### Инкапсуляция сохранения состояния агента
 **Важное архитектурное решение:** сохранение состояния, памяти и истории агента выполняет репозиторий агента (`PersistentAgentRepository`), который агент получает **аргументом нужного метода** (use cases хранят репозиторий и передают его).
@@ -375,21 +381,21 @@ poetry run python cli_tests/smoke_test.py
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│              use_cases/__init__.py                      │
+│           core/application/                             │
 │           (Слой бизнес-логики/Use Cases)                │
-│  - CreateChatUseCase, SendMessageUseCase, etc.          │
+│  - use_cases/ (CreateChatUseCase, SendMessageUseCase, …)│
+│  - dtos/, protocols/, exceptions/, services/            │
 │  - Координируют работу репозиториев и агентов           │
 │  - Инкапсулируют всю бизнес-логику приложения           │
 └────────────────────┬────────────────────────────────────┘
                      │
-         ┌───────────┴───────────┐
-         ▼                       ▼
-┌─────────────────┐     ┌─────────────────┐
-│   storage/      │     │   llm_providers │
-│ (Репозитории)   │     │ (LLM Провайдеры)│
-│ - AgentRepo     │     │ - YandexCloud   │
-│ - ChatStorage   │     │ - Ollama/Mock   │
-└─────────────────┘     └─────────────────┘
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│           core/domain/ + core/infrastructure/           │
+│  domain: entities/, dtos/, protocols/, exceptions/      │
+│  infrastructure: persistence/, llm/, embeddings/,       │
+│    reranking/, mcp/, files/                             │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Модули приложения
@@ -420,43 +426,46 @@ poetry run python cli_tests/smoke_test.py
 - Вызов методов use cases для выполнения действий
 - Форматирование и вывод результатов
 
-**Зависимости:** Только `use_cases` (DTO и `UseCasesBundle`) плюс модуль констант
+**Зависимости:** Только `core.application` (DTO и `UseCasesBundle`) плюс модуль констант
 `config` и stdlib. Не импортирует:
-- Репозитории (`storage.*`)
-- LLM провайдеры (`llm_providers.*`)
-- Бизнес-объекты (`agents.*`), стратегии (`context_strategies.*`), реестр MCP (`mcp_registry.*`)
+- Инфраструктуру (`core.infrastructure.*`)
+- Домен (`core.domain.*`)
 - Режимы приложения (`app_mode.*`)
 - Фабрику (`app_factory.*`)
 
 **DTO-only:** слой представления никогда не видит бизнес-объект `Agent`. Он хранит
 только `agent_id`/`chat_id` и обменивается с use cases исключительно DTO, определёнными
-в `use_cases.py`. Use case сам загружает агента внутри по `agent_id`. Это правило
-распространяется и на будущий REST API слой.
+в `core/application/dtos/`. Use case сам загружает агента внутри по `agent_id`. Это правило
+распространяется и на REST API слой.
 
-#### 4. `use_cases/__init__.py` — Слой бизнес-логики
+#### 4. `core/application/` — Слой бизнес-логики
 **Ответственность:**
-- Инкапсуляция всей бизнес-логики приложения
+- Инкапсуляция всей бизнес-логики приложения (`use_cases/`, один use case на файл)
 - Координация между репозиториями, агентами и провайдерами
-- Предоставление чистого интерфейса для CLI слоя
+- Предоставление чистого интерфейса для CLI/API слоёв
+- Порты (`protocols/`), DTO (`dtos/`) и исключения (`exceptions/`) приложения; сервисы `services/` (RAG), `mappers/`, `adapters/`
 
-**Важно:** Использует напрямую API агента, репозиториев, провайдеров и так далее. Use cases могут зависеть от репозиториев и LLM провайдеров, но CLI слой об этом не знает.
+**Важно:** Use cases зависят только от протоколов (доменных из `core.domain.protocols` или собственных из `core.application.protocols`), а не от конкретной инфраструктуры; CLI слой об этом не знает.
 
-#### 5. `storage/` — Слой доступа к данным
+#### 5. `core/infrastructure/persistence/` — Слой доступа к данным
 **Модули:**
 - `db_connection.py` — управление соединениями с базой данных (инфраструктурный класс)
-- `agent_repositories.py` — репозиторий для агентов (CRUD операции)
-- `chat_storage.py` — хранение истории чатов
-- `orm_models.py` — SQLAlchemy модели для базы данных
+- `persistent_agent_repository.py` — репозиторий для агентов (CRUD операции)
+- `conversation_repository.py` — хранение истории чатов
+- `orm/` — SQLAlchemy модели (по одному классу на файл)
+- `sqlite_*.py` — SQLite-реализации RAG-репозиториев (`SqliteKnowledgeBaseRepository`, `SqliteDocumentRepository`, `SqliteAgentKnowledgeBaseRepository`)
+- `sqlite_vec_vector_store.py` — хранилище векторов sqlite-vec
 
 **Важно:** Репозитории не должны знать о соединениях с БД. Они получают фабрику сессий как внешнюю зависимость. Управление подключениями инкапсулировано в классе `DatabaseConnection`.
 
-#### 6. `llm_providers.py` — LLM провайдеры
+#### 6. `core/infrastructure/llm/` — LLM провайдеры
 **Реализации:**
-- `YandexCloudLlmProvider` — production провайдер для Yandex Cloud API (OpenAI-совместимый)
-- `OllamaLlmProvider` — локальные модели Ollama (OpenAI-совместимый `/v1`)
-- `MockLlmProvider` — тестовый провайдер для e2e тестов (с настраиваемым именем)
-- `LlmProviderRegistry` — реестр именованных провайдеров; агрегирует список
+- `yandex_cloud_llm_provider.py` — `YandexCloudLlmProvider` (production, Yandex Cloud API)
+- `ollama_llm_provider.py` — `OllamaLlmProvider` (локальные модели Ollama, OpenAI-совместимый `/v1`)
+- `mock_llm_provider.py` — `MockLlmProvider` (тестовый провайдер для e2e тестов)
+- `llm_provider_registry.py` — `LlmProviderRegistry`; агрегирует список
   моделей (`list_models`) и разрешает провайдера по `AgentSettings.provider`
+- `mock_scenario.py` — сценарный мок `MOCK_LLM_SCENARIO` для e2e
 
 Модели не хардкодятся: список для UI формируется динамически (UC-023). У каждой
 модели в списке указан провайдер, поскольку одна и та же модель может
@@ -464,9 +473,10 @@ poetry run python cli_tests/smoke_test.py
 отсутствует — пользователь выбирает модель всегда.
 
 #### 6.1. RAG-провайдеры
-- `embedding_providers.py` — `OllamaEmbeddingProvider` (эмбеддинги через Ollama)
-- `reranker_providers.py` — `HttpRerankerProvider` (HTTP-сервис `reranker_service/`),
+- `core/infrastructure/embeddings/ollama_embedding_provider.py` — `OllamaEmbeddingProvider` (эмбеддинги через Ollama)
+- `core/infrastructure/reranking/` — `HttpRerankerProvider` (HTTP-сервис `reranker_service/`),
   `MockRerankerProvider` (тестовый режим)
+- `core/application/services/` — `RagService`, `RagModelService`, `chunking`
 - `reranker_service/` — отдельный CPU-контейнер с моделью `bge-reranker-v2-m3`
   (см. раздел «Реранкинг (RAG)»)
 
@@ -541,7 +551,7 @@ Ollama» держится на единственном потребителе �
 `PreparedMessages`. Агент хранит ссылку на `PromptBuilder` и вызывает его из
 `continue_dialog`.
 
-#### 10. `storage/task_memory_repository.py` — Память задачи диалога
+#### 10. `core/infrastructure/persistence/file_task_memory_repository.py` — Память задачи диалога
 Гибридная память: существующий `TaskProfile` (общие факты/инварианты) остаётся,
 а per-chat `TaskMemory` (цель диалога, ограничения, термины, уточнения) хранится
 по `conversation_id` в pickle-файлах `{FILE_STORAGE_DIR}/task_memory/`. Она
@@ -571,8 +581,8 @@ N ходов и при сжатии контекста; новые уточне�
    - **Логика сохранения состояния агента должна быть инкапсулирована в самом агенте**, а не в use cases
 
 2. **CLI слой работает только с use cases**
-   - `cli_app.py` должен импортировать только из `use_cases`
-   - Запрещены прямые импорты репозиториев, LLM провайдеров, агентов в CLI слое
+   - `cli_app.py` должен импортировать только из `core.application` (DTO/`use_cases`) и `config`
+   - Запрещены прямые импорты репозиториев, LLM провайдеров, агентов в CLI слое (`core.infrastructure.*`, `core.domain.*`)
 
 3. **Используйте фабрику для инициализации**
    - Вся логика создания объектов — в `app_factory.py`
@@ -588,8 +598,8 @@ N ходов и при сжатии контекста; новые уточне�
    - main_cli → оркестрация и точка входа
    - app_factory → инициализация
    - cli_app → UI/UX
-   - use_cases / agents → бизнес-логика
-   - storage/llm_providers → инфраструктура
+   - core.application / core.domain (agents) → бизнес-логика
+   - core.infrastructure → инфраструктура
 
 6. **Агент отвечает за своё сохранение**
    - Метод `Agent.save(repository)` вызывается при изменениях состояния
@@ -618,11 +628,11 @@ N ходов и при сжатии контекста; новые уточне�
 2. **Не импортируйте инфраструктурные зависимости в CLI**
    ```python
    # ПЛОХО: в cli_app.py
-   from storage.agent_repositories import PersistentAgentRepository
-   from llm_providers import YandexCloudLlmProvider
+   from core.infrastructure.persistence.persistent_agent_repository import PersistentAgentRepository
+   from core.infrastructure.llm.yandex_cloud_llm_provider import YandexCloudLlmProvider
 
-   # ХОРОШО: только use cases
-   from use_cases import UseCasesBundle
+   # ХОРОШО: только слой приложения
+   from core.application.use_cases import UseCasesBundle
    ```
 
 3. **Не создавайте бизнес-объекты напрямую в CLI**
@@ -725,15 +735,15 @@ N ходов и при сжатии контекста; новые уточне�
    - Запустите тесты: `poetry run pytest cli_tests/`. Все тесты, кроме нового, должны пройти
 
 3. **Определите use case**
-   - Создайте новый класс в `use_cases.py` или используйте существующий
-   - Реализуйте метод `execute()` с необходимой бизнес-логикой
+   - Создайте новый класс в `core/application/use_cases/<snake_case>.py` (один use case на файл) и добавьте реэкспорт в `core/application/use_cases/__init__.py`
+   - Реализуйте метод `execute()` с необходимой бизнес-логикой; зависимости — только протоколы (`core.domain.protocols`, `core.application.protocols`) и DTO (`core.application.dtos`)
 
 4. **Добавьте use case в Bundle**
-   - Обновите `UseCasesBundle` в `use_cases.py`
+   - Обновите `UseCasesBundle` в `core/application/use_cases/bundle.py`
    - Добавьте поле для нового use case
 
 5. **Инициализируйте в фабрике**
-   - В `app_factory.py` создайте экземпляр use case
+   - В `app_factory.py` создайте экземпляр use case (конкретные зависимости — из `core.infrastructure`)
    - Передайте его в `UseCasesBundle`
 
 6. **Используйте в CLI**

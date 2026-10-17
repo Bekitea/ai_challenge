@@ -33,9 +33,9 @@ This document provides a comprehensive specification for the Command Line Interf
 
 ## 2. Architecture
 
-The presentation layer (`CLIChat` in `cli_app.py`) is separated from application initialization (`app_factory.py`, `main_cli.py`). `CLIChat` receives all its functionality through a `UseCasesBundle` container of use cases (`use_cases.py`) and never touches repositories or the LLM provider directly.
+The presentation layer (`CLIChat` in `cli_app.py`) is separated from application initialization (`app_factory.py`, `main_cli.py`). `CLIChat` receives all its functionality through a `UseCasesBundle` container of use cases (`core/application/use_cases/`) and never touches repositories or the LLM provider directly.
 
-The presentation layer is **DTO-only**: it never sees the business object `Agent`. All inputs and outputs of use cases are DTOs defined in `use_cases.py` (e.g. `ChatDTO`, `ChatPreviewDTO`, `SettingsDTO`, `MessageResponseDTO`, `HistoryMessageDTO`, `ChatInfo`, `McpServerStatus`, `PhaseChangeResultDTO`). A use case loads the agent internally by `agent_id`.
+The presentation layer is **DTO-only**: it never sees the business object `Agent`. All inputs and outputs of use cases are DTOs defined in `core/application/dtos/` (e.g. `ChatDTO`, `ChatPreviewDTO`, `SettingsDTO`, `MessageResponseDTO`, `HistoryMessageDTO`, `ChatInfo`, `McpServerStatus`, `PhaseChangeResultDTO`). A use case loads the agent internally by `agent_id`.
 
 State model: the CLI keeps a single piece of state — `current_chat: ChatDTO | None` (the active chat, referenced by its numeric `agent_id`). Menu option 5 ("Вернуться в чат") re-enters the chat loop for this chat. The active chat reference is kept when exiting a chat via `/menu`; it is replaced on chat creation/selection.
 

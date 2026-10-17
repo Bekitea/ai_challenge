@@ -19,31 +19,9 @@ from config import (
     YANDEX_API_KEY,
     YANDEX_FOLDER_ID,
 )
-from embedding_providers import OllamaEmbeddingProvider
-from llm_providers import (
-    LlmProviderRegistry,
-    MockLlmProvider,
-    OllamaLlmProvider,
-    YandexCloudLlmProvider,
-)
-from rag_service import RagModelService, RagService
-from reranker_providers import HttpRerankerProvider, MockRerankerProvider
-from storage.agent_repositories import PersistentAgentRepository
-from storage.api_key_repository import DatabaseApiKeyRepository
-from storage.db_connection import DatabaseConnection
-from storage.global_memory_repository import FileGlobalMemoryRepository
-from storage.orm_models import Base
-from storage.rag_repositories import (
-    AgentKnowledgeBaseRepository,
-    DocumentRepository,
-    KnowledgeBaseRepository,
-)
-from storage.task_memory_repository import FileTaskMemoryRepository
-from storage.task_profile_repository import (
-    DatabaseTaskProfileRepository,
-)
-from storage.vector_store import SqliteVecVectorStore
-from use_cases import (
+from core.application.services.rag_model_service import RagModelService
+from core.application.services.rag_service import RagService
+from core.application.use_cases import (
     AddDocumentToKnowledgeBaseUseCase,
     AddInvariantUseCase,
     AttachKnowledgeBaseToAgentUseCase,
@@ -91,6 +69,44 @@ from use_cases import (
     ViewGlobalMemoryUseCase,
     ViewSettingsUseCase,
 )
+from core.infrastructure.embeddings.ollama_embedding_provider import (
+    OllamaEmbeddingProvider,
+)
+from core.infrastructure.files.local_file_extractor import LocalFileExtractor
+from core.infrastructure.llm.llm_provider_registry import LlmProviderRegistry
+from core.infrastructure.llm.mock_llm_provider import MockLlmProvider
+from core.infrastructure.llm.ollama_llm_provider import OllamaLlmProvider
+from core.infrastructure.llm.yandex_cloud_llm_provider import YandexCloudLlmProvider
+from core.infrastructure.mcp.mcp_manager_gateway import McpManagerGateway
+from core.infrastructure.persistence.database_task_profile_repository import (
+    DatabaseTaskProfileRepository,
+)
+from core.infrastructure.persistence.db_connection import DatabaseConnection
+from core.infrastructure.persistence.file_global_memory_repository import (
+    FileGlobalMemoryRepository,
+)
+from core.infrastructure.persistence.file_task_memory_repository import (
+    FileTaskMemoryRepository,
+)
+from core.infrastructure.persistence.orm import Base
+from core.infrastructure.persistence.persistent_agent_repository import (
+    PersistentAgentRepository,
+)
+from core.infrastructure.persistence.sqlite_agent_knowledge_base_repository import (
+    SqliteAgentKnowledgeBaseRepository,
+)
+from core.infrastructure.persistence.sqlite_api_key_repository import (
+    DatabaseApiKeyRepository,
+)
+from core.infrastructure.persistence.sqlite_document_repository import (
+    SqliteDocumentRepository,
+)
+from core.infrastructure.persistence.sqlite_knowledge_base_repository import (
+    SqliteKnowledgeBaseRepository,
+)
+from core.infrastructure.persistence.sqlite_vec_vector_store import SqliteVecVectorStore
+from core.infrastructure.reranking.http_reranker_provider import HttpRerankerProvider
+from core.infrastructure.reranking.mock_reranker_provider import MockRerankerProvider
 
 
 def initialize_application() -> UseCasesBundle:
@@ -184,13 +200,13 @@ def initialize_application() -> UseCasesBundle:
         reranker = None
     rag_model_service = RagModelService(embedder=embedder, reranker=reranker)
 
-    knowledge_base_repository = KnowledgeBaseRepository(
+    knowledge_base_repository = SqliteKnowledgeBaseRepository(
         db_connection.get_session, vector_store
     )
-    document_repository = DocumentRepository(
+    document_repository = SqliteDocumentRepository(
         db_connection.get_session, vector_store
     )
-    agent_knowledge_base_repository = AgentKnowledgeBaseRepository(
+    agent_knowledge_base_repository = SqliteAgentKnowledgeBaseRepository(
         db_connection.get_session
     )
     rag_service = RagService(
@@ -217,10 +233,16 @@ def initialize_application() -> UseCasesBundle:
     # API-ключи доступа к REST API
     api_key_repository = DatabaseApiKeyRepository(db_connection.get_session)
 
+    # Инфраструктурные адаптеры портов приложения
+    mcp_gateway = McpManagerGateway()
+    file_extractor = LocalFileExtractor()
+
     # Create and return all use cases
     create_chat = CreateChatUseCase(repository, task_profile_repository)
-    send_message = SendMessageUseCase(repository, provider_registry, rag_service)
-    connect_mcp = ConnectMcpUseCase(repository)
+    send_message = SendMessageUseCase(
+        repository, provider_registry, rag_service, mcp_gateway
+    )
+    connect_mcp = ConnectMcpUseCase(repository, mcp_gateway)
 
     return UseCasesBundle(
         create_chat=create_chat,
@@ -234,7 +256,7 @@ def initialize_application() -> UseCasesBundle:
         show_history=ShowHistoryUseCase(repository),
         show_summary=ShowSummaryUseCase(repository),
         show_chat_info=ShowChatInfoUseCase(repository),
-        create_branch=CreateBranchUseCase(repository),
+        create_branch=CreateBranchUseCase(repository, mcp_gateway),
         select_strategy=SelectContextStrategyUseCase(),
         view_global_memory=ViewGlobalMemoryUseCase(memory_repository),
         refresh_agent_memory=RefreshAgentMemoryUseCase(repository),
@@ -250,9 +272,9 @@ def initialize_application() -> UseCasesBundle:
         remove_invariant=RemoveInvariantUseCase(task_profile_repository),
         list_invariants=ListInvariantsUseCase(task_profile_repository),
         connect_mcp=connect_mcp,
-        disconnect_mcp=DisconnectMcpUseCase(repository),
-        list_connected_mcp=ListConnectedMcpUseCase(repository),
-        list_available_mcp=ListAvailableMcpUseCase(repository),
+        disconnect_mcp=DisconnectMcpUseCase(repository, mcp_gateway),
+        list_connected_mcp=ListConnectedMcpUseCase(repository, mcp_gateway),
+        list_available_mcp=ListAvailableMcpUseCase(repository, mcp_gateway),
         run_scheduled_agent_task=RunScheduledAgentTaskUseCase(
             create_chat=create_chat,
             send_message=send_message,
@@ -266,7 +288,10 @@ def initialize_application() -> UseCasesBundle:
         ),
         list_knowledge_bases=ListKnowledgeBasesUseCase(knowledge_base_repository),
         add_document=AddDocumentToKnowledgeBaseUseCase(
-            knowledge_base_repository, document_repository, rag_model_service
+            knowledge_base_repository,
+            document_repository,
+            rag_model_service,
+            file_extractor,
         ),
         list_documents=ListDocumentsUseCase(
             knowledge_base_repository, document_repository

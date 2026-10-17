@@ -8,15 +8,14 @@ from config import (
     RAG_RELEVANCE_THRESHOLD,
     REASONING_EFFORTS,
 )
-from use_cases import (
+from core.application.dtos import (
     ChatDTO,
-    ContextWindowExceededError,
     MemorySaveResult,
-    RagError,
     SettingsDTO,
     StrategySelection,
-    UseCasesBundle,
 )
+from core.application.exceptions import ContextWindowExceededError, RagError
+from core.application.use_cases import UseCasesBundle
 
 HELP_COMMANDS = [
     "/menu - вернуться в главное меню",

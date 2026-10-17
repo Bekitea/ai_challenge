@@ -1,7 +1,7 @@
 import sqlite3
 import sys
 
-from storage.extensions import sqlite_vec
+from core.infrastructure.persistence.extensions import sqlite_vec
 
 # На Windows консоль может использовать cp1251, в которую не влезает не-ASCII
 # вывод. Явно переключаем stdout на UTF-8, чтобы проверка не падала.

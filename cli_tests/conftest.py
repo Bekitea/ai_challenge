@@ -66,10 +66,11 @@ def setup_clean_test_environment():
 
     # Initialize database
     sys.path.insert(0, str(get_project_root()))
-    from storage.db_connection import DatabaseConnection
+    from core.infrastructure.persistence.db_connection import DatabaseConnection
+    from core.infrastructure.persistence.orm import Base
 
     db = DatabaseConnection(connect_args={"check_same_thread": False, "timeout": 30})
-    db.init_tables(__import__("storage.orm_models", fromlist=["Base"]).Base.metadata)
+    db.init_tables(Base.metadata)
     # Явно закрываем соединение, чтобы освободить файл БД для subprocess на Windows
     db.close()
 

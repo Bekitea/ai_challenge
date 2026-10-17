@@ -7,7 +7,7 @@
 ## Preconditions
 
 - User is in chat interaction loop
-- At least one MCP server is registered in the registry (`mcp_registry`)
+- At least one MCP server is registered in the registry (`core/infrastructure/mcp/mcp_registry.py`)
 
 ## Main Success Scenario
 

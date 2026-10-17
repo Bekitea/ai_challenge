@@ -1,7 +1,7 @@
 # Образ основного приложения: FastAPI REST API + use cases (Python 3.14).
 #
 # База намеренно Alpine (musl): вендорное расширение sqlite-vec
-# (storage/extensions/sqlite_vec/vec0.so) собрано под musl, на glibc-образе оно
+# (core/infrastructure/persistence/extensions/sqlite_vec/vec0.so) собрано под musl, на glibc-образе оно
 # не загрузится. Зависимости ставим через Poetry (pyproject.toml + poetry.lock)
 FROM python:3.14-alpine
 

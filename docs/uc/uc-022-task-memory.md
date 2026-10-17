@@ -16,14 +16,17 @@
    the user
 2. Every `TASK_MEMORY_UPDATE_EVERY_N_MESSAGES` user turns (default `3`) and on
    every context compression event the agent asks the LLM to return the full
-   updated memory for the last `TASK_MEMORY_WINDOW_MESSAGES` messages
+   updated memory for the last `TASK_MEMORY_WINDOW_MESSAGES` messages. This
+   threshold governs only the *in-dialogue* cadence;
 3. The extraction replaces outdated values: a new clarification/constraint
    overrides the previous one; fields absent from the model answer are kept
 4. The memory is stored per `conversation_id` and injected into the system
    prompt on every message (`--- ПАМЯТЬ ЗАДАЧИ ---` section), so the goal is
    not lost in long dialogues
-5. On exit (`/menu`, Ctrl+C, app start) the memory is updated one final time
-   and persisted
+5. On exit (`/menu`, Ctrl+C, app start) the memory is refreshed one final time
+   and persisted **unconditionally** — this final flush is not subject to
+   `TASK_MEMORY_UPDATE_EVERY_N_MESSAGES`, so even a chat below the threshold
+   gets its task memory extracted when it is left
 6. `/info` displays the current task memory (goal, constraints, terms,
    clarifications); when empty, the block is not printed
 
@@ -69,11 +72,12 @@
 
 ### TC-143: No Task Memory Before Update
 
-**Related UC**: UC-022 steps 1–2, A2
+**Related UC**: UC-022 steps 1–2, 5, A2
 
 | Step | Action                    | Expected Result                          |
 | ---- | ------------------------- | ---------------------------------------- |
 | 1    | Send one message, `/info` | No `Память задачи:` block (below threshold) |
+| 2    | Leave the chat via `/menu` | Task memory is still extracted and persisted (final flush on exit, step 5) — ground truth holds the goal even though `/info` showed nothing |
 
 ---
 

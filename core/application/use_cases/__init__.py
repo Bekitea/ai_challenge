@@ -41,6 +41,9 @@ from core.application.use_cases.list_invariants import ListInvariantsUseCase
 from core.application.use_cases.list_knowledge_bases import ListKnowledgeBasesUseCase
 from core.application.use_cases.list_models import ListModelsUseCase
 from core.application.use_cases.list_task_profiles import ListTaskProfilesUseCase
+from core.application.use_cases.prepare_assistant_context import (
+    PrepareAssistantContextUseCase,
+)
 from core.application.use_cases.refresh_agent_memory import RefreshAgentMemoryUseCase
 from core.application.use_cases.remove_invariant import RemoveInvariantUseCase
 from core.application.use_cases.retrieve_rag_context import RetrieveRagContextUseCase
@@ -95,6 +98,7 @@ __all__ = [
     "ListKnowledgeBasesUseCase",
     "ListModelsUseCase",
     "ListTaskProfilesUseCase",
+    "PrepareAssistantContextUseCase",
     "RefreshAgentMemoryUseCase",
     "RemoveInvariantUseCase",
     "RetrieveRagContextUseCase",

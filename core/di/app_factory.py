@@ -17,6 +17,8 @@ from config import (
     RERANKER_MODEL_NAME,
     RERANKER_RETRY_COUNT,
     RERANKER_TIMEOUT,
+    SUPPORT_DOCS_PATHS,
+    SUPPORT_KB_NAME,
     YANDEX_API_KEY,
     YANDEX_FOLDER_ID,
 )
@@ -51,6 +53,7 @@ from core.application.use_cases import (
     ListKnowledgeBasesUseCase,
     ListModelsUseCase,
     ListTaskProfilesUseCase,
+    PrepareAssistantContextUseCase,
     RefreshAgentMemoryUseCase,
     RemoveInvariantUseCase,
     RetrieveRagContextUseCase,
@@ -247,6 +250,37 @@ def initialize_application() -> UseCasesBundle:
     )
     connect_mcp = ConnectMcpUseCase(repository, mcp_gateway)
 
+    list_knowledge_bases = ListKnowledgeBasesUseCase(knowledge_base_repository)
+    attach_knowledge_base = AttachKnowledgeBaseToAgentUseCase(
+        knowledge_base_repository, agent_knowledge_base_repository
+    )
+    list_agent_knowledge_bases = ListAgentKnowledgeBasesUseCase(
+        agent_knowledge_base_repository
+    )
+
+    prepare_project_context = PrepareAssistantContextUseCase(
+        list_knowledge_bases=list_knowledge_bases,
+        list_agent_knowledge_bases=list_agent_knowledge_bases,
+        attach_knowledge_base=attach_knowledge_base,
+        connect_mcp=connect_mcp,
+        knowledge_base_name=PROJECT_KB_NAME,
+        knowledge_base_label="Проектная база знаний",
+        missing_kb_label="Проектная БЗ",
+        attach_error_subject="проектную БЗ",
+        mcp_server_name="git",
+    )
+    prepare_support_context = PrepareAssistantContextUseCase(
+        list_knowledge_bases=list_knowledge_bases,
+        list_agent_knowledge_bases=list_agent_knowledge_bases,
+        attach_knowledge_base=attach_knowledge_base,
+        connect_mcp=connect_mcp,
+        knowledge_base_name=SUPPORT_KB_NAME,
+        knowledge_base_label="База знаний поддержки",
+        missing_kb_label="БЗ поддержки",
+        attach_error_subject="БЗ поддержки",
+        mcp_server_name="support",
+    )
+
     create_knowledge_base = CreateKnowledgeBaseUseCase(
         knowledge_base_repository, rag_model_service
     )
@@ -297,22 +331,18 @@ def initialize_application() -> UseCasesBundle:
         delete_knowledge_base=DeleteKnowledgeBaseUseCase(
             knowledge_base_repository
         ),
-        list_knowledge_bases=ListKnowledgeBasesUseCase(knowledge_base_repository),
+        list_knowledge_bases=list_knowledge_bases,
         add_document=add_document,
         list_documents=ListDocumentsUseCase(
             knowledge_base_repository, document_repository
         ),
         list_document_chunks=ListDocumentChunksUseCase(document_repository),
         delete_document=DeleteDocumentUseCase(document_repository),
-        attach_knowledge_base=AttachKnowledgeBaseToAgentUseCase(
-            knowledge_base_repository, agent_knowledge_base_repository
-        ),
+        attach_knowledge_base=attach_knowledge_base,
         detach_knowledge_base=DetachKnowledgeBaseFromAgentUseCase(
             knowledge_base_repository, agent_knowledge_base_repository
         ),
-        list_agent_knowledge_bases=ListAgentKnowledgeBasesUseCase(
-            agent_knowledge_base_repository
-        ),
+        list_agent_knowledge_bases=list_agent_knowledge_bases,
         retrieve_rag_context=RetrieveRagContextUseCase(rag_service),
         search_knowledge_base=SearchKnowledgeBaseUseCase(rag_service),
         seed_project_knowledge_base=SeedProjectKnowledgeBaseUseCase(
@@ -322,6 +352,17 @@ def initialize_application() -> UseCasesBundle:
             create_knowledge_base_use_case=create_knowledge_base,
             knowledge_base_name=PROJECT_KB_NAME,
             source_paths=PROJECT_DOCS_PATHS,
+        ),
+        prepare_project_context=prepare_project_context,
+        prepare_support_context=prepare_support_context,
+        seed_support_knowledge_base=SeedProjectKnowledgeBaseUseCase(
+            knowledge_base_repository=knowledge_base_repository,
+            document_repository=document_repository,
+            add_document_use_case=add_document,
+            create_knowledge_base_use_case=create_knowledge_base,
+            knowledge_base_name=SUPPORT_KB_NAME,
+            source_paths=SUPPORT_DOCS_PATHS,
+            knowledge_base_description="FAQ службы поддержки.",
         ),
         create_api_key=CreateApiKeyUseCase(api_key_repository),
         list_api_keys=ListApiKeysUseCase(api_key_repository),

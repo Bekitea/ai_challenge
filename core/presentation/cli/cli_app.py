@@ -8,6 +8,7 @@ from config import (
     RAG_FILE_EXTENSIONS,
     RAG_RELEVANCE_THRESHOLD,
     REASONING_EFFORTS,
+    SUPPORT_KB_NAME,
 )
 from core.application.dtos import (
     ChatDTO,
@@ -34,6 +35,7 @@ HELP_COMMANDS = [
     "/rerank - включить или отключить реранкинг (on|off)",
     "/commands - показать этот список команд",
     "/help - задать вопрос о проекте (документация + git-контекст)",
+    "/support - вопрос службе поддержки (FAQ + данные тикета через CRM)",
 ]
 
 
@@ -946,9 +948,10 @@ class CLIChat:
         print("-" * 40)
 
     def _print_hint(self):
-        """Отображает подсказку о командах /help и /commands."""
+        """Отображает подсказку о командах /help, /support и /commands."""
         print("\n--- Подсказка ---")
         print("/help <вопрос> — спросить ассистента о проекте")
+        print("/support [тикет] <вопрос> — вопрос службе поддержки")
         print("/commands — показать список доступных команд")
         print("-" * 40)
 
@@ -1331,7 +1334,10 @@ class CLIChat:
             print("6. Удалить документ")
             print("7. Удалить базу знаний")
             print("8. Проверить поиск")
-            print(f"9. Засеять проектную БЗ ('{PROJECT_KB_NAME}') из README и docs")
+            print(
+                "9. Засеять БЗ ассистентов "
+                f"('{PROJECT_KB_NAME}' + '{SUPPORT_KB_NAME}')"
+            )
             print("0. Назад в главное меню")
             print("-" * 40)
 
@@ -1358,7 +1364,7 @@ class CLIChat:
             elif choice == "8":
                 self._search_knowledge_base()
             elif choice == "9":
-                self._seed_project_knowledge_base()
+                self._seed_assistant_knowledge_bases()
             elif choice == "0":
                 return
             else:
@@ -1599,25 +1605,35 @@ class CLIChat:
             print(chunk.text)
             print("-" * 40)
 
-    def _seed_project_knowledge_base(self):
-        """Пункт меню: засеять проектную БЗ из README и docs.
+    def _seed_assistant_knowledge_bases(self):
+        """Пункт меню: засеять БЗ ассистентов (проектную и поддержки).
 
-        Прежние документы базы удаляются, поэтому устаревшая информация не
+        Прежние документы баз удаляются, поэтому устаревшая информация не
         остаётся в индексе.
         """
-        print(f"\n--- ЗАСЕВ ПРОЕКТНОЙ БАЗЫ '{PROJECT_KB_NAME}' ---")
+        print("\n--- ЗАСЕВ БАЗ АССИСТЕНТОВ (проект + поддержка) ---")
         print(
-            "[INFO] Прежние документы этой базы будут удалены, затем README и "
-            "docs проекта проиндексируются заново."
+            "[INFO] Прежние документы этих баз будут удалены, затем README/docs "
+            "проекта и FAQ поддержки проиндексируются заново."
         )
         confirm = input("Продолжить? (y/n): ").strip().lower()
         if confirm != "y":
             print("[INFO] Действие отменено.")
             return
 
-        print("\n[INFO] Индексирую документацию проекта...", flush=True)
+        self._seed_one_knowledge_base(
+            PROJECT_KB_NAME, self.use_cases.seed_project_knowledge_base
+        )
+        self._seed_one_knowledge_base(
+            SUPPORT_KB_NAME, self.use_cases.seed_support_knowledge_base
+        )
+
+    def _seed_one_knowledge_base(self, name: str, use_case) -> None:
+        """Засевает одну базу знаний и печатает результат индексации."""
+        print(f"\n--- ЗАСЕВ БАЗЫ '{name}' ---")
+        print("[INFO] Индексирую документацию...", flush=True)
         try:
-            result = self.use_cases.seed_project_knowledge_base.execute()
+            result = use_case.execute()
         except (RagError, ValueError) as exc:
             print(f"\n[ERROR] {exc}")
             return
@@ -1687,6 +1703,12 @@ class CLIChat:
                     "/help "
                 ):
                     self.project_help(user_input[len("/help") :])
+                    continue
+
+                if user_input.lower() == "/support" or user_input.lower().startswith(
+                    "/support "
+                ):
+                    self.support_assistant(user_input[len("/support") :])
                     continue
 
                 # Обработка команд фаз
@@ -1808,46 +1830,23 @@ class CLIChat:
                 )
         return True
 
-    def _ensure_project_context(self) -> None:
-        """Готовит контекст проекта для /help: проектная БЗ + git MCP."""
-        project_kb = None
-        for kb in self.use_cases.list_knowledge_bases.execute():
-            if kb.name == PROJECT_KB_NAME:
-                project_kb = kb
-                break
+    def _print_assistant_context(self, messages: list[str]) -> None:
+        """Печатает информационные/предупредительные сообщения ассистента."""
+        for message in messages:
+            print(message)
 
-        if project_kb is not None:
-            attached_ids = {
-                kb.id
-                for kb in self.use_cases.list_agent_knowledge_bases.execute(
-                    self.current_chat_id
-                )
-            }
-            if project_kb.id not in attached_ids:
-                try:
-                    self.use_cases.attach_knowledge_base.execute(
-                        self.current_chat_id, project_kb.id
-                    )
-                    print(
-                        f"[INFO] Проектная база знаний '{PROJECT_KB_NAME}' "
-                        "подключена к чату."
-                    )
-                except RagError as exc:
-                    print(f"[WARN] Не удалось подключить проектную БЗ: {exc}")
-        else:
-            print(
-                f"[WARN] Проектная БЗ '{PROJECT_KB_NAME}' не найдена. "
-                "Засеять её можно в меню 'Базы знаний' (пункт 9)."
-            )
-
-        try:
-            success, message = self.use_cases.connect_mcp.execute(
-                self.current_chat_id, "git"
-            )
-            if success:
-                print(f"[INFO] {message}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[WARN] Не удалось подключить git MCP: {exc}")
+    @staticmethod
+    def _parse_support_argument(argument: str) -> tuple[str | None, str]:
+        """Разбирает ``[тикет] <вопрос>``: возвращает (tikcet_id, вопрос)."""
+        text = argument.strip()
+        if not text:
+            return None, ""
+        parts = text.split(maxsplit=1)
+        first = parts[0]
+        rest = parts[1].strip() if len(parts) > 1 else ""
+        if first.lower().startswith(("t-", "u-", "ticket")):
+            return first, rest
+        return None, text
 
     def project_help(self, argument: str):
         """Обрабатывает /help <вопрос>: ответ о проекте через RAG и git MCP."""
@@ -1864,8 +1863,31 @@ class CLIChat:
             print("[INFO] Список команд — /commands.")
             return
 
-        self._ensure_project_context()
+        self._print_assistant_context(
+            self.use_cases.prepare_project_context.execute(self.current_chat_id)
+        )
         self._send_user_message(question)
+
+    def support_assistant(self, argument: str):
+        """Обрабатывает /support <вопрос>: ответ с учётом тикета и FAQ (RAG)."""
+        if not self.current_chat:
+            print("\n[WARN] Сначала выберите или создайте чат!")
+            return
+
+        ticket_id, question = self._parse_support_argument(argument)
+        if not question:
+            print(
+                "\n[INFO] Задайте вопрос поддержки: /support [тикет] <вопрос>. "
+                "Например: /support T-1001 почему не работает авторизация?"
+            )
+            print("[INFO] Список команд — /commands.")
+            return
+
+        self._print_assistant_context(
+            self.use_cases.prepare_support_context.execute(self.current_chat_id)
+        )
+        prompt = f"Тикет {ticket_id}. {question}" if ticket_id else question
+        self._send_user_message(prompt)
 
     def _print_memory_save_start(self, chat_name: str) -> None:
         """Выводит уведомление о начале заполнения памяти чата."""

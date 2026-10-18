@@ -356,6 +356,7 @@ Then the chat loop starts immediately (history is displayed in its header). The 
 
 --- Подсказка ---
 /help <вопрос> — спросить ассистента о проекте
+/support [тикет] <вопрос> — вопрос службе поддержки
 /commands — показать список доступных команд
 ----------------------------------------
 ```
@@ -425,6 +426,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   /rerank - включить или отключить реранкинг (on|off)
   /commands - показать этот список команд
   /help - задать вопрос о проекте (документация + git-контекст)
+  /support - вопрос службе поддержки (FAQ + данные тикета через CRM)
 ```
 
 ##### `/help` — ассистент по проекту (UC-027)
@@ -438,6 +440,15 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
      - the question is then sent through `send_message` exactly like a regular message (same output/`[Источники]`/tokens/context-fill rendering)
 - **Side Effects**: project knowledge base may become attached to the chat; `git` may be added to the chat's MCP servers
 - **Misuse**: if no active chat → `[WARN] Сначала выберите или создайте чат!`
+
+##### `/support` — ассистент поддержки (UC-029)
+
+- **Action**: Answer a support question using the support knowledge base (RAG over the product FAQ) and the `support` MCP server (CRM stub: users and tickets from `mcp/data/support_seed.json`)
+- **Flow**:
+  1. Bare `/support` (no question): `[INFO] Задайте вопрос поддержки: /support [тикет] <вопрос>. ...` and `[INFO] Список команд — /commands.`
+  2. `/support [тикет] <вопрос>`: `prepare_support_context` attaches the support knowledge base if it exists (`[INFO] База знаний поддержки '{name}' подключена к чату.`) and connects the `support` MCP server (idempotent), then sends the question via `send_message`. If the first token looks like a ticket/user id (`T-…`, `u-…`, `ticket…`), it is prefixed to the question so the agent fetches the ticket with `get_ticket`
+- **Side Effects**: support knowledge base may become attached to the chat; `support` may be added to the chat's MCP servers
+- **Misuse**: if no active chat → `[WARN] Сначала выберите или создайте чат!`; missing base → `[WARN] БЗ поддержки '{name}' не найдена. Засеять её можно в меню 'Базы знаний' (пункт 9).`
 
 ##### `/summary`
 
@@ -738,7 +749,7 @@ Entered from Main Menu option 7 (`knowledge_bases_menu`). Loops until `0`.
 6. Удалить документ
 7. Удалить базу знаний
 8. Проверить поиск
-9. Засеять проектную БЗ ('{PROJECT_KB_NAME}') из README и docs
+9. Засеять БЗ ассистентов ('{PROJECT_KB_NAME}' + '{SUPPORT_KB_NAME}')
 0. Назад в главное меню
 ----------------------------------------
 ```
@@ -759,10 +770,11 @@ Prompt: `Ваш выбор (0-9):`. Invalid choice: `[WARN] Неверный в�
 - **Delete document (6)**: select a document, confirm `Удалить документ '{name}'? (y/n):`; on `y` deletes the document, its chunks and vectors.
 - **Delete knowledge base (7)**: select a base, confirm; deletes the base, its documents, chunks, vectors and agent links.
 - **Search (8)**: select a base, enter `Введите поисковый запрос:`; prints `--- РЕЗУЛЬТАТЫ ПОИСКА (база '{name}') ---` with the top-`RAG_FINAL_TOP_K` chunks, their document and vector distance. Empty result → `[INFO] Ничего не найдено.`
-- **Seed project KB (9)** (UC-028): confirms `Продолжить? (y/n):`, then finds-or-creates the base named `PROJECT_KB_NAME` (`Проектная документация`), deletes all its existing documents (so stale info is not retained), and re-indexes `PROJECT_DOCS_PATHS` (`README.md`, `docs/`, `AGENTS.md` by default). Output:
+- **Seed assistant KBs (9)** (UC-028): confirms `Продолжить? (y/n):`, then for each assistant base finds-or-creates it and re-indexes its sources, deleting stale documents first. Project base: `PROJECT_KB_NAME` (`Проектная документация`) from `PROJECT_DOCS_PATHS` (`README.md`, `docs/`, `AGENTS.md` by default). Support base: `SUPPORT_KB_NAME` (`Поддержка: FAQ`) from `SUPPORT_DOCS_PATHS` (`docs/support/` by default). Output:
   ```
-  --- ЗАСЕВ ПРОЕКТНОЙ БАЗЫ '{PROJECT_KB_NAME}' ---
-  [INFO] Прежние документы этой базы будут удалены, ...
+  --- ЗАСЕВ БАЗ АССИСТЕНТОВ (проект + поддержка) ---
+  [INFO] Прежние документы этих баз будут удалены, ...
+  --- ЗАСЕВ БАЗЫ '{name}' ---
   [OK] База знаний '{name}' (ID: {id}).
     Удалено устаревших документов: {removed_count}
     [OK] {file} — чанков: {n}       # per indexed document
@@ -839,4 +851,5 @@ this document.
 | UC-025 | Manage API Keys (menu 6) | Issue and revoke REST API keys; the secret is shown once and otherwise stored only as a hash. | [uc-025-manage-api-keys.md](uc/uc-025-manage-api-keys.md) |
 | UC-026 | Edge Cases and Robustness | Graceful termination on end of input and handling of very long messages. | [uc-026-edge-cases-and-robustness.md](uc/uc-026-edge-cases-and-robustness.md) |
 | UC-027 | Project Help Assistant (/help) | Answer project questions via the project knowledge base (RAG) and the git MCP server. | [uc-027-project-help-assistant.md](uc/uc-027-project-help-assistant.md) |
-| UC-028 | Seed Project Knowledge Base (menu 7, option 9) | Rebuild the project knowledge base from README/docs, deleting stale documents first. | [uc-028-seed-project-knowledge-base.md](uc/uc-028-seed-project-knowledge-base.md) |
+| UC-028 | Seed Assistant Knowledge Bases (menu 7, option 9) | Rebuild the project and support knowledge bases from their sources, deleting stale documents first. | [uc-028-seed-project-knowledge-base.md](uc/uc-028-seed-project-knowledge-base.md) |
+| UC-029 | Support Assistant (/support) | Answer support questions via the support knowledge base (FAQ RAG) and the support MCP server (ticket/user context). | [uc-029-support-assistant.md](uc/uc-029-support-assistant.md) |

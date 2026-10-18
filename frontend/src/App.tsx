@@ -25,6 +25,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [notices, setNotices] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [hasKey, setHasKey] = useState<boolean>(() => getApiKey() !== null);
 
@@ -64,6 +65,7 @@ export default function App() {
       setCurrent(chat);
       setHistory(hist);
       setSettings(cfg);
+      setNotices([]);
     } catch (err) {
       fail(err);
     }
@@ -96,28 +98,58 @@ export default function App() {
     if (!current) {
       return;
     }
+    const trimmed = text.trim();
+    const isCommand = trimmed.startsWith("/");
     try {
       setBusy(true);
       setError(null);
-      const response = await api.sendMessage(current.agent_id, text);
       const stamp = new Date().toISOString();
-      setHistory((prev) => [
-        ...prev,
-        {
-          role: "user",
-          content: text,
-          reasoning: null,
-          has_tool_calls: false,
-          timestamp: stamp,
-        },
-        {
-          role: "assistant",
-          content: response.content,
-          reasoning: response.reasoning,
-          has_tool_calls: false,
-          timestamp: stamp,
-        },
-      ]);
+      if (isCommand) {
+        const result = await api.runCommand(current.agent_id, trimmed);
+        setHistory((prev) => {
+          const next = [
+            ...prev,
+            {
+              role: "user",
+              content: trimmed,
+              reasoning: null,
+              has_tool_calls: false,
+              timestamp: stamp,
+            },
+          ];
+          if (result.response) {
+            next.push({
+              role: "assistant",
+              content: result.response.content,
+              reasoning: result.response.reasoning,
+              has_tool_calls: false,
+              timestamp: stamp,
+            });
+          }
+          return next;
+        });
+        setNotices(result.messages);
+      } else {
+        const response = await api.sendMessage(current.agent_id, trimmed);
+        setHistory((prev) => [
+          ...prev,
+          {
+            role: "user",
+            content: trimmed,
+            reasoning: null,
+            has_tool_calls: false,
+            timestamp: stamp,
+          },
+          {
+            role: "assistant",
+            content: response.content,
+            reasoning: response.reasoning,
+            has_tool_calls: false,
+            timestamp: stamp,
+          },
+        ]);
+        setNotices([]);
+      }
       await loadChats();
     } catch (err) {
       fail(err);
@@ -206,6 +238,7 @@ export default function App() {
               <ChatView
                 chat={current}
                 history={history}
+                notices={notices}
                 busy={busy}
                 onSend={handleSend}
               />

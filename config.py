@@ -171,6 +171,22 @@ def _project_docs_paths() -> list[str]:
 
 PROJECT_DOCS_PATHS = _project_docs_paths()
 
+# --- База знаний поддержки пользователей (ассистент поддержки) ---
+# Пункт меню «Засеять БЗ ассистентов» индексирует FAQ поддержки в отдельную
+# базу знаний, к которой привязана команда /support.
+SUPPORT_KB_NAME = os.getenv("SUPPORT_KB_NAME", "Поддержка: FAQ")
+
+
+def _support_docs_paths() -> list[str]:
+    override = os.getenv("SUPPORT_DOCS_PATHS", "")
+    paths = [item.strip() for item in override.split(",") if item.strip()]
+    if paths:
+        return paths
+    return [str(PROJECT_ROOT / "docs" / "support")]
+
+
+SUPPORT_DOCS_PATHS = _support_docs_paths()
+
 # --- Режим работы приложения ---
 # PROD — продакшен (обязательны ключи Yandex Cloud), TEST — моки,
 # LOCAL — локальный запуск (например, только Ollama), без обязательных

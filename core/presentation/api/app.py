@@ -17,6 +17,7 @@ from core.application.use_cases import UseCasesBundle
 from core.presentation.api.errors import register_exception_handlers
 from core.presentation.api.routers import (
     chats,
+    commands,
     knowledge_bases,
     mcp,
     memory,
@@ -53,6 +54,7 @@ def build_app(use_cases: UseCasesBundle) -> FastAPI:
     api = APIRouter()
     api.include_router(models.router)
     api.include_router(chats.router)
+    api.include_router(commands.router)
     api.include_router(mcp.router)
     api.include_router(knowledge_bases.router)
     api.include_router(task_profiles.router)

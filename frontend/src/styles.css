@@ -227,6 +227,19 @@ body {
   max-width: 80%;
 }
 
+.notice {
+  align-self: center;
+  max-width: 90%;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  color: #614a00;
+  font-size: 13px;
+  white-space: pre-wrap;
+  text-align: center;
+}
+
 .message.user {
   align-self: flex-end;
   align-items: flex-end;

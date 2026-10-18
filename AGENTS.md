@@ -91,5 +91,6 @@ New feature flow (пошагово — `docs/architecture.md` §6): add use case
 ## Misc
 
 - `mcp/` contains MCP servers (`time_mcp.py`, `open_alex_mcp.py`, `git_mcp.py`, `files_mcp.py`, `support_mcp.py`; the last reads a JSON fixture from `mcp/data/`); their pytest wrappers live in `mcp/tests/` (spawn the servers; network MCP cases skip when unavailable).
+- Support assistant: `/support [ticket] <question>` (CLI and web) — `PrepareAssistantContextUseCase` attaches the support KB (`SUPPORT_KB_NAME`, seeded from `SUPPORT_DOCS_PATHS` = `docs/support/`) and connects the `support` MCP server, then sends the question. The web uses `POST /api/chats/{id}/commands`. Menu item 9 seeds both assistant KBs (project + support). See `docs/uc/uc-029-support-assistant.md`.
 - Deeper docs: `README.md` (full architecture DO/DON'T list), `docs/cli_spec.md` (interface spec + UC index), `docs/uc/` (use cases with related test cases), `docs/cli_e2e_testing_guide.md` (testing practices: ground truth, scenario mocks, performance, troubleshooting).
 - No CI, no typecheck config, no pre-commit hooks.

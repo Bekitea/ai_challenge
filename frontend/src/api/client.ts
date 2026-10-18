@@ -66,6 +66,11 @@ export interface PhaseChangeResult {
   current_phase: string;
 }
 
+export interface CommandResponse {
+  messages: string[];
+  response: MessageResponse | null;
+}
+
 export interface ActionResult {
   success: boolean;
   message: string | null;
@@ -160,6 +165,11 @@ export const api = {
     }),
   changePhase: (id: number, command: string) =>
     request<PhaseChangeResult>(`/chats/${id}/phase`, {
+      method: "POST",
+      body: JSON.stringify({ command }),
+    }),
+  runCommand: (id: number, command: string) =>
+    request<CommandResponse>(`/chats/${id}/commands`, {
       method: "POST",
       body: JSON.stringify({ command }),
     }),

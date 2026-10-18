@@ -60,6 +60,9 @@ if TYPE_CHECKING:
     from core.application.use_cases.list_task_profiles import (
         ListTaskProfilesUseCase,
     )
+    from core.application.use_cases.prepare_assistant_context import (
+        PrepareAssistantContextUseCase,
+    )
     from core.application.use_cases.refresh_agent_memory import (
         RefreshAgentMemoryUseCase,
     )
@@ -150,6 +153,9 @@ class UseCasesBundle:
     retrieve_rag_context: RetrieveRagContextUseCase
     search_knowledge_base: SearchKnowledgeBaseUseCase
     seed_project_knowledge_base: SeedProjectKnowledgeBaseUseCase
+    prepare_project_context: PrepareAssistantContextUseCase
+    prepare_support_context: PrepareAssistantContextUseCase
+    seed_support_knowledge_base: SeedProjectKnowledgeBaseUseCase
     create_api_key: CreateApiKeyUseCase
     list_api_keys: ListApiKeysUseCase
     delete_api_key: DeleteApiKeyUseCase

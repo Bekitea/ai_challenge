@@ -125,6 +125,17 @@ class MessageResponse(_Base):
     rag_sources: list[RagSource] | None = None
 
 
+class CommandResponse(_Base):
+    """Результат ассистентской команды (/help, /support).
+
+    ``messages`` — информационные сообщения о подготовке контекста (БЗ, MCP);
+    ``response`` — ответ агента или ``None``, если вопрос не задан.
+    """
+
+    messages: list[str] = Field(default_factory=list)
+    response: MessageResponse | None = None
+
+
 class McpServerStatus(_Base):
     """Статус MCP-сервера в контексте чата."""
 
@@ -311,6 +322,12 @@ class ChangePhaseRequest(BaseModel):
     """Тело запроса смены фазы."""
 
     command: str
+
+
+class CommandRequest(BaseModel):
+    """Тело запроса ассистентской команды."""
+
+    command: str = Field(min_length=1)
 
 
 class BranchRequest(BaseModel):

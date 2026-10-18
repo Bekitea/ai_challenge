@@ -1,8 +1,9 @@
 """E2E tests: TestUC019_TC101_110_McpMenu."""
 
-from core.infrastructure.mcp.mcp_registry import get_available_servers
 from e2e_helpers import _QUICK_CHAT, run_cli_command
 from ground_truth import get_mcp_servers_by_name
+
+from core.infrastructure.mcp.mcp_registry import get_available_servers
 
 
 class TestUC019_TC101_110_McpMenu:

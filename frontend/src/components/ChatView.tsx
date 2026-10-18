@@ -4,11 +4,12 @@ import type { Chat, HistoryMessage } from "../api/client";
 interface Props {
   chat: Chat;
   history: HistoryMessage[];
+  notices: string[];
   busy: boolean;
   onSend: (text: string) => void;
 }
 
-export default function ChatView({ chat, history, busy, onSend }: Props) {
+export default function ChatView({ chat, history, notices, busy, onSend }: Props) {
   const [input, setInput] = useState("");
 
   const send = () => {
@@ -32,6 +33,11 @@ export default function ChatView({ chat, history, busy, onSend }: Props) {
       </header>
 
       <div className="messages">
+        {notices.map((notice, index) => (
+          <div key={`notice-${index}`} className="notice">
+            {notice}
+          </div>
+        ))}
         {visible.map((message, index) => (
           <div key={index} className={`message ${message.role}`}>
             {message.reasoning && (

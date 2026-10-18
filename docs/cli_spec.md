@@ -355,7 +355,8 @@ Then the chat loop starts immediately (history is displayed in its header). The 
 ----------------------------------------
 
 --- Подсказка ---
-Введите сообщение /help и нажмите Enter для просмотра списка команд
+/help <вопрос> — спросить ассистента о проекте
+/commands — показать список доступных команд
 ----------------------------------------
 ```
 
@@ -402,7 +403,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
 - **Action**: In the current synchronous implementation generation is never active while input is read
 - **Output**: `[INFO] Генерация не активна.` and the chat loop exits (returns to menu)
 
-##### `/help`
+##### `/commands`
 
 - **Action**: Display available commands (`HELP_COMMANDS` constant)
 - **Output** (exact order of the `HELP_COMMANDS` list):
@@ -422,8 +423,21 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   /mcp - показать подключённые к чату MCP и подключить новые
   /rag - базы знаний чата: подключить или отключить
   /rerank - включить или отключить реранкинг (on|off)
-  /help - показать этот список команд
+  /commands - показать этот список команд
+  /help - задать вопрос о проекте (документация + git-контекст)
 ```
+
+##### `/help` — ассистент по проекту (UC-027)
+
+- **Action**: Answer a question about the project using the project knowledge base (RAG over README/docs) and the `git` MCP server
+- **Flow**:
+  1. Bare `/help` (no question): `[INFO] Задайте вопрос о проекте: /help <вопрос>. ...` and `[INFO] Список команд — /commands.`
+  2. `/help <вопрос>`: ensure project context, then send the question as a normal message:
+     - if the project knowledge base (`PROJECT_KB_NAME`) exists and is not attached to the chat, `attach_knowledge_base` use case attaches it (prints `[INFO] Проектная база знаний '{name}' подключена к чату.`); if it does not exist, prints `[WARN] Проектная БЗ '{name}' не найдена. Засеять её можно в меню 'Базы знаний' (пункт 9).`
+     - `connect_mcp` with the `git` server is attempted (idempotent); on success prints `[INFO] {message}`; failures are warned and do not abort
+     - the question is then sent through `send_message` exactly like a regular message (same output/`[Источники]`/tokens/context-fill rendering)
+- **Side Effects**: project knowledge base may become attached to the chat; `git` may be added to the chat's MCP servers
+- **Misuse**: if no active chat → `[WARN] Сначала выберите или создайте чат!`
 
 ##### `/summary`
 
@@ -724,11 +738,12 @@ Entered from Main Menu option 7 (`knowledge_bases_menu`). Loops until `0`.
 6. Удалить документ
 7. Удалить базу знаний
 8. Проверить поиск
+9. Засеять проектную БЗ ('{PROJECT_KB_NAME}') из README и docs
 0. Назад в главное меню
 ----------------------------------------
 ```
 
-Prompt: `Ваш выбор (0-8):`. Invalid choice: `[WARN] Неверный выбор, попробуйте снова.` and the menu is re-displayed. Option 0 returns to the Main Menu.
+Prompt: `Ваш выбор (0-9):`. Invalid choice: `[WARN] Неверный выбор, попробуйте снова.` and the menu is re-displayed. Option 0 returns to the Main Menu.
 
 - **Create (1)**: prompts `Введите название базы знаний:` (empty re-prompts with `[ERROR] Название базы знаний не может быть пустым.`) and `Введите описание (Enter для пропуска):`. Success:
   ```
@@ -744,6 +759,16 @@ Prompt: `Ваш выбор (0-8):`. Invalid choice: `[WARN] Неверный в�
 - **Delete document (6)**: select a document, confirm `Удалить документ '{name}'? (y/n):`; on `y` deletes the document, its chunks and vectors.
 - **Delete knowledge base (7)**: select a base, confirm; deletes the base, its documents, chunks, vectors and agent links.
 - **Search (8)**: select a base, enter `Введите поисковый запрос:`; prints `--- РЕЗУЛЬТАТЫ ПОИСКА (база '{name}') ---` with the top-`RAG_FINAL_TOP_K` chunks, their document and vector distance. Empty result → `[INFO] Ничего не найдено.`
+- **Seed project KB (9)** (UC-028): confirms `Продолжить? (y/n):`, then finds-or-creates the base named `PROJECT_KB_NAME` (`Проектная документация`), deletes all its existing documents (so stale info is not retained), and re-indexes `PROJECT_DOCS_PATHS` (`README.md`, `docs/`, `AGENTS.md` by default). Output:
+  ```
+  --- ЗАСЕВ ПРОЕКТНОЙ БАЗЫ '{PROJECT_KB_NAME}' ---
+  [INFO] Прежние документы этой базы будут удалены, ...
+  [OK] База знаний '{name}' (ID: {id}).
+    Удалено устаревших документов: {removed_count}
+    [OK] {file} — чанков: {n}       # per indexed document
+    [SKIP] {path} — путь не найден  # per missing source path
+  [OK] Готово: успешно {n}, с ошибками {m}.
+  ```
 
 All list-selection prompts accept a number or `0` to cancel; non-numeric input prints `[WARN] Введите корректное число.`
 
@@ -794,7 +819,7 @@ this document.
 | UC-005 | View and Change Settings In-Chat | Show current settings and optionally change them. | [uc-005-view-and-change-settings-in-chat.md](uc/uc-005-view-and-change-settings-in-chat.md) |
 | UC-006 | Navigate to Menu from Chat | Leave the chat loop to the Main Menu via /menu. | [uc-006-navigate-to-menu-from-chat.md](uc/uc-006-navigate-to-menu-from-chat.md) |
 | UC-007 | Stop Command | Handle /stop and return to the Main Menu. | [uc-007-stop-command.md](uc/uc-007-stop-command.md) |
-| UC-008 | Display Help Commands | Show the available slash-commands via /help. | [uc-008-display-help-commands.md](uc/uc-008-display-help-commands.md) |
+| UC-008 | Display Help Commands | Show the available slash-commands via /commands. | [uc-008-display-help-commands.md](uc/uc-008-display-help-commands.md) |
 | UC-009 | View Conversation Summary | Display the current conversation summary. | [uc-009-view-conversation-summary.md](uc/uc-009-view-conversation-summary.md) |
 | UC-010 | View Chat Information and Token Statistics | Show chat details, phase and token counters. | [uc-010-view-chat-information-and-token-statistics.md](uc/uc-010-view-chat-information-and-token-statistics.md) |
 | UC-011 | Create Chat Branch | Fork the current chat into a new branch. | [uc-011-create-chat-branch.md](uc/uc-011-create-chat-branch.md) |
@@ -813,3 +838,5 @@ this document.
 | UC-024 | Memory Save Feedback | Show a start notice and a timed finish/error notice when global and task-profile memory is filled; per-chat feedback at application start. | [uc-024-memory-save-feedback.md](uc/uc-024-memory-save-feedback.md) |
 | UC-025 | Manage API Keys (menu 6) | Issue and revoke REST API keys; the secret is shown once and otherwise stored only as a hash. | [uc-025-manage-api-keys.md](uc/uc-025-manage-api-keys.md) |
 | UC-026 | Edge Cases and Robustness | Graceful termination on end of input and handling of very long messages. | [uc-026-edge-cases-and-robustness.md](uc/uc-026-edge-cases-and-robustness.md) |
+| UC-027 | Project Help Assistant (/help) | Answer project questions via the project knowledge base (RAG) and the git MCP server. | [uc-027-project-help-assistant.md](uc/uc-027-project-help-assistant.md) |
+| UC-028 | Seed Project Knowledge Base (menu 7, option 9) | Rebuild the project knowledge base from README/docs, deleting stale documents first. | [uc-028-seed-project-knowledge-base.md](uc/uc-028-seed-project-knowledge-base.md) |

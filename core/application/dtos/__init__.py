@@ -26,6 +26,7 @@ from core.application.dtos.mcp_server_status import McpServerStatus
 from core.application.dtos.memory_save_result import MemorySaveResult
 from core.application.dtos.message_response_dto import MessageResponseDTO
 from core.application.dtos.phase_change_result_dto import PhaseChangeResultDTO
+from core.application.dtos.project_kb_seed_result import ProjectKnowledgeBaseSeedResult
 from core.application.dtos.rag_source_dto import RagSourceDTO
 from core.application.dtos.rerank_result import RerankResult
 from core.application.dtos.retrieved_chunk import RetrievedChunk
@@ -65,6 +66,7 @@ __all__ = [
     "MemorySaveResult",
     "MessageResponseDTO",
     "PhaseChangeResultDTO",
+    "ProjectKnowledgeBaseSeedResult",
     "RagSourceDTO",
     "RerankResult",
     "RetrievedChunk",

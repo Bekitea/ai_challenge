@@ -151,6 +151,26 @@ RAG_FILE_EXTENSIONS = {".txt", ".md", ".py"}
 RAG_FILE_MAX_BYTES = int(os.getenv("RAG_FILE_MAX_BYTES", str(1024 * 1024)))
 RAG_FOLDER_MAX_FILES = int(os.getenv("RAG_FOLDER_MAX_FILES", "100"))
 
+# --- Проектная база знаний (ассистент разработчика) ---
+# Команда «Засеять проектную БЗ» индексирует README.md, docs/ и AGENTS.md в
+# отдельную базу знаний. Прежние документы удаляются, чтобы не оставалось
+# устаревшей информации. Пути можно переопределить (через запятую).
+PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_KB_NAME = os.getenv("PROJECT_KB_NAME", "Проектная документация")
+
+
+def _project_docs_paths() -> list[str]:
+    override = os.getenv("PROJECT_DOCS_PATHS", "")
+    paths = [item.strip() for item in override.split(",") if item.strip()]
+    if paths:
+        return paths
+    return [
+        str(PROJECT_ROOT / name) for name in ("README.md", "docs", "AGENTS.md")
+    ]
+
+
+PROJECT_DOCS_PATHS = _project_docs_paths()
+
 # --- Режим работы приложения ---
 # PROD — продакшен (обязательны ключи Yandex Cloud), TEST — моки,
 # LOCAL — локальный запуск (например, только Ollama), без обязательных

@@ -50,6 +50,9 @@ from core.application.use_cases.run_scheduled_agent_task import (
 from core.application.use_cases.save_agent_memory import SaveAgentMemoryUseCase
 from core.application.use_cases.save_unsaved_memories import SaveUnsavedMemoriesUseCase
 from core.application.use_cases.search_knowledge_base import SearchKnowledgeBaseUseCase
+from core.application.use_cases.seed_project_knowledge_base import (
+    SeedProjectKnowledgeBaseUseCase,
+)
 from core.application.use_cases.select_chat import SelectChatUseCase
 from core.application.use_cases.select_context_strategy import (
     SelectContextStrategyUseCase,
@@ -99,6 +102,7 @@ __all__ = [
     "SaveAgentMemoryUseCase",
     "SaveUnsavedMemoriesUseCase",
     "SearchKnowledgeBaseUseCase",
+    "SeedProjectKnowledgeBaseUseCase",
     "SelectChatUseCase",
     "SelectContextStrategyUseCase",
     "SendMessageUseCase",

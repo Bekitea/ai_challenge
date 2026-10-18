@@ -77,6 +77,9 @@ if TYPE_CHECKING:
     from core.application.use_cases.search_knowledge_base import (
         SearchKnowledgeBaseUseCase,
     )
+    from core.application.use_cases.seed_project_knowledge_base import (
+        SeedProjectKnowledgeBaseUseCase,
+    )
     from core.application.use_cases.select_chat import SelectChatUseCase
     from core.application.use_cases.select_context_strategy import (
         SelectContextStrategyUseCase,
@@ -146,6 +149,7 @@ class UseCasesBundle:
     list_agent_knowledge_bases: ListAgentKnowledgeBasesUseCase
     retrieve_rag_context: RetrieveRagContextUseCase
     search_knowledge_base: SearchKnowledgeBaseUseCase
+    seed_project_knowledge_base: SeedProjectKnowledgeBaseUseCase
     create_api_key: CreateApiKeyUseCase
     list_api_keys: ListApiKeysUseCase
     delete_api_key: DeleteApiKeyUseCase

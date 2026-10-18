@@ -213,7 +213,7 @@ assert "Используются настройки по умолчанию." in
 
 ### 3. Проверка команды
 ```python
-stdout, _, _ = run_cli_command(_QUICK_CHAT + "/help\n/menu\n8\n")
+stdout, _, _ = run_cli_command(_QUICK_CHAT + "/commands\n/menu\n8\n")
 assert "--- ДОСТУПНЫЕ КОМАНДЫ ---" in stdout
 ```
 

@@ -1,5 +1,6 @@
 """E2E tests: TestUC019_TC101_110_McpMenu."""
 
+from core.infrastructure.mcp.mcp_registry import get_available_servers
 from e2e_helpers import _QUICK_CHAT, run_cli_command
 from ground_truth import get_mcp_servers_by_name
 
@@ -114,22 +115,18 @@ class TestUC019_TC101_110_McpMenu:
         """
         TC-105: MCP Menu - All Servers Already Connected (UC-019 A2)
 
-        Connect both registry servers, then /mcp -> y must report that
-        everything is already connected.
+        Connect every registry server, then /mcp -> y must report that
+        everything is already connected. The registry is read dynamically so
+        the test does not depend on the exact set of servers.
         """
-        test_input = (
-            _QUICK_CHAT
-            + "/mcp\ny\n1\n"  # time
-            + "/mcp\ny\n1\n"  # openalex (оставшийся)
-            + "/mcp\ny\n"  # Всё подключено -> INFO сообщение
-            + "/menu\n"
-            + "8\n"
-        )
+        server_names = [server.name for server in get_available_servers()]
+        connect_all = "".join("/mcp\ny\n1\n" for _ in server_names)
+        test_input = _QUICK_CHAT + connect_all + "/mcp\ny\n" + "/menu\n" + "8\n"
 
-        stdout, _, _ = run_cli_command(test_input, timeout=120)
+        stdout, _, _ = run_cli_command(test_input, timeout=240)
 
         assert "[INFO] Все доступные MCP-серверы уже подключены к этому чату." in stdout
-        assert set(get_mcp_servers_by_name("Чат 1")) == {"openalex", "time"}
+        assert set(get_mcp_servers_by_name("Чат 1")) == set(server_names)
 
     def test_tc_106_mcp_menu_cancel_connection(self):
         """

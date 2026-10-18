@@ -8,16 +8,16 @@ class TestUC008_DisplayHelpCommands:
     Use Case UC-008: Display Help Commands
 
     Test Cases:
-    - TC-121: Help Command
+    - TC-121: Commands Command
     """
 
-    def test_tc_121_help_command(self):
+    def test_tc_121_commands_command(self):
         """
-        TC-121: Help Command
+        TC-121: Commands Command
 
         Steps:
         1. Enter chat
-        2. Type "/help"
+        2. Type "/commands"
         3. Verify command list displayed
         """
         test_input = (
@@ -28,7 +28,7 @@ class TestUC008_DisplayHelpCommands:
             "1\n"  # Model 1
             "\n" + "\n" + "\n" + "\n" + "\n" + "\n"  # Settings (6 times)
             "1\n"  # DefaultStrategy
-            "/help\n"  # Show help
+            "/commands\n"  # Show command list
             "4\n"  # Exit
         )
 
@@ -40,4 +40,5 @@ class TestUC008_DisplayHelpCommands:
         assert "/summary" in stdout
         assert "/info" in stdout
         assert "/branch" in stdout
-        assert "/help" in stdout
+        assert "/commands" in stdout
+        assert "/help - задать вопрос о проекте" in stdout

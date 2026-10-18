@@ -5,6 +5,8 @@ from config import (
     EMBEDDING_MODEL_NAME,
     EMBEDDING_TIMEOUT,
     FILE_STORAGE_DIR,
+    PROJECT_DOCS_PATHS,
+    PROJECT_KB_NAME,
     RAG_CANDIDATE_LIMIT_TOTAL,
     RAG_FINAL_TOP_K,
     RAG_RELEVANCE_THRESHOLD,
@@ -56,6 +58,7 @@ from core.application.use_cases import (
     SaveAgentMemoryUseCase,
     SaveUnsavedMemoriesUseCase,
     SearchKnowledgeBaseUseCase,
+    SeedProjectKnowledgeBaseUseCase,
     SelectChatUseCase,
     SelectContextStrategyUseCase,
     SendMessageUseCase,
@@ -244,6 +247,16 @@ def initialize_application() -> UseCasesBundle:
     )
     connect_mcp = ConnectMcpUseCase(repository, mcp_gateway)
 
+    create_knowledge_base = CreateKnowledgeBaseUseCase(
+        knowledge_base_repository, rag_model_service
+    )
+    add_document = AddDocumentToKnowledgeBaseUseCase(
+        knowledge_base_repository,
+        document_repository,
+        rag_model_service,
+        file_extractor,
+    )
+
     return UseCasesBundle(
         create_chat=create_chat,
         select_chat=SelectChatUseCase(repository),
@@ -280,19 +293,12 @@ def initialize_application() -> UseCasesBundle:
             send_message=send_message,
             connect_mcp=connect_mcp,
         ),
-        create_knowledge_base=CreateKnowledgeBaseUseCase(
-            knowledge_base_repository, rag_model_service
-        ),
+        create_knowledge_base=create_knowledge_base,
         delete_knowledge_base=DeleteKnowledgeBaseUseCase(
             knowledge_base_repository
         ),
         list_knowledge_bases=ListKnowledgeBasesUseCase(knowledge_base_repository),
-        add_document=AddDocumentToKnowledgeBaseUseCase(
-            knowledge_base_repository,
-            document_repository,
-            rag_model_service,
-            file_extractor,
-        ),
+        add_document=add_document,
         list_documents=ListDocumentsUseCase(
             knowledge_base_repository, document_repository
         ),
@@ -309,6 +315,14 @@ def initialize_application() -> UseCasesBundle:
         ),
         retrieve_rag_context=RetrieveRagContextUseCase(rag_service),
         search_knowledge_base=SearchKnowledgeBaseUseCase(rag_service),
+        seed_project_knowledge_base=SeedProjectKnowledgeBaseUseCase(
+            knowledge_base_repository=knowledge_base_repository,
+            document_repository=document_repository,
+            add_document_use_case=add_document,
+            create_knowledge_base_use_case=create_knowledge_base,
+            knowledge_base_name=PROJECT_KB_NAME,
+            source_paths=PROJECT_DOCS_PATHS,
+        ),
         create_api_key=CreateApiKeyUseCase(api_key_repository),
         list_api_keys=ListApiKeysUseCase(api_key_repository),
         delete_api_key=DeleteApiKeyUseCase(api_key_repository),

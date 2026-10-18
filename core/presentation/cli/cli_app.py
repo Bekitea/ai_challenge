@@ -4,6 +4,7 @@ import time
 
 from config import (
     DEFAULT_PROVIDER,
+    PROJECT_KB_NAME,
     RAG_FILE_EXTENSIONS,
     RAG_RELEVANCE_THRESHOLD,
     REASONING_EFFORTS,
@@ -31,7 +32,8 @@ HELP_COMMANDS = [
     "/mcp - показать подключённые к чату MCP и подключить новые",
     "/rag - базы знаний чата: подключить или отключить",
     "/rerank - включить или отключить реранкинг (on|off)",
-    "/help - показать этот список команд",
+    "/commands - показать этот список команд",
+    "/help - задать вопрос о проекте (документация + git-контекст)",
 ]
 
 
@@ -944,9 +946,10 @@ class CLIChat:
         print("-" * 40)
 
     def _print_hint(self):
-        """Отображает подсказку о команде /help."""
+        """Отображает подсказку о командах /help и /commands."""
         print("\n--- Подсказка ---")
-        print("Введите сообщение /help и нажмите Enter для просмотра списка команд")
+        print("/help <вопрос> — спросить ассистента о проекте")
+        print("/commands — показать список доступных команд")
         print("-" * 40)
 
     def mcp_menu(self):
@@ -1328,11 +1331,12 @@ class CLIChat:
             print("6. Удалить документ")
             print("7. Удалить базу знаний")
             print("8. Проверить поиск")
+            print(f"9. Засеять проектную БЗ ('{PROJECT_KB_NAME}') из README и docs")
             print("0. Назад в главное меню")
             print("-" * 40)
 
             try:
-                choice = input("Ваш выбор (0-8): ").strip()
+                choice = input("Ваш выбор (0-9): ").strip()
             except (EOFError, KeyboardInterrupt):
                 print()
                 return
@@ -1353,6 +1357,8 @@ class CLIChat:
                 self._delete_knowledge_base()
             elif choice == "8":
                 self._search_knowledge_base()
+            elif choice == "9":
+                self._seed_project_knowledge_base()
             elif choice == "0":
                 return
             else:
@@ -1593,6 +1599,49 @@ class CLIChat:
             print(chunk.text)
             print("-" * 40)
 
+    def _seed_project_knowledge_base(self):
+        """Пункт меню: засеять проектную БЗ из README и docs.
+
+        Прежние документы базы удаляются, поэтому устаревшая информация не
+        остаётся в индексе.
+        """
+        print(f"\n--- ЗАСЕВ ПРОЕКТНОЙ БАЗЫ '{PROJECT_KB_NAME}' ---")
+        print(
+            "[INFO] Прежние документы этой базы будут удалены, затем README и "
+            "docs проекта проиндексируются заново."
+        )
+        confirm = input("Продолжить? (y/n): ").strip().lower()
+        if confirm != "y":
+            print("[INFO] Действие отменено.")
+            return
+
+        print("\n[INFO] Индексирую документацию проекта...", flush=True)
+        try:
+            result = self.use_cases.seed_project_knowledge_base.execute()
+        except (RagError, ValueError) as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+
+        print(
+            f"\n[OK] База знаний '{result.knowledge_base.name}' "
+            f"(ID: {result.knowledge_base.id})."
+        )
+        print(f"  Удалено устаревших документов: {result.removed_count}")
+        for doc in result.documents:
+            if doc.status == "ready":
+                print(f"  [OK] {doc.name} — чанков: {doc.chunk_count}")
+            else:
+                print(
+                    f"  [ERROR] {doc.name} — "
+                    f"{doc.error_message or 'ошибка индексации'}"
+                )
+        for skipped in result.skipped_paths:
+            print(f"  [SKIP] {skipped} — путь не найден")
+        print(
+            f"\n[OK] Готово: успешно {result.ready_count}, "
+            f"с ошибками {result.error_count}."
+        )
+
     def chat_loop(self):
         """Основной цикл общения с агентом."""
         if not self.current_chat:
@@ -1628,10 +1677,16 @@ class CLIChat:
                     print("\n[INFO] Генерация не активна.")
                     break
 
-                if user_input.lower() == "/help":
+                if user_input.lower() == "/commands":
                     print("\n--- ДОСТУПНЫЕ КОМАНДЫ ---")
                     for cmd in HELP_COMMANDS:
                         print(f"  {cmd}")
+                    continue
+
+                if user_input.lower() == "/help" or user_input.lower().startswith(
+                    "/help "
+                ):
+                    self.project_help(user_input[len("/help") :])
                     continue
 
                 # Обработка команд фаз
@@ -1679,60 +1734,8 @@ class CLIChat:
                     self.rerank_command(user_input[len("/rerank") :])
                     continue
 
-                print("\n[AGENT] печатает...", end="", flush=True)
-
-                try:
-                    response = self.use_cases.send_message.execute(
-                        self.current_chat_id,
-                        user_input,
-                        on_memory_warning=self._print_memory_warning,
-                    )
-                except ContextWindowExceededError as e:
-                    # Очищаем строку "Агент печатает..."
-                    print("\r" + " " * 40 + "\r", end="")
-                    print(f"\n[ERROR] {e}")
-                    print(
-                        "Необходимо очистить историю сообщений или создать новый чат."
-                    )
+                if not self._send_user_message(user_input):
                     break
-
-                # Очищаем строку "Агент печатает..."
-                print("\r" + " " * 40 + "\r", end="")
-
-                # Рассуждения модели отображаются перед ответом и всегда,
-                # без запроса пользователя.
-                if response.reasoning:
-                    print("\n[Reasoning]:")
-                    for line in response.reasoning.split("\n"):
-                        print(f"  {line}")
-
-                answer = response.content.strip() or "(агент ничего не ответил)"
-                print(f"\n[AGENT]: {answer}")
-
-                self._print_rag_sources(response.rag_sources)
-
-                # Отображаем информацию о токенах
-                if (
-                    response.prompt_tokens is not None
-                    or response.completion_tokens is not None
-                ):
-                    tokens_info = []
-                    if response.prompt_tokens is not None:
-                        tokens_info.append(f"prompt: {response.prompt_tokens}")
-                    if response.completion_tokens is not None:
-                        tokens_info.append(f"completion: {response.completion_tokens}")
-                    if tokens_info:
-                        print(f"  [Токены: {', '.join(tokens_info)}]")
-
-                    # Отображаем степень заполненности контекстного окна
-                    if response.prompt_tokens is not None:
-                        context_window_size = response.context_window_size or 200_000
-                        fill_percent = (
-                            response.prompt_tokens / context_window_size
-                        ) * 100
-                        print(
-                            f"  [Заполненность контекста: {response.prompt_tokens}/{context_window_size} ({fill_percent:.1f}%)]"
-                        )
 
             except (KeyboardInterrupt, EOFError):
                 print("\n\nПрервано пользователем.")
@@ -1747,6 +1750,122 @@ class CLIChat:
             except Exception as e:  # noqa: BLE001
                 print(f"\n[ERROR] Ошибка: {e}")
                 break
+
+    def _send_user_message(self, user_input: str) -> bool:
+        """Отправляет сообщение агенту и печатает ответ.
+
+        Возвращает False, если нужно прервать цикл чата (превышено контекстное
+        окно), иначе True.
+        """
+        print("\n[AGENT] печатает...", end="", flush=True)
+
+        try:
+            response = self.use_cases.send_message.execute(
+                self.current_chat_id,
+                user_input,
+                on_memory_warning=self._print_memory_warning,
+            )
+        except ContextWindowExceededError as e:
+            print("\r" + " " * 40 + "\r", end="")
+            print(f"\n[ERROR] {e}")
+            print("Необходимо очистить историю сообщений или создать новый чат.")
+            return False
+
+        print("\r" + " " * 40 + "\r", end="")
+
+        # Рассуждения модели отображаются перед ответом и всегда,
+        # без запроса пользователя.
+        if response.reasoning:
+            print("\n[Reasoning]:")
+            for line in response.reasoning.split("\n"):
+                print(f"  {line}")
+
+        answer = response.content.strip() or "(агент ничего не ответил)"
+        print(f"\n[AGENT]: {answer}")
+
+        self._print_rag_sources(response.rag_sources)
+
+        # Отображаем информацию о токенах
+        if (
+            response.prompt_tokens is not None
+            or response.completion_tokens is not None
+        ):
+            tokens_info = []
+            if response.prompt_tokens is not None:
+                tokens_info.append(f"prompt: {response.prompt_tokens}")
+            if response.completion_tokens is not None:
+                tokens_info.append(f"completion: {response.completion_tokens}")
+            if tokens_info:
+                print(f"  [Токены: {', '.join(tokens_info)}]")
+
+            # Отображаем степень заполненности контекстного окна
+            if response.prompt_tokens is not None:
+                context_window_size = response.context_window_size or 200_000
+                fill_percent = (response.prompt_tokens / context_window_size) * 100
+                print(
+                    f"  [Заполненность контекста: {response.prompt_tokens}/"
+                    f"{context_window_size} ({fill_percent:.1f}%)]"
+                )
+        return True
+
+    def _ensure_project_context(self) -> None:
+        """Готовит контекст проекта для /help: проектная БЗ + git MCP."""
+        project_kb = None
+        for kb in self.use_cases.list_knowledge_bases.execute():
+            if kb.name == PROJECT_KB_NAME:
+                project_kb = kb
+                break
+
+        if project_kb is not None:
+            attached_ids = {
+                kb.id
+                for kb in self.use_cases.list_agent_knowledge_bases.execute(
+                    self.current_chat_id
+                )
+            }
+            if project_kb.id not in attached_ids:
+                try:
+                    self.use_cases.attach_knowledge_base.execute(
+                        self.current_chat_id, project_kb.id
+                    )
+                    print(
+                        f"[INFO] Проектная база знаний '{PROJECT_KB_NAME}' "
+                        "подключена к чату."
+                    )
+                except RagError as exc:
+                    print(f"[WARN] Не удалось подключить проектную БЗ: {exc}")
+        else:
+            print(
+                f"[WARN] Проектная БЗ '{PROJECT_KB_NAME}' не найдена. "
+                "Засеять её можно в меню 'Базы знаний' (пункт 9)."
+            )
+
+        try:
+            success, message = self.use_cases.connect_mcp.execute(
+                self.current_chat_id, "git"
+            )
+            if success:
+                print(f"[INFO] {message}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] Не удалось подключить git MCP: {exc}")
+
+    def project_help(self, argument: str):
+        """Обрабатывает /help <вопрос>: ответ о проекте через RAG и git MCP."""
+        if not self.current_chat:
+            print("\n[WARN] Сначала выберите или создайте чат!")
+            return
+
+        question = argument.strip()
+        if not question:
+            print(
+                "\n[INFO] Задайте вопрос о проекте: /help <вопрос>. "
+                "Например: /help как устроена архитектура проекта?"
+            )
+            print("[INFO] Список команд — /commands.")
+            return
+
+        self._ensure_project_context()
+        self._send_user_message(question)
 
     def _print_memory_save_start(self, chat_name: str) -> None:
         """Выводит уведомление о начале заполнения памяти чата."""

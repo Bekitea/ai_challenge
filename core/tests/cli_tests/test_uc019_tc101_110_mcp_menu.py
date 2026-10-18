@@ -1,7 +1,6 @@
 """E2E tests: TestUC019_TC101_110_McpMenu."""
 
-import pytest
-from e2e_helpers import _QUICK_CHAT, get_project_root, run_cli_command
+from e2e_helpers import _QUICK_CHAT, run_cli_command
 from ground_truth import get_mcp_servers_by_name
 
 
@@ -9,32 +8,9 @@ class TestUC019_TC101_110_McpMenu:
     """
     TC-101..TC-110: MCP menu (/mcp) — UC-019.
 
-    Тесты, требующие живого подключения к MCP-серверу (TC-103/104/105/109),
-    пропускаются (skip), если серверы из реестра не запускаются в текущем
-    окружении (в контейнере mcp/*_mcp.py падают с ImportError MCPServer —
-    баг приложения).
+    TC-103/104/105/109 требуют живого подключения к MCP-серверу и требуют,
+    чтобы серверы из реестра запускались в текущем окружении.
     """
-
-    @staticmethod
-    def _servers_spawnable() -> bool:
-        """Локальная проверка запускаемости серверов реестра (для skip)."""
-        import subprocess as _sp
-        import sys as _sys
-
-        root = get_project_root()
-        for script in ("mcp/time_mcp.py", "mcp/open_alex_mcp.py"):
-            proc = _sp.run(
-                [_sys.executable, script],
-                input="",
-                capture_output=True,
-                text=True,
-                timeout=15,
-                cwd=str(root),
-                check=False,
-            )
-            if proc.returncode != 0:
-                return False
-        return True
 
     def test_tc_101_mcp_menu_no_servers_connected(self):
         """
@@ -85,11 +61,8 @@ class TestUC019_TC101_110_McpMenu:
         """
         TC-103: MCP Menu - Connect Server By Number (UC-019 main success)
 
-        Requires a spawnable registry server; skipped otherwise.
+        Requires a spawnable registry server.
         """
-        if not self._servers_spawnable():
-            pytest.skip("Bundled MCP servers are not spawnable in this environment")
-
         test_input = (
             _QUICK_CHAT
             + "/mcp\n"
@@ -122,9 +95,6 @@ class TestUC019_TC101_110_McpMenu:
         Non-numeric input at the selection prompt is treated as a server
         machine name.
         """
-        if not self._servers_spawnable():
-            pytest.skip("Bundled MCP servers are not spawnable in this environment")
-
         test_input = (
             _QUICK_CHAT
             + "/mcp\n"
@@ -147,9 +117,6 @@ class TestUC019_TC101_110_McpMenu:
         Connect both registry servers, then /mcp -> y must report that
         everything is already connected.
         """
-        if not self._servers_spawnable():
-            pytest.skip("Bundled MCP servers are not spawnable in this environment")
-
         test_input = (
             _QUICK_CHAT
             + "/mcp\ny\n1\n"  # time
@@ -256,12 +223,9 @@ class TestUC019_TC101_110_McpMenu:
         TC-109: MCP Menu - Offline Server Display (UC-019 A7)
 
         Requires a previously-connected server whose status can degrade;
-        depends on spawnable MCP servers, otherwise skipped. Verifies the
-        connected-server status line renders as [OK] (live) or [OFFLINE].
+        depends on spawnable MCP servers. Verifies the connected-server
+        status line renders as [OK] (live) or [OFFLINE].
         """
-        if not self._servers_spawnable():
-            pytest.skip("Bundled MCP servers are not spawnable in this environment")
-
         test_input = (
             _QUICK_CHAT
             + "/mcp\n"

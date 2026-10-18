@@ -1,15 +1,13 @@
 """Pytest-обёртка над ручным сценарием проверки MCP-сервера времени.
 
 Offline: сервер поднимается как subprocess через MCP stdio-транспорт, сеть не
-нужна. Если сервер не запускается в текущем окружении (например, недоступен
-MCP SDK), тест пропускается.
+нужна.
 """
 
 import asyncio
 import sys
 from pathlib import Path
 
-import pytest
 from mcp.client.stdio import stdio_client
 
 from mcp import ClientSession, StdioServerParameters
@@ -41,10 +39,7 @@ async def _run() -> tuple[list[str], str, str]:
 
 def test_time_mcp_tools_and_calls():
     """Сервер отдаёт инструменты времени и корректно обрабатывает вызовы."""
-    try:
-        names, moscow_text, zones_text = asyncio.run(_run())
-    except Exception as exc:  # noqa: BLE001
-        pytest.skip(f"time_mcp server not spawnable: {exc}")
+    names, moscow_text, zones_text = asyncio.run(_run())
 
     assert "get_current_time" in names
     assert "list_available_timezones" in names
@@ -67,9 +62,6 @@ async def _invalid_timezone() -> str:
 
 def test_time_mcp_invalid_timezone_reports_error():
     """Невалидный часовой пояс возвращает понятную ошибку, а не падение."""
-    try:
-        text = asyncio.run(_invalid_timezone())
-    except Exception as exc:  # noqa: BLE001
-        pytest.skip(f"time_mcp server not spawnable: {exc}")
+    text = asyncio.run(_invalid_timezone())
 
     assert text.startswith("Ошибка:")

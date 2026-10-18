@@ -1,15 +1,13 @@
 """Pytest-обёртка над ручным сценарием проверки MCP-сервера OpenAlex.
 
 Инструмент ``search_articles`` ходит во внешний API ``api.openalex.org``,
-поэтому тест требует сети: при недоступности сети или ошибке сервера он
-пропускается (проверка инструментов листинга остаётся).
+поэтому тест требует сети.
 """
 
 import asyncio
 import sys
 from pathlib import Path
 
-import pytest
 from mcp.client.stdio import stdio_client
 
 from mcp import ClientSession, StdioServerParameters
@@ -48,20 +46,15 @@ async def _search() -> str:
 
 def test_open_alex_mcp_lists_tools():
     """Сервер поднимается и регистрирует инструмент поиска статей."""
-    try:
-        names = asyncio.run(_list_tools())
-    except Exception as exc:  # noqa: BLE001
-        pytest.skip(f"open_alex_mcp server not spawnable: {exc}")
+    names = asyncio.run(_list_tools())
 
     assert "search_articles" in names
 
 
 def test_open_alex_mcp_search_articles():
     """Инструмент поиска обращается к OpenAlex и возвращает результат (нужна сеть)."""
-    try:
-        text = asyncio.run(_search())
-    except Exception as exc:  # noqa: BLE001
-        pytest.skip(f"open_alex_mcp search unavailable: {exc}")
+    text = asyncio.run(_search())
 
-    if not text.strip():
-        pytest.skip("open_alex_mcp returned empty result (no network?)")
+    assert text.startswith("Найдено статей:"), text
+    assert "Название:" in text
+    assert "DOI:" in text

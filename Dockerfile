@@ -34,7 +34,7 @@ RUN poetry install --no-root --no-ansi
 COPY . .
 
 # Быстрая проверка, что расширение sqlite-vec грузится в этом окружении.
-RUN python test_vec.py
+RUN python scripts/check_sqlite_vec.py
 
 EXPOSE 8080
 

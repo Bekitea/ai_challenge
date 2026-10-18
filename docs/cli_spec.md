@@ -33,7 +33,7 @@ This document provides a comprehensive specification for the Command Line Interf
 
 ## 2. Architecture
 
-The presentation layer (`CLIChat` in `core/presentation/cli/cli_app.py`) is separated from application initialization (`core/di/app_factory.py`, `main_cli.py`). `CLIChat` receives all its functionality through a `UseCasesBundle` container of use cases (`core/application/use_cases/`) and never touches repositories or the LLM provider directly.
+Full description of the system architecture (layers, key decisions, DO/DON'T, feature flow) is in [`architecture.md`](architecture.md). In short: the presentation layer (`CLIChat` in `core/presentation/cli/cli_app.py`) is separated from application initialization (`core/di/app_factory.py`, `main_cli.py`) and receives all its functionality through a `UseCasesBundle` container of use cases (`core/application/use_cases/`), never touching repositories or the LLM provider directly.
 
 The presentation layer is **DTO-only**: it never sees the business object `Agent`. All inputs and outputs of use cases are DTOs defined in `core/application/dtos/` (e.g. `ChatDTO`, `ChatPreviewDTO`, `SettingsDTO`, `MessageResponseDTO`, `HistoryMessageDTO`, `ChatInfo`, `McpServerStatus`, `PhaseChangeResultDTO`). A use case loads the agent internally by `agent_id`.
 

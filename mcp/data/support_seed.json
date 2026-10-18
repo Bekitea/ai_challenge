@@ -1,0 +1,59 @@
+{
+  "users": [
+    {
+      "id": "u-1001",
+      "name": "Анна Петрова",
+      "email": "anna@example.com",
+      "plan": "pro",
+      "created_at": "2025-11-02"
+    },
+    {
+      "id": "u-1002",
+      "name": "Иван Сидоров",
+      "email": "ivan@example.com",
+      "plan": "free",
+      "created_at": "2026-01-15"
+    }
+  ],
+  "tickets": [
+    {
+      "id": "T-1001",
+      "user_id": "u-1001",
+      "subject": "Почему не работает авторизация?",
+      "status": "open",
+      "priority": "high",
+      "created_at": "2026-03-10T09:12:00",
+      "updated_at": "2026-03-10T10:05:00",
+      "description": "После смены пароля не могу войти в веб-интерфейс, ошибка 'invalid credentials'.",
+      "messages": [
+        {
+          "at": "2026-03-10T09:12:00",
+          "author": "user",
+          "text": "Сменила пароль, теперь не пускает в аккаунт."
+        },
+        {
+          "at": "2026-03-10T09:40:00",
+          "author": "support",
+          "text": "Проверьте, что не включён Caps Lock и что вход выполняется тем же email."
+        }
+      ]
+    },
+    {
+      "id": "T-1002",
+      "user_id": "u-1002",
+      "subject": "Не приходит письмо для сброса пароля",
+      "status": "pending",
+      "priority": "medium",
+      "created_at": "2026-03-11T14:20:00",
+      "updated_at": "2026-03-11T15:00:00",
+      "description": "Запросил сброс пароля, письмо не приходит на ivan@example.com.",
+      "messages": [
+        {
+          "at": "2026-03-11T14:20:00",
+          "author": "user",
+          "text": "Письмо для восстановления не приходит."
+        }
+      ]
+    }
+  ]
+}

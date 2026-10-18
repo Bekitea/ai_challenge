@@ -21,6 +21,35 @@ AVAILABLE_MCP_SERVERS: list[McpServerInfo] = [
         ),
         script_path="mcp/time_mcp.py",
     ),
+    McpServerInfo(
+        name="git",
+        title="Git",
+        description=(
+            "Git-контекст проекта: текущая ветка, статус, изменённые файлы, diff "
+            "(инструменты get_current_branch, get_status, list_changed_files, "
+            "get_diff)"
+        ),
+        script_path="mcp/git_mcp.py",
+    ),
+    McpServerInfo(
+        name="files",
+        title="Project Files",
+        description=(
+            "Чтение, поиск и изменение файлов проекта с двухшаговым "
+            "подтверждением записи (инструменты list_files, read_file, "
+            "search_in_files, write_file, replace_in_file)"
+        ),
+        script_path="mcp/files_mcp.py",
+    ),
+    McpServerInfo(
+        name="support",
+        title="Support CRM",
+        description=(
+            "Пользователи и тикеты поддержки из локального JSON "
+            "(инструменты get_ticket, find_user, list_tickets)"
+        ),
+        script_path="mcp/support_mcp.py",
+    ),
 ]
 
 

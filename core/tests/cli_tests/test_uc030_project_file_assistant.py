@@ -13,6 +13,10 @@ from e2e_helpers import (
 )
 from ground_truth import get_history_by_name, get_mcp_servers_by_name
 
+# Команды /help, /support, /files временно законсервированы флагом
+# ASSISTANT_COMMANDS_ENABLED (BACKLOG.md, раздел 2); тесты UC включают его явно.
+_ENABLE_ASSISTANTS = {"ASSISTANT_COMMANDS_ENABLED": "true"}
+
 
 def _tool_call(call_id: str, name: str, arguments: dict) -> dict:
     return {
@@ -100,6 +104,7 @@ class TestUC030_ProjectFileAssistant:
         stdout, _, _ = run_cli_command(
             test_input,
             timeout=120,
+            env=_ENABLE_ASSISTANTS,
             mock=mock_llm(
                 responses=[
                     {
@@ -133,7 +138,7 @@ class TestUC030_ProjectFileAssistant:
         stdout, _, _ = run_cli_command(
             test_input,
             timeout=180,
-            env={"PROJECT_FILES_ROOT": workspace},
+            env={**_ENABLE_ASSISTANTS, "PROJECT_FILES_ROOT": workspace},
             mock=mock_llm(responses=_write_responses(changelog)),
         )
 
@@ -152,7 +157,7 @@ class TestUC030_ProjectFileAssistant:
         """TC-165: голый /files показывает подсказку и не подключает MCP."""
         test_input = _QUICK_CHAT + "/files\n" + "/menu\n" + "8\n"
 
-        stdout, _, _ = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input, env=_ENABLE_ASSISTANTS)
 
         assert "Задайте задачу по файлам проекта" in stdout
         assert get_mcp_servers_by_name("Чат 1") == []
@@ -170,7 +175,7 @@ class TestUC030_ProjectFileAssistant:
         stdout, _, _ = run_cli_command(
             test_input,
             timeout=240,
-            env={"PROJECT_FILES_ROOT": workspace},
+            env={**_ENABLE_ASSISTANTS, "PROJECT_FILES_ROOT": workspace},
             mock=mock_llm(responses=responses),
         )
 

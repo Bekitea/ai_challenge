@@ -7,6 +7,10 @@ UC-029: `/support [тикет] <вопрос>` — ассистент подде
 from e2e_helpers import _QUICK_CHAT, run_cli_command
 from ground_truth import get_mcp_servers_by_name
 
+# Команды /help, /support, /files временно законсервированы флагом
+# ASSISTANT_COMMANDS_ENABLED (BACKLOG.md, раздел 2); тесты UC включают его явно.
+_ENABLE_ASSISTANTS = {"ASSISTANT_COMMANDS_ENABLED": "true"}
+
 
 class TestUC029_SupportAssistant:
     """TC-161..TC-162: /support как ассистент поддержки (UC-029)."""
@@ -20,7 +24,9 @@ class TestUC029_SupportAssistant:
             + "8\n"
         )
 
-        stdout, _, _ = run_cli_command(test_input, timeout=180)
+        stdout, _, _ = run_cli_command(
+            test_input, timeout=180, env=_ENABLE_ASSISTANTS
+        )
 
         assert "[AGENT]: [MOCK RESPONSE]" in stdout
         assert "не найдена" in stdout or "подключена к чату" in stdout
@@ -31,7 +37,7 @@ class TestUC029_SupportAssistant:
         """TC-162: голый /support показывает подсказку (alt-flow)."""
         test_input = _QUICK_CHAT + "/support\n" + "/menu\n" + "8\n"
 
-        stdout, _, _ = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input, env=_ENABLE_ASSISTANTS)
 
         assert "Задайте вопрос поддержки" in stdout
         assert get_mcp_servers_by_name("Чат 1") == []

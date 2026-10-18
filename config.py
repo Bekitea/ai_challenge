@@ -187,6 +187,17 @@ def _support_docs_paths() -> list[str]:
 
 SUPPORT_DOCS_PATHS = _support_docs_paths()
 
+# --- Ассистентские команды (/help, /support, /files) ---
+# По умолчанию ВЫКЛ: команды временно законсервированы — логику нужно
+# проанализировать и переработать (общий реестр команд, явная политика
+# side effects, устранение дублирования CLI/API). При выключенном флаге
+# команды скрыты из /commands и подсказки, а вызов в CLI/API сообщает об
+# отключении. Код use cases и MCP-серверов сохранён; для возврата достаточно
+# выставить ASSISTANT_COMMANDS_ENABLED=true (см. BACKLOG.md, раздел 2).
+ASSISTANT_COMMANDS_ENABLED = os.getenv(
+    "ASSISTANT_COMMANDS_ENABLED", "false"
+).lower() in ("1", "true", "yes")
+
 # --- Режим работы приложения ---
 # PROD — продакшен (обязательны ключи Yandex Cloud), TEST — моки,
 # LOCAL — локальный запуск (например, только Ollama), без обязательных

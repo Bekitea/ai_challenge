@@ -6,6 +6,10 @@ UC-027: `/help <вопрос>` — ассистент по проекту (READM
 from e2e_helpers import _QUICK_CHAT, run_cli_command
 from ground_truth import get_mcp_servers_by_name
 
+# Команды /help, /support, /files временно законсервированы флагом
+# ASSISTANT_COMMANDS_ENABLED (BACKLOG.md, раздел 2); тесты UC включают его явно.
+_ENABLE_ASSISTANTS = {"ASSISTANT_COMMANDS_ENABLED": "true"}
+
 
 class TestUC027_ProjectHelp:
     """TC-157..TC-158: /help как ассистент по проекту (UC-027)."""
@@ -19,7 +23,9 @@ class TestUC027_ProjectHelp:
             + "8\n"
         )
 
-        stdout, _, _ = run_cli_command(test_input, timeout=120)
+        stdout, _, _ = run_cli_command(
+            test_input, timeout=120, env=_ENABLE_ASSISTANTS
+        )
 
         assert "[AGENT]: [MOCK RESPONSE]" in stdout
         assert "не найдена" in stdout or "подключена к чату" in stdout
@@ -30,7 +36,7 @@ class TestUC027_ProjectHelp:
         """TC-158: голый /help показывает подсказку, а не список команд (A1)."""
         test_input = _QUICK_CHAT + "/help\n" + "/menu\n" + "8\n"
 
-        stdout, _, _ = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input, env=_ENABLE_ASSISTANTS)
 
         assert "Задайте вопрос о проекте" in stdout
         assert "--- ДОСТУПНЫЕ КОМАНДЫ ---" not in stdout
@@ -40,7 +46,7 @@ class TestUC027_ProjectHelp:
         """TC-158b: /commands показывает список команд (UC-008)."""
         test_input = _QUICK_CHAT + "/commands\n" + "/menu\n" + "8\n"
 
-        stdout, _, _ = run_cli_command(test_input)
+        stdout, _, _ = run_cli_command(test_input, env=_ENABLE_ASSISTANTS)
 
         assert "--- ДОСТУПНЫЕ КОМАНДЫ ---" in stdout
         assert "/commands - показать этот список команд" in stdout

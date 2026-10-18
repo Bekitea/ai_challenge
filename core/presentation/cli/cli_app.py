@@ -3,6 +3,7 @@ import sys
 import time
 
 from config import (
+    ASSISTANT_COMMANDS_ENABLED,
     DEFAULT_PROVIDER,
     PROJECT_KB_NAME,
     RAG_FILE_EXTENSIONS,
@@ -35,10 +36,21 @@ HELP_COMMANDS = [
     "/rag - базы знаний чата: подключить или отключить",
     "/rerank - включить или отключить реранкинг (on|off)",
     "/commands - показать этот список команд",
+]
+
+# Ассистентские команды временно законсервированы (BACKLOG.md, раздел 2):
+# при выключенном флаге они скрыты из списка и подсказки, а их вызов
+# перехватывается в chat_loop и сообщает об отключении.
+ASSISTANT_HELP_COMMANDS = [
     "/help - задать вопрос о проекте (документация + git-контекст)",
     "/support - вопрос службе поддержки (FAQ + данные тикета через CRM)",
     "/files - задача по файлам проекта (чтение, поиск, изменение)",
 ]
+
+ASSISTANT_COMMAND_NAMES = ("/help", "/support", "/files")
+
+if ASSISTANT_COMMANDS_ENABLED:
+    HELP_COMMANDS.extend(ASSISTANT_HELP_COMMANDS)
 
 
 class CLIChat:
@@ -950,11 +962,12 @@ class CLIChat:
         print("-" * 40)
 
     def _print_hint(self):
-        """Отображает подсказку о командах /help, /support, /files и /commands."""
+        """Отображает подсказку о доступных командах (и ассистентских — при включении)."""
         print("\n--- Подсказка ---")
-        print("/help <вопрос> — спросить ассистента о проекте")
-        print("/support [тикет] <вопрос> — вопрос службе поддержки")
-        print("/files <цель> — поручить ассистенту работу с файлами проекта")
+        if ASSISTANT_COMMANDS_ENABLED:
+            print("/help <вопрос> — спросить ассистента о проекте")
+            print("/support [тикет] <вопрос> — вопрос службе поддержки")
+            print("/files <цель> — поручить ассистенту работу с файлами проекта")
         print("/commands — показать список доступных команд")
         print("-" * 40)
 
@@ -1700,6 +1713,17 @@ class CLIChat:
                     print("\n--- ДОСТУПНЫЕ КОМАНДЫ ---")
                     for cmd in HELP_COMMANDS:
                         print(f"  {cmd}")
+                    continue
+
+                command_name = user_input.split(maxsplit=1)[0].lower()
+                if (
+                    command_name in ASSISTANT_COMMAND_NAMES
+                    and not ASSISTANT_COMMANDS_ENABLED
+                ):
+                    print(
+                        f"\n[INFO] Команда {command_name} временно отключена "
+                        "(законсервирована до переработки, см. BACKLOG.md)."
+                    )
                     continue
 
                 if user_input.lower() == "/help" or user_input.lower().startswith(

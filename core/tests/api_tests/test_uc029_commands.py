@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+import pytest
+
+import config
+
 _CHAT_SETTINGS = {"provider": "yandex", "model_id": "aliceai-llm-flash/latest"}
+
+
+@pytest.fixture(autouse=True)
+def _enable_assistant_commands(monkeypatch):
+    """Включает замороженные команды для тестов их логики (BACKLOG.md, раздел 2)."""
+    monkeypatch.setattr(config, "ASSISTANT_COMMANDS_ENABLED", True)
 
 
 def _create_chat(client, name: str = "support test") -> int:
@@ -108,3 +118,21 @@ def test_command_missing_chat_returns_404(client):
         "/api/chats/999999/commands", json={"command": "/support привет"}
     )
     assert response.status_code == 404
+
+
+def test_frozen_assistant_command_returns_400(client, monkeypatch):
+    """Замороженная команда возвращает 400 и не подключает MCP."""
+    monkeypatch.setattr(config, "ASSISTANT_COMMANDS_ENABLED", False)
+    chat_id = _create_chat(client)
+
+    response = client.post(
+        f"/api/chats/{chat_id}/commands",
+        json={"command": "/files найди McpGateway"},
+    )
+    assert response.status_code == 400
+    assert "отключена" in response.json()["detail"]
+
+    mcp = client.get(f"/api/chats/{chat_id}/mcp")
+    connected = {s["name"] for s in mcp.json() if s["connected"]}
+    assert "files" not in connected
+    assert "git" not in connected

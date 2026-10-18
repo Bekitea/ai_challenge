@@ -38,3 +38,51 @@
      «протухают».
 - **Действие до переработки**: не включать `SCHEDULED_REPORTS_ENABLED`; код не
   удалять.
+
+## 2. Ассистентские команды `/help`, `/support`, `/files` временно законсервированы (нужна переработка)
+
+- **Где**: `config.py` (`ASSISTANT_COMMANDS_ENABLED`),
+  `core/presentation/cli/cli_app.py` (`HELP_COMMANDS`, `ASSISTANT_HELP_COMMANDS`,
+  `_print_hint`, перехват в `chat_loop`, методы `project_help`,
+  `support_assistant`, `files_assistant`),
+  `core/presentation/api/routers/commands.py` (проверка флага),
+  `core/application/use_cases/prepare_assistant_context.py`
+  (`PrepareAssistantContextUseCase`), `core/application/use_cases/run_file_assistant.py`
+  (`RunFileAssistantUseCase`, `FILE_ASSISTANT_INSTRUCTION`),
+  `core/di/app_factory.py` (три контекста `prepare_*_context`),
+  MCP-серверы `git`/`files`/`support`, `docs/uc/uc-027`, `uc-029`, `uc-030`.
+- **Текущее состояние**: команды **отключены флагом**.
+  `config.ASSISTANT_COMMANDS_ENABLED` по умолчанию `false`; при выключенном
+  флаге они скрыты из `/commands` и подсказки, а вызов в CLI печатает
+  `[INFO] Команда /help временно отключена ...`, REST API возвращает `400`.
+  Код use cases, конфигурация `PrepareAssistantContextUseCase` и обработчики
+  CLI/API сохранены без изменений. Для возврата достаточно выставить
+  `ASSISTANT_COMMANDS_ENABLED=true`. Пункт меню «Засеять БЗ ассистентов» (9)
+  не блокируется — это отдельный функционал RAG.
+- **Почему мешает / что не так в текущей логике**:
+  1. Три команды смешивают разные concerns: привязку выделенной БЗ, подключение
+     MCP-серверов и (для `/files`) обёртку цели в жёстко заданную prompt-инструкцию
+     `FILE_ASSISTANT_INSTRUCTION`.
+  2. Логика продублирована: отдельные ветки в `cli_app.py` и в
+     `api/routers/commands.py`, включая парсинг `[тикет]` и подсказки.
+  3. Неявные side effects без отдельного подтверждения: команды меняют
+     привязки БЗ/MCP текущего чата, а `/files` пишет файлы в рабочее
+     пространство (`PROJECT_FILES_ROOT`).
+  4. Три почти одинаковых `PrepareAssistantContextUseCase` собираются вручную в
+     `app_factory.py` (различия только в имени БЗ/метках и списке MCP).
+  5. Команды встроены в статический список `HELP_COMMANDS`, из-за чего их набор
+     нельзя менять в рантайме.
+- **Направление переработки** (сделать, когда функция снова понадобится):
+  1. Единый реестр ассистентских команд с метаданными (имя, описание, контекст,
+     builder промпта, политика side effects), общий для CLI и API.
+  2. Разделить «подготовку контекста» (БЗ/MCP), шаблоны промптов и агентский
+     файловый цикл; убрать дублирование веток представления.
+  3. Явная политика side effects: подтверждение записи файлов, контроль
+     изменения привязок MCP/БЗ, sandbox и лимиты.
+  4. Устранить ручную проводку трёх контекстов в `app_factory.py` и вынести их
+     параметры в конфиг/реестр.
+  5. Наблюдаемость и UX в веб-интерфейсе (список команд, статусы, ошибки).
+  6. Покрыть переработку e2e-тестами (сейчас тесты UC-027/029/030 временно
+     включают флаг в окружении).
+- **Действие до переработки**: не включать `ASSISTANT_COMMANDS_ENABLED` в
+  проде; код не удалять.

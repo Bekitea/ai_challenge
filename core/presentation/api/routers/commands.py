@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 
+import config
 from core.presentation.api.deps import UseCasesDep
 from core.presentation.api.schemas import (
     CommandRequest,
@@ -21,6 +22,7 @@ router = APIRouter(tags=["commands"])
 _HELP = "/help"
 _SUPPORT = "/support"
 _FILES = "/files"
+_ASSISTANT_COMMANDS = frozenset({_HELP, _SUPPORT, _FILES})
 
 
 def _get_chat_or_404(uc: UseCasesDep, chat_id: int) -> None:
@@ -53,6 +55,15 @@ def run_command(chat_id: int, request: CommandRequest, uc: UseCasesDep):
     name, _, raw_argument = text.partition(" ")
     name = name.lower()
     argument = raw_argument.strip()
+
+    if name in _ASSISTANT_COMMANDS and not config.ASSISTANT_COMMANDS_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Команда '{name}' временно отключена "
+                "(законсервирована до переработки, см. BACKLOG.md)"
+            ),
+        )
 
     if name == _HELP:
         messages = uc.prepare_project_context.execute(chat_id)

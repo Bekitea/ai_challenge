@@ -41,5 +41,7 @@ class TestUC008_DisplayHelpCommands:
         assert "/info" in stdout
         assert "/branch" in stdout
         assert "/commands" in stdout
-        assert "/help - задать вопрос о проекте" in stdout
-        assert "/support - вопрос службе поддержки" in stdout
+        # Ассистентские команды законсервированы (ASSISTANT_COMMANDS_ENABLED=false).
+        assert "/help - задать вопрос о проекте" not in stdout
+        assert "/support - вопрос службе поддержки" not in stdout
+        assert "/files - задача по файлам проекта" not in stdout

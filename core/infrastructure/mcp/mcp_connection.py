@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from typing import Any
 
 from mcp.client.stdio import stdio_client
@@ -47,7 +48,13 @@ class McpConnection:
 
     def _server_params(self) -> StdioServerParameters:
         command, args = self.server_info.build_command()
-        return StdioServerParameters(command=command, args=args, env=None)
+        # Передаём окружение процесса целиком: по умолчанию SDK отдаёт
+        # дочернему процессу лишь «безопасный» поднабор переменных, из-за чего
+        # серверы не видели своих настроек (PROJECT_FILES_ROOT,
+        # SUPPORT_DATA_PATH, OPENALEX_* и т.п.).
+        return StdioServerParameters(
+            command=command, args=args, env=dict(os.environ)
+        )
 
     @staticmethod
     def _is_proxy_stream_error(exc: BaseException) -> bool:

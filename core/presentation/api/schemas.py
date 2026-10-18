@@ -126,7 +126,7 @@ class MessageResponse(_Base):
 
 
 class CommandResponse(_Base):
-    """Результат ассистентской команды (/help, /support).
+    """Результат ассистентской команды (/help, /support, /files).
 
     ``messages`` — информационные сообщения о подготовке контекста (БЗ, MCP);
     ``response`` — ответ агента или ``None``, если вопрос не задан.

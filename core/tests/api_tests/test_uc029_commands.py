@@ -1,4 +1,4 @@
-"""REST API-тесты ассистентских команд (/help, /support)."""
+"""REST API-тесты ассистентских команд (/help, /support, /files)."""
 
 from __future__ import annotations
 
@@ -61,6 +61,37 @@ def test_help_command_connects_git_mcp(client):
     mcp = client.get(f"/api/chats/{chat_id}/mcp")
     git = next(s for s in mcp.json() if s["name"] == "git")
     assert git["connected"] is True
+
+
+def test_files_command_connects_files_and_git_mcp(client):
+    """UC-030: /files отвечает и подключает files + git MCP."""
+    chat_id = _create_chat(client)
+
+    response = client.post(
+        f"/api/chats/{chat_id}/commands",
+        json={"command": "/files найди использования McpGateway"},
+    )
+    assert response.status_code == 200
+    assert response.json()["response"] is not None
+    assert response.json()["response"]["content"]
+
+    mcp = client.get(f"/api/chats/{chat_id}/mcp")
+    connected = {s["name"] for s in mcp.json() if s["connected"]}
+    assert "files" in connected
+    assert "git" in connected
+
+
+def test_bare_files_returns_hint_without_agent_call(client):
+    """Голый /files возвращает подсказку и не зовёт агента."""
+    chat_id = _create_chat(client)
+
+    response = client.post(
+        f"/api/chats/{chat_id}/commands", json={"command": "/files"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["response"] is None
+    assert any("Задайте задачу по файлам проекта" in m for m in body["messages"])
 
 
 def test_unknown_command_returns_400(client):

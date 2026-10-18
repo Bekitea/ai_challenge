@@ -349,6 +349,10 @@ class Agent:
         response = llm_provider.generate(messages=messages_for_llm, **kwargs)
 
         # === Цикл tool calling: модель может просить вызвать инструменты ===
+        # ``tail`` накапливает протокол tool-вызовов между итерациями, чтобы на
+        # каждом следующем запросе модель видела ВСЕ предыдущие вызовы и их
+        # результаты (иначе многошаговые сценарии теряли контекст).
+        tail: list[dict[str, Any]] = []
         for _ in range(self.MAX_MCP_TOOL_ITERATIONS):
             if not response.tool_calls:
                 break
@@ -399,8 +403,10 @@ class Agent:
                 )
 
             # Повторный запрос к LLM уже с результатами инструментов:
-            # постоянная история (уже очищенная стратегией) + временный хвост.
-            followup_messages = messages_for_llm + pending
+            # постоянная история (уже очищенная стратегией) + накопленный
+            # временный хвост (все раунды tool calling).
+            tail.extend(pending)
+            followup_messages = messages_for_llm + tail
             response = llm_provider.generate(messages=followup_messages, **kwargs)
 
             # Ответ получен — группа завершена, переносим её в историю.

@@ -13,6 +13,7 @@ from config import (
 from core.application.dtos import (
     ChatDTO,
     MemorySaveResult,
+    MessageResponseDTO,
     SettingsDTO,
     StrategySelection,
 )
@@ -36,6 +37,7 @@ HELP_COMMANDS = [
     "/commands - показать этот список команд",
     "/help - задать вопрос о проекте (документация + git-контекст)",
     "/support - вопрос службе поддержки (FAQ + данные тикета через CRM)",
+    "/files - задача по файлам проекта (чтение, поиск, изменение)",
 ]
 
 
@@ -948,10 +950,11 @@ class CLIChat:
         print("-" * 40)
 
     def _print_hint(self):
-        """Отображает подсказку о командах /help, /support и /commands."""
+        """Отображает подсказку о командах /help, /support, /files и /commands."""
         print("\n--- Подсказка ---")
         print("/help <вопрос> — спросить ассистента о проекте")
         print("/support [тикет] <вопрос> — вопрос службе поддержки")
+        print("/files <цель> — поручить ассистенту работу с файлами проекта")
         print("/commands — показать список доступных команд")
         print("-" * 40)
 
@@ -1711,6 +1714,12 @@ class CLIChat:
                     self.support_assistant(user_input[len("/support") :])
                     continue
 
+                if user_input.lower() == "/files" or user_input.lower().startswith(
+                    "/files "
+                ):
+                    self.files_assistant(user_input[len("/files") :])
+                    continue
+
                 # Обработка команд фаз
                 if user_input.lower() in ("/plan", "/execute", "/validate", "/report"):
                     phase_result = self.use_cases.change_phase.execute(
@@ -1794,7 +1803,11 @@ class CLIChat:
             return False
 
         print("\r" + " " * 40 + "\r", end="")
+        self._print_response(response)
+        return True
 
+    def _print_response(self, response: MessageResponseDTO) -> None:
+        """Печатает рассуждения, ответ, источники и статистику токенов."""
         # Рассуждения модели отображаются перед ответом и всегда,
         # без запроса пользователя.
         if response.reasoning:
@@ -1828,7 +1841,6 @@ class CLIChat:
                     f"  [Заполненность контекста: {response.prompt_tokens}/"
                     f"{context_window_size} ({fill_percent:.1f}%)]"
                 )
-        return True
 
     def _print_assistant_context(self, messages: list[str]) -> None:
         """Печатает информационные/предупредительные сообщения ассистента."""
@@ -1888,6 +1900,37 @@ class CLIChat:
         )
         prompt = f"Тикет {ticket_id}. {question}" if ticket_id else question
         self._send_user_message(prompt)
+
+    def files_assistant(self, argument: str):
+        """Обрабатывает /files <цель>: автономная работа с файлами проекта."""
+        if not self.current_chat:
+            print("\n[WARN] Сначала выберите или создайте чат!")
+            return
+
+        goal = argument.strip()
+        if not goal:
+            print(
+                "\n[INFO] Задайте задачу по файлам проекта: /files <цель>. "
+                "Например: /files найди все использования McpGateway"
+            )
+            print("[INFO] Список команд — /commands.")
+            return
+
+        print("\n[AGENT] печатает...", end="", flush=True)
+        try:
+            result = self.use_cases.run_file_assistant.execute(
+                self.current_chat_id, goal
+            )
+        except ContextWindowExceededError as e:
+            print("\r" + " " * 40 + "\r", end="")
+            print(f"\n[ERROR] {e}")
+            print("Необходимо очистить историю сообщений или создать новый чат.")
+            return
+
+        print("\r" + " " * 40 + "\r", end="")
+        self._print_assistant_context(result.messages)
+        if result.response is not None:
+            self._print_response(result.response)
 
     def _print_memory_save_start(self, chat_name: str) -> None:
         """Выводит уведомление о начале заполнения памяти чата."""

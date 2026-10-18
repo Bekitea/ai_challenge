@@ -6,6 +6,7 @@ Offline: сервер поднимается как subprocess через MCP st
 """
 
 import asyncio
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -22,8 +23,10 @@ def _text(result) -> str:
     return "\n".join(c.text for c in result.content if c.type == "text")
 
 
-async def _call(tool: str, arguments: dict) -> tuple[list[str], str]:
-    params = StdioServerParameters(command=sys.executable, args=[SERVER], env=None)
+async def _call(
+    tool: str, arguments: dict, env: dict | None = None
+) -> tuple[list[str], str]:
+    params = StdioServerParameters(command=sys.executable, args=[SERVER], env=env)
     async with (
         stdio_client(params) as (read, write),
         ClientSession(read, write) as session,
@@ -86,3 +89,23 @@ def test_files_mcp_path_escape_forbidden():
     """Выход за пределы корня проекта запрещён."""
     _, text = asyncio.run(_call("read_file", {"path": "../../etc/passwd"}))
     assert "Ошибка" in text
+
+
+def test_files_mcp_root_override(tmp_path):
+    """PROJECT_FILES_ROOT переопределяет корень рабочего пространства."""
+    (tmp_path / "note.txt").write_text("inside workspace\n", encoding="utf-8")
+    env = {**os.environ, "PROJECT_FILES_ROOT": str(tmp_path)}
+
+    _, text = asyncio.run(_call("read_file", {"path": "note.txt"}, env=env))
+    assert "--- note.txt ---" in text
+    assert "inside workspace" in text
+
+    _, applied = asyncio.run(
+        _call(
+            "write_file",
+            {"path": "created.txt", "content": "ok\n", "apply": True},
+            env=env,
+        )
+    )
+    assert "записан" in applied
+    assert (tmp_path / "created.txt").read_text(encoding="utf-8") == "ok\n"

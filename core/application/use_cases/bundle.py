@@ -70,6 +70,9 @@ if TYPE_CHECKING:
     from core.application.use_cases.retrieve_rag_context import (
         RetrieveRagContextUseCase,
     )
+    from core.application.use_cases.run_file_assistant import (
+        RunFileAssistantUseCase,
+    )
     from core.application.use_cases.run_scheduled_agent_task import (
         RunScheduledAgentTaskUseCase,
     )
@@ -155,6 +158,7 @@ class UseCasesBundle:
     seed_project_knowledge_base: SeedProjectKnowledgeBaseUseCase
     prepare_project_context: PrepareAssistantContextUseCase
     prepare_support_context: PrepareAssistantContextUseCase
+    run_file_assistant: RunFileAssistantUseCase
     seed_support_knowledge_base: SeedProjectKnowledgeBaseUseCase
     create_api_key: CreateApiKeyUseCase
     list_api_keys: ListApiKeysUseCase

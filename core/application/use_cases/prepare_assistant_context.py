@@ -14,13 +14,13 @@ from core.application.use_cases.list_knowledge_bases import (
 
 
 class PrepareAssistantContextUseCase:
-    """Готовит контекст ассистента: выделенная БЗ + MCP-сервер.
+    """Готовит контекст ассистента: выделенная БЗ + один или несколько MCP-серверов.
 
-    Используется командами ``/help`` (проектный ассистент) и ``/support``
-    (ассистент поддержки): привязывает к чату выделенную базу знаний и
-    идемпотентно подключает MCP-сервер. Возвращает информационные/предупредительные
-    сообщения для вывода пользователю. Сбои не фатальны — команда продолжает
-    работу и передаёт вопрос агенту.
+    Используется командами ``/help`` (проектный ассистент), ``/support``
+    (ассистент поддержки) и ``/files`` (ассистент по файлам): привязывает к чату
+    выделенную базу знаний и идемпотентно подключает MCP-серверы. Возвращает
+    информационные/предупредительные сообщения для вывода пользователю. Сбои не
+    фатальны — команда продолжает работу и передаёт вопрос агенту.
     """
 
     def __init__(
@@ -34,7 +34,7 @@ class PrepareAssistantContextUseCase:
         knowledge_base_label: str,
         missing_kb_label: str,
         attach_error_subject: str,
-        mcp_server_name: str,
+        mcp_server_names: list[str],
     ):
         self._list_knowledge_bases = list_knowledge_bases
         self._list_agent_knowledge_bases = list_agent_knowledge_bases
@@ -44,12 +44,13 @@ class PrepareAssistantContextUseCase:
         self._kb_label = knowledge_base_label
         self._missing_kb_label = missing_kb_label
         self._attach_error_subject = attach_error_subject
-        self._mcp_server_name = mcp_server_name
+        self._mcp_server_names = list(mcp_server_names)
 
     def execute(self, agent_id: int) -> list[str]:
         """Готовит контекст и возвращает сообщения для пользователя."""
         messages = self._ensure_knowledge_base(agent_id)
-        messages.extend(self._connect_mcp_server(agent_id))
+        for server_name in self._mcp_server_names:
+            messages.extend(self._connect_mcp_server(agent_id, server_name))
         return messages
 
     def _ensure_knowledge_base(self, agent_id: int) -> list[str]:
@@ -83,15 +84,11 @@ class PrepareAssistantContextUseCase:
             f"[INFO] {self._kb_label} '{self._kb_name}' подключена к чату."
         ]
 
-    def _connect_mcp_server(self, agent_id: int) -> list[str]:
+    def _connect_mcp_server(self, agent_id: int, server_name: str) -> list[str]:
         try:
-            success, message = self._connect_mcp.execute(
-                agent_id, self._mcp_server_name
-            )
+            success, message = self._connect_mcp.execute(agent_id, server_name)
         except Exception as exc:  # noqa: BLE001
-            return [
-                f"[WARN] Не удалось подключить {self._mcp_server_name} MCP: {exc}"
-            ]
+            return [f"[WARN] Не удалось подключить {server_name} MCP: {exc}"]
         if success:
             return [f"[INFO] {message}"]
         return []

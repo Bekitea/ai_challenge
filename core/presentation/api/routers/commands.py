@@ -1,6 +1,6 @@
-"""Эндпоинты ассистентских команд (/help, /support).
+"""Эндпоинты ассистентских команд (/help, /support, /files).
 
-Команда готовит контекст (база знаний + MCP-сервер) и передаёт вопрос агенту.
+Команда готовит контекст (база знаний + MCP-серверы) и передаёт задачу агенту.
 Presentation остаётся DTO-only: работа идёт через use cases, схемы — из
 ``core.presentation.api.schemas``.
 """
@@ -20,6 +20,7 @@ router = APIRouter(tags=["commands"])
 
 _HELP = "/help"
 _SUPPORT = "/support"
+_FILES = "/files"
 
 
 def _get_chat_or_404(uc: UseCasesDep, chat_id: int) -> None:
@@ -68,6 +69,21 @@ def run_command(chat_id: int, request: CommandRequest, uc: UseCasesDep):
         hint = (
             "[INFO] Задайте вопрос поддержки: /support [тикет] <вопрос>. "
             "Например: /support T-1001 почему не работает авторизация?"
+        )
+    elif name == _FILES:
+        result = uc.run_file_assistant.execute(chat_id, argument)
+        if result.response is None:
+            result.messages.append(
+                "[INFO] Задайте задачу по файлам проекта: /files <цель>. "
+                "Например: /files найди все использования McpGateway"
+            )
+        return CommandResponse(
+            messages=result.messages,
+            response=(
+                MessageResponse.model_validate(result.response)
+                if result.response is not None
+                else None
+            ),
         )
     else:
         raise HTTPException(

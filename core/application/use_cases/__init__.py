@@ -47,6 +47,7 @@ from core.application.use_cases.prepare_assistant_context import (
 from core.application.use_cases.refresh_agent_memory import RefreshAgentMemoryUseCase
 from core.application.use_cases.remove_invariant import RemoveInvariantUseCase
 from core.application.use_cases.retrieve_rag_context import RetrieveRagContextUseCase
+from core.application.use_cases.run_file_assistant import RunFileAssistantUseCase
 from core.application.use_cases.run_scheduled_agent_task import (
     RunScheduledAgentTaskUseCase,
 )
@@ -102,6 +103,7 @@ __all__ = [
     "RefreshAgentMemoryUseCase",
     "RemoveInvariantUseCase",
     "RetrieveRagContextUseCase",
+    "RunFileAssistantUseCase",
     "RunScheduledAgentTaskUseCase",
     "SaveAgentMemoryUseCase",
     "SaveUnsavedMemoriesUseCase",

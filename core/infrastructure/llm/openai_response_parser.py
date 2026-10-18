@@ -5,6 +5,10 @@ from typing import Any
 from config import AVAILABLE_EMBEDDING_MODELS
 from core.domain.dtos.llm_response import LlmResponse
 from core.domain.dtos.tool_call import ToolCall
+from core.infrastructure.llm.text_tool_calls import (
+    extract_text_tool_calls,
+    strip_text_tool_calls,
+)
 
 
 def _openai():
@@ -42,6 +46,12 @@ def _parse_openai_response(response: Any) -> LlmResponse:
             tool_calls.append(
                 ToolCall(id=tc.id or "", name=fn.name, arguments=fn.arguments)
             )
+    elif raw_content:
+        # Fallback: модель вернула tool-вызов текстом в content.
+        text_calls = extract_text_tool_calls(raw_content)
+        if text_calls:
+            tool_calls = text_calls
+            raw_content = strip_text_tool_calls(raw_content)
 
     usage = getattr(response, "usage", None)
     prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None

@@ -8,6 +8,10 @@
 Запись двухшаговая: по умолчанию инструменты записи (``write_file``,
 ``replace_in_file``) не меняют файл, а возвращают preview-diff (``apply=False``).
 Чтобы применить изменение, инструмент нужно вызвать повторно с ``apply=True``.
+
+Корень рабочего пространства по умолчанию — каталог проекта; его можно
+переопределить переменной окружения ``PROJECT_FILES_ROOT`` (используется в
+e2e-тестах, чтобы не менять реальный репозиторий).
 """
 
 from __future__ import annotations
@@ -21,6 +25,9 @@ from pathlib import Path
 from mcp.server import MCPServer
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# Корень можно переопределить (например, для e2e-тестов записи, чтобы не
+# менять реальный репозиторий).
+DEFAULT_PROJECT_ROOT = PROJECT_ROOT
 
 # Лимит на чтение/поиск/запись одного файла (по умолчанию 256 КБ).
 DEFAULT_MAX_BYTES = 256 * 1024
@@ -60,10 +67,17 @@ def _max_bytes() -> int:
     return value if value > 0 else DEFAULT_MAX_BYTES
 
 
+def _root() -> Path:
+    """Возвращает корень рабочего пространства (env ``PROJECT_FILES_ROOT``)."""
+    raw = os.getenv("PROJECT_FILES_ROOT")
+    return Path(raw).resolve() if raw else DEFAULT_PROJECT_ROOT
+
+
 def _resolve(path: str, *, allow_missing: bool = False) -> Path:
     """Разрешает путь и проверяет, что он внутри корня проекта."""
-    candidate = (PROJECT_ROOT / path).resolve() if not Path(path).is_absolute() else Path(path).resolve()
-    if candidate != PROJECT_ROOT and PROJECT_ROOT not in candidate.parents:
+    root = _root()
+    candidate = (root / path).resolve() if not Path(path).is_absolute() else Path(path).resolve()
+    if candidate != root and root not in candidate.parents:
         raise ValueError(f"Путь '{path}' выходит за пределы корня проекта.")
     if not allow_missing and not candidate.exists():
         raise ValueError(f"Путь '{path}' не найден.")
@@ -76,9 +90,9 @@ def _is_forbidden(path: Path) -> bool:
     return name == ".env" or name.startswith(".env")
 
 
-def _load_gitignore() -> list[tuple[str, bool, bool]]:
+def _load_gitignore(root: Path) -> list[tuple[str, bool, bool]]:
     """Читает .gitignore и возвращает (pattern, dir_only, anchored)."""
-    gitignore = PROJECT_ROOT / ".gitignore"
+    gitignore = root / ".gitignore"
     patterns: list[tuple[str, bool, bool]] = []
     if not gitignore.is_file():
         return patterns
@@ -99,12 +113,21 @@ def _load_gitignore() -> list[tuple[str, bool, bool]]:
     return patterns
 
 
-_GITIGNORE = _load_gitignore()
+_GITIGNORE_CACHE: dict[Path, list[tuple[str, bool, bool]]] = {}
 
 
-def _matches_ignored(rel_posix: str, name: str) -> bool:
+def _gitignore_for(root: Path) -> list[tuple[str, bool, bool]]:
+    """Возвращает правила .gitignore для корня (с кэшем по корню)."""
+    if root not in _GITIGNORE_CACHE:
+        _GITIGNORE_CACHE[root] = _load_gitignore(root)
+    return _GITIGNORE_CACHE[root]
+
+
+def _matches_ignored(
+    rel_posix: str, name: str, patterns: list[tuple[str, bool, bool]]
+) -> bool:
     parts = rel_posix.split("/")
-    for pattern, _dir_only, anchored in _GITIGNORE:
+    for pattern, _dir_only, anchored in patterns:
         if anchored:
             if rel_posix == pattern or fnmatch.fnmatch(rel_posix, pattern):
                 return True
@@ -116,14 +139,17 @@ def _matches_ignored(rel_posix: str, name: str) -> bool:
     return False
 
 
-def _is_ignored(rel_posix: str, name: str) -> bool:
+def _is_ignored(
+    rel_posix: str, name: str, patterns: list[tuple[str, bool, bool]]
+) -> bool:
     if any(part in DEFAULT_IGNORED_DIRS for part in rel_posix.split("/")):
         return True
-    return _matches_ignored(rel_posix, name)
+    return _matches_ignored(rel_posix, name, patterns)
 
 
-def _walk_files(base: Path) -> Iterator[Path]:
+def _walk_files(base: Path, patterns: list[tuple[str, bool, bool]]) -> Iterator[Path]:
     """Обходит файлы, пропуская игнорируемые каталоги (без спуска внутрь)."""
+    root = _root()
     stack = [base]
     while stack:
         current = stack.pop()
@@ -133,11 +159,11 @@ def _walk_files(base: Path) -> Iterator[Path]:
             continue
         for entry in entries:
             try:
-                rel = entry.relative_to(PROJECT_ROOT).as_posix()
+                rel = entry.relative_to(root).as_posix()
             except ValueError:
                 continue
             if entry.is_dir():
-                if _is_ignored(rel, entry.name):
+                if _is_ignored(rel, entry.name, patterns):
                     continue
                 stack.append(entry)
             elif entry.is_file():
@@ -145,7 +171,7 @@ def _walk_files(base: Path) -> Iterator[Path]:
 
 
 def _rel(path: Path) -> str:
-    return path.relative_to(PROJECT_ROOT).as_posix()
+    return path.relative_to(_root()).as_posix()
 
 
 def _read_bytes(path: Path) -> bytes:
@@ -204,7 +230,8 @@ def list_files(path: str = "", pattern: str = "") -> str:
         return f"Ошибка: {exc}"
 
     files: list[str] = []
-    for entry in _walk_files(base):
+    patterns = _gitignore_for(_root())
+    for entry in _walk_files(base, patterns):
         rel = _rel(entry)
         if pattern and not fnmatch.fnmatch(entry.name, pattern):
             continue
@@ -261,7 +288,8 @@ def search_in_files(query: str, path: str = "", mask: str = "") -> str:
 
     needle = query.lower()
     matches: list[str] = []
-    candidates = [base] if base.is_file() else list(_walk_files(base))
+    patterns = _gitignore_for(_root())
+    candidates = [base] if base.is_file() else list(_walk_files(base, patterns))
     for entry in candidates:
         if _is_forbidden(entry):
             continue

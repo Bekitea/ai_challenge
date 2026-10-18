@@ -57,6 +57,7 @@ from core.application.use_cases import (
     RefreshAgentMemoryUseCase,
     RemoveInvariantUseCase,
     RetrieveRagContextUseCase,
+    RunFileAssistantUseCase,
     RunScheduledAgentTaskUseCase,
     SaveAgentMemoryUseCase,
     SaveUnsavedMemoriesUseCase,
@@ -267,7 +268,7 @@ def initialize_application() -> UseCasesBundle:
         knowledge_base_label="Проектная база знаний",
         missing_kb_label="Проектная БЗ",
         attach_error_subject="проектную БЗ",
-        mcp_server_name="git",
+        mcp_server_names=["git"],
     )
     prepare_support_context = PrepareAssistantContextUseCase(
         list_knowledge_bases=list_knowledge_bases,
@@ -278,7 +279,18 @@ def initialize_application() -> UseCasesBundle:
         knowledge_base_label="База знаний поддержки",
         missing_kb_label="БЗ поддержки",
         attach_error_subject="БЗ поддержки",
-        mcp_server_name="support",
+        mcp_server_names=["support"],
+    )
+    prepare_files_context = PrepareAssistantContextUseCase(
+        list_knowledge_bases=list_knowledge_bases,
+        list_agent_knowledge_bases=list_agent_knowledge_bases,
+        attach_knowledge_base=attach_knowledge_base,
+        connect_mcp=connect_mcp,
+        knowledge_base_name=PROJECT_KB_NAME,
+        knowledge_base_label="Проектная база знаний",
+        missing_kb_label="Проектная БЗ",
+        attach_error_subject="проектную БЗ",
+        mcp_server_names=["files", "git"],
     )
 
     create_knowledge_base = CreateKnowledgeBaseUseCase(
@@ -355,6 +367,10 @@ def initialize_application() -> UseCasesBundle:
         ),
         prepare_project_context=prepare_project_context,
         prepare_support_context=prepare_support_context,
+        run_file_assistant=RunFileAssistantUseCase(
+            prepare_context=prepare_files_context,
+            send_message=send_message,
+        ),
         seed_support_knowledge_base=SeedProjectKnowledgeBaseUseCase(
             knowledge_base_repository=knowledge_base_repository,
             document_repository=document_repository,

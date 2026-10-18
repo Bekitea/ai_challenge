@@ -357,6 +357,7 @@ Then the chat loop starts immediately (history is displayed in its header). The 
 --- Подсказка ---
 /help <вопрос> — спросить ассистента о проекте
 /support [тикет] <вопрос> — вопрос службе поддержки
+/files <цель> — поручить ассистенту работу с файлами проекта
 /commands — показать список доступных команд
 ----------------------------------------
 ```
@@ -427,6 +428,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   /commands - показать этот список команд
   /help - задать вопрос о проекте (документация + git-контекст)
   /support - вопрос службе поддержки (FAQ + данные тикета через CRM)
+  /files - задача по файлам проекта (чтение, поиск, изменение)
 ```
 
 ##### `/help` — ассистент по проекту (UC-027)
@@ -449,6 +451,15 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   2. `/support [тикет] <вопрос>`: `prepare_support_context` attaches the support knowledge base if it exists (`[INFO] База знаний поддержки '{name}' подключена к чату.`) and connects the `support` MCP server (idempotent), then sends the question via `send_message`. If the first token looks like a ticket/user id (`T-…`, `u-…`, `ticket…`), it is prefixed to the question so the agent fetches the ticket with `get_ticket`
 - **Side Effects**: support knowledge base may become attached to the chat; `support` may be added to the chat's MCP servers
 - **Misuse**: if no active chat → `[WARN] Сначала выберите или создайте чат!`; missing base → `[WARN] БЗ поддержки '{name}' не найдена. Засеять её можно в меню 'Базы знаний' (пункт 9).`
+
+##### `/files` — ассистент по файлам проекта (UC-030)
+
+- **Action**: Perform real file operations in the project (search/read/create/modify) using the `files` MCP server, with `git` for diff context
+- **Flow**:
+  1. Bare `/files` (no goal): `[INFO] Задайте задачу по файлам проекта: /files <цель>. ...` and `[INFO] Список команд — /commands.`; no MCP connection is attempted
+  2. `/files <цель>`: `prepare_files_context` attaches the project knowledge base if it exists and connects the `files` and `git` MCP servers (idempotent; failures are warned, not fatal). The goal is wrapped in a goal-level instruction and sent through `send_message`: the agent decides which files to search/read/modify, works with at least 2-3 files where needed, shows a preview-diff first (`apply=False`) and only then applies changes (`apply=True`), and finishes with the list of changed files and the resulting diff
+- **Side Effects**: project knowledge base may become attached to the chat; `files`/`git` may be added to the chat's MCP servers; files inside the workspace (`PROJECT_FILES_ROOT`, default project root) may be created/modified
+- **Misuse**: if no active chat → `[WARN] Сначала выберите или создайте чат!`; `.env*`, binary and oversized files are rejected; paths outside the workspace are forbidden
 
 ##### `/summary`
 
@@ -853,3 +864,4 @@ this document.
 | UC-027 | Project Help Assistant (/help) | Answer project questions via the project knowledge base (RAG) and the git MCP server. | [uc-027-project-help-assistant.md](uc/uc-027-project-help-assistant.md) |
 | UC-028 | Seed Assistant Knowledge Bases (menu 7, option 9) | Rebuild the project and support knowledge bases from their sources, deleting stale documents first. | [uc-028-seed-project-knowledge-base.md](uc/uc-028-seed-project-knowledge-base.md) |
 | UC-029 | Support Assistant (/support) | Answer support questions via the support knowledge base (FAQ RAG) and the support MCP server (ticket/user context). | [uc-029-support-assistant.md](uc/uc-029-support-assistant.md) |
+| UC-030 | Project File Assistant (/files) | Perform real file operations (search/read/create/modify) via the files and git MCP servers, showing diffs and applying changes. | [uc-030-project-file-assistant.md](uc/uc-030-project-file-assistant.md) |

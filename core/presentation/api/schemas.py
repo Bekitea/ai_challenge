@@ -42,7 +42,7 @@ class ChatPreview(_Base):
 
 
 class Chat(_Base):
-    """Базовые атрибуты чата."""
+    """Краткая информация о чате."""
 
     agent_id: int
     name: str
@@ -50,6 +50,7 @@ class Chat(_Base):
     current_phase: str
     system_prompt: str | None = None
     task_profile_name: str | None = None
+    mcp_messages: list[str] = Field(default_factory=list)
 
 
 class TaskMemory(_Base):
@@ -187,6 +188,7 @@ class TaskProfile(_Base):
     facts_count: int = 0
     preferences: str = ""
     invariants_count: int = 0
+    mcp_servers: list[str] = Field(default_factory=list)
 
 
 class DeleteProfileResult(_Base):
@@ -206,6 +208,7 @@ class TaskProfileDetail(_Base):
     facts: list[str] = Field(default_factory=list)
     preferences: str = ""
     invariants: list[str] = Field(default_factory=list)
+    mcp_servers: list[str] = Field(default_factory=list)
 
 
 class KnowledgeBase(_Base):
@@ -281,11 +284,81 @@ class GlobalMemory(_Base):
 
 
 class DocumentUploadResult(_Base):
-    """Итог добавления документов в базу знаний."""
+    """Итог загрузки документов в базу знаний."""
 
     documents: list[Document] = Field(default_factory=list)
     ready_count: int = 0
     error_count: int = 0
+
+
+class ResearchLibrary(_Base):
+    """Научная библиотека диссертации."""
+
+    id: int
+    name: str
+    knowledge_base_id: int | None = None
+    description: str | None = None
+    goal: str | None = None
+    field: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+    year_from: int | None = None
+    year_to: int | None = None
+    language: str | None = None
+    article_count: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ResearchArticle(_Base):
+    """Статья научной библиотеки."""
+
+    id: int
+    library_id: int
+    title: str
+    openalex_id: str | None = None
+    doi: str | None = None
+    authors: list[str] = Field(default_factory=list)
+    publication_year: int | None = None
+    venue: str | None = None
+    language: str | None = None
+    cited_by_count: int | None = None
+    is_open_access: bool = False
+    source: str | None = None
+    status: str = "candidate"
+    error_message: str | None = None
+    document_id: int | None = None
+    summary: str | None = None
+    summary_model: str | None = None
+
+
+class ResearchArticlesPage(_Base):
+    """Страница статей научной библиотеки."""
+
+    library: ResearchLibrary
+    total: int
+    limit: int
+    offset: int
+    articles: list[ResearchArticle] = Field(default_factory=list)
+
+
+class ResearchLibraryBindingResult(_Base):
+    """Результат привязки научной библиотеки к чату."""
+
+    library: ResearchLibrary
+    knowledge_base_attached: bool = False
+    previous_library_detached: bool = False
+    messages: list[str] = Field(default_factory=list)
+
+
+class ResearchLibraryOperationResult(_Base):
+    """Результат открепления/удаления научной библиотеки."""
+
+    success: bool
+    message: str
+    library: ResearchLibrary | None = None
+    affected_chats: int = 0
+    deleted_articles: int = 0
+    deleted_documents: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +428,13 @@ class CreateTaskProfileRequest(BaseModel):
     description: str
     preferences: str = ""
     invariants: list[str] | None = None
+    mcp_servers: list[str] | None = None
+
+
+class SetProfileMcpServersRequest(BaseModel):
+    """Тело запроса замены MCP-серверов профиля."""
+
+    servers: list[str] = Field(default_factory=list)
 
 
 class AddInvariantRequest(BaseModel):
@@ -375,6 +455,25 @@ class SearchRequest(BaseModel):
 
     query: str
     top_k: int | None = None
+
+
+class SwitchResearchLibraryRequest(BaseModel):
+    """Тело запроса подключения существующей научной библиотеки."""
+
+    name: str
+
+
+class CreateResearchLibraryRequest(BaseModel):
+    """Тело запроса создания научной библиотеки."""
+
+    name: str
+    description: str | None = None
+    goal: str | None = None
+    field: str | None = None
+    keywords: list[str] | None = None
+    year_from: int | None = None
+    year_to: int | None = None
+    language: str | None = None
 
 
 class SummaryResponse(BaseModel):

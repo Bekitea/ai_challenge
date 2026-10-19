@@ -35,6 +35,12 @@ def create_app() -> FastAPI:
     процесса, поэтому воркер должен быть ровно один.
     """
     use_cases = initialize_application()
+    # Предустановленные профили задачи (идемпотентно, при первом запуске).
+    # В TEST-режиме не сеем их автоматически (см. main_cli).
+    import config
+
+    if config.APPLICATION_MODE != "TEST":
+        use_cases.ensure_preset_task_profiles.execute()
     return build_app(use_cases)
 
 

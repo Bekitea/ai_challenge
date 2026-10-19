@@ -20,6 +20,19 @@ def main():
         # Initialize all application components via factory
         use_cases = initialize_application()
 
+        # Создаём предустановленные профили задачи, если их ещё нет.
+        # В TEST-режиме не сеем их автоматически, чтобы e2e-фикстуры оставались
+        # детерминированными (как и мок-провайдеры); логика покрыта unit-тестами.
+        from config import APPLICATION_MODE
+
+        if APPLICATION_MODE != "TEST":
+            preset_result = use_cases.ensure_preset_task_profiles.execute()
+            if preset_result.created:
+                print(
+                    "[INFO] Созданы предустановленные профили задачи: "
+                    + ", ".join(preset_result.names)
+                )
+
         # Create CLI application with use cases
         cli = CLIChat(use_cases)
 

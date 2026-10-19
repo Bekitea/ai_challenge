@@ -1,9 +1,23 @@
+import json
 import pickle
 from datetime import datetime
 from pathlib import Path
 
 from core.domain.dtos.task_profile import TaskProfile
 from core.infrastructure.persistence.orm import TaskProfileInvariantORM
+
+
+def _load_mcp_servers(raw: str | None) -> list[str]:
+    """Разбирает JSON-список MCP-серверов профиля."""
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(item).strip() for item in data if str(item).strip()]
 
 
 class DatabaseTaskProfileRepository:
@@ -67,6 +81,7 @@ class DatabaseTaskProfileRepository:
             facts=facts,
             preferences=orm.preferences or "",
             invariants=invariants,
+            mcp_servers=_load_mcp_servers(orm.mcp_servers_json),
         )
     
     def get_all_profiles(self) -> list[TaskProfile]:
@@ -101,17 +116,21 @@ class DatabaseTaskProfileRepository:
         description: str,
         preferences: str = "",
         invariants: list[str] | None = None,
+        mcp_servers: list[str] | None = None,
     ) -> TaskProfile:
         from uuid import uuid4
         profile_id = str(uuid4())
         created_at = datetime.now().astimezone()
-        
+
         orm_profile = self._orm_class(
             id=profile_id,
             name=name,
             description=description,
             created_at=created_at,
             preferences=preferences or "",
+            mcp_servers_json=json.dumps(
+                list(mcp_servers or []), ensure_ascii=False
+            ),
         )
         
         with self._get_session() as session:
@@ -133,6 +152,21 @@ class DatabaseTaskProfileRepository:
             
             return self._orm_to_task_profile(orm_profile)
     
+    def set_mcp_servers(
+        self, profile_id: str, mcp_servers: list[str]
+    ) -> TaskProfile | None:
+        """Заменяет список MCP-серверов профиля и возвращает профиль."""
+        with self._get_session() as session:
+            orm = session.get(self._orm_class, profile_id)
+            if orm is None:
+                return None
+            orm.mcp_servers_json = json.dumps(
+                list(mcp_servers or []), ensure_ascii=False
+            )
+            session.commit()
+            session.refresh(orm)
+            return self._orm_to_task_profile(orm)
+
     def delete_profile(self, profile_id: str) -> bool:
         from sqlalchemy import delete, select
         with self._get_session() as session:

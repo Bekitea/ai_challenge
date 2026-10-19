@@ -47,6 +47,9 @@ class TaskProfileORM(Base):
         DateTime, nullable=False, default=lambda: datetime.now().astimezone()
     )
     preferences: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
+    mcp_servers_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default="[]"
+    )
 
     # Связь с агентами
     agents: Mapped[list[AgentORM]] = relationship(

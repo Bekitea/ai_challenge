@@ -1680,6 +1680,29 @@ cryptography = {version = ">=3.4.0", optional = true, markers = "extra == \"cryp
 crypto = ["cryptography (>=3.4.0)"]
 
 [[package]]
+name = "pypdf"
+version = "6.21.1"
+description = "A pure-python PDF library capable of splitting, merging, cropping, and transforming PDF files"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "pypdf-6.21.1-py3-none-any.whl", hash = "sha256:553e2d42f5bb3bb2a785a7d3de8ef90bb7df74b5413eff5a7b4388007ea9254b"},
+    {file = "pypdf-6.21.1.tar.gz", hash = "sha256:2d62c383acd6e0dff0a96322ba8b1135229343b084d73c6f6cfd947fd291afcb"},
+]
+
+[package.extras]
+brotli = ["brotli (>=1.2.0)"]
+crypto = ["cryptography (>3.0)"]
+cryptodome = ["PyCryptodome"]
+dev = ["flit", "pip-tools", "pre-commit", "pytest-cov", "pytest-socket", "pytest-timeout", "pytest-xdist", "wheel"]
+docs = ["myst_parser", "sphinx", "sphinx_rtd_theme"]
+fonts = ["fonttools"]
+full = ["Pillow (>=8.0.0)", "arabic-reshaper", "brotli (>=1.2.0)", "cryptography (>3.0)", "fonttools", "python-bidi"]
+image = ["Pillow (>=8.0.0)"]
+rtl-text = ["arabic-reshaper", "python-bidi"]
+
+[[package]]
 name = "pytest"
 version = "9.1.1"
 description = "pytest: simple powerful testing with Python"
@@ -2657,4 +2680,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.14.4"
-content-hash = "820b6fa608174ea94ee9910014435a5a9c2f95bcd5e1b62ebf1fb9b6ea19f9c1"
+content-hash = "6dcb6c432e73195aa6c569ec10ac4b64db34dc4f1c54b38278fea44cb534c728"

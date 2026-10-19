@@ -30,7 +30,12 @@ class McpConnection(Protocol):
 
     def connect_and_list_tools(self) -> list[McpTool]: ...
 
-    def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> str: ...
+    def call_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        extra_env: dict[str, str] | None = None,
+    ) -> str: ...
 
 
 class McpGateway(Protocol):

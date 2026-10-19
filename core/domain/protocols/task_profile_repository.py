@@ -28,7 +28,12 @@ class TaskProfileRepository(Protocol):
         description: str,
         preferences: str = "",
         invariants: list[str] | None = None,
+        mcp_servers: list[str] | None = None,
     ) -> TaskProfile: ...
+
+    def set_mcp_servers(
+        self, profile_id: str, mcp_servers: list[str]
+    ) -> TaskProfile | None: ...
 
     def delete_profile(self, profile_id: str) -> bool: ...
 

@@ -21,18 +21,19 @@
 8. User enters preferences text (or presses Enter to skip)
 9. System accepts preferences (no validation, empty input allowed)
 10. System displays the invariants block header (`--- ИНВАРИАНТЫ (строгие правила/ограничения) ---`, examples and `Введите инварианты по одному. Пустая строка для завершения:`) and reads invariants one per line until an empty line
-11. System creates the profile via `create_task_profile.execute(name, description, preferences, invariants)`
-12. System records current timestamp as `created_at`
-13. System saves profile to TaskProfileRepository
-14. System displays success message:
+11. System displays the available MCP servers (registry) and asks for numbers separated by commas: `Укажите номера через запятую (Enter - без MCP, 0 - оставить текущие):`; empty input means no MCP servers
+12. System creates the profile via `create_task_profile.execute(name, description, preferences, invariants, mcp_servers)`; unknown server names are rejected with `[ERROR] MCP-сервер '...' не найден в реестре.`
+13. System records current timestamp as `created_at`
+14. System saves profile to TaskProfileRepository (including the MCP server list)
+15. System displays success message:
     ```
     [OK] Профиль задачи '{name}' создан!
       ID: {profile_id}
       Дата создания: {YYYY-MM-DD HH:MM:SS}
       Инвариантов: {count}   # only when at least one invariant was entered
     ```
-15. System returns to Task Profiles menu
-16. Use case ends
+16. System returns to Task Profiles menu
+17. Use case ends
 
 ## Alternative Flows
 
@@ -57,7 +58,20 @@
 - New TaskProfile created with unique UUID
 - Profile saved to repository with empty facts list
 - Profile saved with preferences (may be empty string)
+- Profile saved with `mcp_servers` (may be empty list)
 - User returned to Task Profiles menu
+
+## Chats And Tools
+
+- When a chat is created with this profile (`create_chat(..., task_profile_id=...)`),
+  every `mcp_servers` entry is connected automatically; failures are reported as
+  `[WARN]` and do not cancel chat creation.
+- The profiles list has a quick action **4. Создать чат с этим профилем** and
+  **5. Настроить MCP-серверы** (replace the list after creation).
+- Preset profile **«Научный ассистент»** is hardcoded and created automatically
+  at CLI/API startup when missing (not in `APPLICATION_MODE=TEST`, so fixtures
+  stay deterministic). It uses `research`, `openalex` and `time` MCP servers.
+- Changing a profile's MCP servers affects only chats created afterwards.
 
 ## Related Test Cases
 
@@ -156,6 +170,25 @@
 | 4    | View created profile                          | The `Предпочтения:` line is omitted entirely |
 
 ---
+
+### TC-175: Create Profile With MCP Servers
+
+**Related UC**: UC-014 step 11
+
+| Step | Action                                             | Expected Result                                      |
+| ---- | -------------------------------------------------- | ---------------------------------------------------- |
+| 1    | Complete name/description/preferences/invariants   | MCP selection block displayed                        |
+| 2    | Enter `3` (time in the default registry order)     | Profile created; `mcp_servers_json` contains `time`  |
+| 3    | Create a chat with the profile (action 4)           | Chat is connected to `time` automatically            |
+
+### TC-176: Configure Profile MCP Servers After Creation
+
+**Related UC**: UC-014 "Chats And Tools"
+
+| Step | Action                                  | Expected Result                            |
+| ---- | --------------------------------------- | ------------------------------------------ |
+| 1    | Profiles list → action 5                | MCP selection for the chosen profile shown |
+| 2    | Enter `3` (time)                        | Profile updated; `mcp_servers_json` = [time] |
 
 ### TC-117: Create Profile With Empty Preferences
 

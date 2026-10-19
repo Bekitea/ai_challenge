@@ -31,7 +31,13 @@ class McpToolExecutor:
                 f"инструмент '{tool_name}' недоступен."
             )
         arguments = _parse_tool_arguments(call.arguments)
-        return conn.call_tool(tool_name, arguments)
+        # Передаём текущий чат в дочерний MCP-процесс: research-серверу нужно
+        # знать, с какой научной библиотекой работать (у каждого чата своя).
+        return conn.call_tool(
+            tool_name,
+            arguments,
+            extra_env={"AI_CHAT_AGENT_ID": str(self._agent_id)},
+        )
 
 
 def _strip_prefix(prefixed_name: str) -> tuple[str, str]:

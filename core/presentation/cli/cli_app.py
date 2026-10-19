@@ -1,4 +1,5 @@
 import os
+import shlex
 import sys
 import time
 
@@ -34,6 +35,7 @@ HELP_COMMANDS = [
     "/report - перейти в фазу отчета",
     "/mcp - показать подключённые к чату MCP и подключить новые",
     "/rag - базы знаний чата: подключить или отключить",
+    "/library - научная библиотека: список, статьи, подключить, открепить, удалить",
     "/rerank - включить или отключить реранкинг (on|off)",
     "/commands - показать этот список команд",
 ]
@@ -378,8 +380,10 @@ class CLIChat:
         self.current_chat = chat
 
         print(f"\n[OK] Чат '{chat.name}' создан!")
+        for message in chat.mcp_messages:
+            print(message)
 
-        # Переходим к общению (история показывается в заголовке чата)
+        # Переход в диалог (агент вызывается в контексте чата)
         self.chat_loop()
 
     def _select_context_strategy(self) -> StrategySelection:
@@ -468,18 +472,17 @@ class CLIChat:
             print("(нет доступных профилей)")
             return None
 
-        # Сортируем профили по первичному ключу (id) в порядке возрастания
-        sorted_profiles = sorted(profiles, key=lambda p: p.id)
-
+        # Профили уже отсортированы по времени создания (новые первыми),
+        # поэтому предустановленные профили оказываются в конце списка.
         print("Доступные профили задач:")
-        for i, profile in enumerate(sorted_profiles, 1):
+        for i, profile in enumerate(profiles, 1):
             print(f"  {i}. {profile.name}")
         print("  0. Не привязывать профиль")
 
         while True:
             choice = (
                 input(
-                    f"\nВыберите профиль задачи (0-{len(sorted_profiles)}, по умолчанию 0): "
+                    f"\nВыберите профиль задачи (0-{len(profiles)}, по умолчанию 0): "
                 ).strip()
                 or "0"
             )
@@ -488,8 +491,8 @@ class CLIChat:
                 choice_num = int(choice)
                 if choice_num == 0:
                     return None
-                elif 1 <= choice_num <= len(sorted_profiles):
-                    return sorted_profiles[choice_num - 1].id
+                elif 1 <= choice_num <= len(profiles):
+                    return profiles[choice_num - 1].id
                 else:
                     print("[WARN] Некорректный выбор. Профиль не привязан.")
                     return None
@@ -697,6 +700,49 @@ class CLIChat:
             else:
                 print("\n[WARN] Неверный выбор, попробуйте снова.")
 
+    def _select_mcp_servers(self, current: list[str] | None = None) -> list[str]:
+        """Выбор MCP-серверов профиля: номера через запятую."""
+        # Для настройки профиля нужен весь реестр, а не только серверы,
+        # ещё не подключённые к текущему чату.
+        servers = self.use_cases.list_available_mcp.execute(None)
+        if not servers:
+            print("\n[INFO] Доступных MCP-серверов нет.")
+            return list(current or [])
+        current = list(current or [])
+        print("\n--- MCP-серверы профиля ---")
+        for index, server in enumerate(servers, 1):
+            marker = " [выбран]" if server.name in current else ""
+            print(f"  {index}. {server.title} ({server.name}){marker}")
+        print(
+            "Укажите номера через запятую (Enter - без MCP, "
+            "0 - оставить текущие):"
+        )
+        try:
+            raw = input("  > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return current
+        if not raw:
+            return []
+        if raw == "0":
+            return current
+        selected: list[str] = []
+        for part in raw.split(","):
+            item = part.strip()
+            if not item:
+                continue
+            if not item.isdigit():
+                print(f"[WARN] Пропущено: '{item}'.")
+                continue
+            number = int(item)
+            if 1 <= number <= len(servers):
+                name = servers[number - 1].name
+                if name not in selected:
+                    selected.append(name)
+            else:
+                print(f"[WARN] Нет MCP-сервера с номером {number}.")
+        return selected
+
     def _create_task_profile(self):
         """Создание нового профиля задачи."""
         print("\n--- СОЗДАНИЕ НОВОГО ПРОФИЛЯ ЗАДАЧИ ---")
@@ -732,8 +778,10 @@ class CLIChat:
                 break
             invariants.append(inv)
 
+        mcp_servers = self._select_mcp_servers()
+
         profile = self.use_cases.create_task_profile.execute(
-            name, description, preferences, invariants
+            name, description, preferences, invariants, mcp_servers
         )
         print(f"\n[OK] Профиль задачи '{name}' создан!")
         print(f"  ID: {profile.id}")
@@ -760,6 +808,8 @@ class CLIChat:
             print(f"   Дата создания: {created_at_str}")
             print(f"   Фактов в памяти: {profile.facts_count}")
             print(f"   Инвариантов: {profile.invariants_count}")
+            mcp_line = ", ".join(profile.mcp_servers) or "(нет)"
+            print(f"   MCP-серверы: {mcp_line}")
             desc_preview = (
                 f"{profile.description[:50]}..."
                 if len(profile.description) > 50
@@ -772,10 +822,12 @@ class CLIChat:
         print("1. Просмотреть память профиля")
         print("2. Управление инвариантами")
         print("3. Удалить профиль")
-        print("4. Назад к списку")
+        print("4. Создать чат с этим профилем")
+        print("5. Настроить MCP-серверы")
+        print("6. Назад к списку")
 
         while True:
-            action = input("\nВыберите действие (1-4): ").strip()
+            action = input("\nВыберите действие (1-6): ").strip()
             if action == "1":
                 self._view_profile_memory(profiles)
                 break
@@ -786,6 +838,12 @@ class CLIChat:
                 self._delete_profile(profiles)
                 break
             elif action == "4":
+                self._create_chat_with_profile(profiles)
+                break
+            elif action == "5":
+                self._configure_profile_mcp_servers(profiles)
+                break
+            elif action == "6":
                 break
             else:
                 print("\n[WARN] Неверный выбор, попробуйте снова.")
@@ -891,6 +949,13 @@ class CLIChat:
         else:
             for i, inv in enumerate(profile.invariants, 1):
                 print(f"  {i}. {inv}")
+
+        print("\n--- MCP-СЕРВЕРЫ ---")
+        if not profile.mcp_servers:
+            print("  (MCP-серверы не заданы)")
+        else:
+            for name in profile.mcp_servers:
+                print(f"  - {name}")
         print("-" * 40)
 
     def _delete_profile(self, profiles: list):
@@ -938,6 +1003,82 @@ class CLIChat:
         else:
             print(f"\n[ERROR] Не удалось удалить профиль '{profile_info.name}'.")
         print("-" * 40)
+
+    def _choose_profile(self, profiles: list):
+        """Выбирает профиль по номеру; возвращает TaskProfileInfo или None."""
+        if not profiles:
+            print("\n[INFO] Профилей задачи нет.")
+            return None
+        while True:
+            try:
+                choice = int(
+                    input(f"Выберите профиль (1-{len(profiles)}): ").strip()
+                )
+                if 1 <= choice <= len(profiles):
+                    return profiles[choice - 1]
+                print(f"Введите число от 1 до {len(profiles)}.")
+            except ValueError:
+                print("Введите номер профиля.")
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return None
+
+    def _configure_profile_mcp_servers(self, profiles: list):
+        """Заменяет список MCP-серверов выбранного профиля."""
+        profile = self._choose_profile(profiles)
+        if profile is None:
+            return
+        new_servers = self._select_mcp_servers(profile.mcp_servers)
+        try:
+            updated = self.use_cases.set_task_profile_mcp_servers.execute(
+                profile.id, new_servers
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"\n[ERROR] {exc}")
+            return
+        servers = ", ".join(updated.mcp_servers) or "(нет)"
+        print(f"\n[OK] MCP-серверы профиля '{updated.name}': {servers}")
+
+    def _create_chat_with_profile(self, profiles: list):
+        """Быстрое создание чата с выбранным профилем задачи."""
+        profile = self._choose_profile(profiles)
+        if profile is None:
+            return
+        try:
+            name = input("Имя чата (Enter - по умолчанию): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        selection = self._select_model()
+        if selection is None:
+            print("\n[WARN] Чат не создан: нет доступных моделей.")
+            return
+        provider, model_id = selection
+        reasoning_effort = self._select_reasoning_effort()
+        settings = SettingsDTO(
+            model_id=model_id,
+            provider=provider,
+            reasoning_effort=reasoning_effort,
+            context_window_size=200_000,
+        )
+        try:
+            chat = self.use_cases.create_chat.execute(
+                name=name,
+                system_prompt=None,
+                settings=settings,
+                strategy_selection=StrategySelection(
+                    strategy_type="DefaultStrategy"
+                ),
+                task_profile_id=profile.id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"\n[ERROR] Не удалось создать чат: {exc}")
+            return
+        self.current_chat = chat
+        print(f"\n[OK] Чат '{chat.name}' создан с профилем '{profile.name}'.")
+        for message in chat.mcp_messages:
+            print(message)
+        self.chat_loop()
 
     def _print_chat_header(self):
         """Отображает заголовок чата с текущей фазой и историей сообщений."""
@@ -1241,6 +1382,365 @@ class CLIChat:
             return
         prefix = "[OK]" if success else "[ERROR]"
         print(f"\n{prefix} {message}")
+
+    # ------------------------------------------------------------------
+    # Научная библиотека (research)
+    # ------------------------------------------------------------------
+
+    def library_command(self, argument: str):
+        """Обрабатывает /library [list|info|articles|use|create|detach|delete]."""
+        if not self.current_chat:
+            print("\n[WARN] Активный чат не выбран. Создайте или выберите чат.")
+            return
+
+        parts = (argument or "").strip().split(maxsplit=1)
+        action = parts[0].lower() if parts else ""
+        value = parts[1].strip() if len(parts) > 1 else ""
+        if not action:
+            self.library_menu()
+        elif action == "list":
+            self._print_research_libraries()
+        elif action == "info":
+            self._print_active_research_library()
+        elif action == "articles":
+            self._list_research_articles(value)
+        elif action == "use":
+            self._use_research_library(value)
+        elif action == "create":
+            self._create_research_library(value)
+        elif action == "detach":
+            self._detach_research_library()
+        elif action == "delete":
+            self._delete_research_library(value)
+        else:
+            print(
+                "\n[WARN] Использование: /library "
+                "[list|info|articles|use <имя>|create <имя>|detach|delete <имя>]"
+            )
+
+    def library_menu(self):
+        """Меню управления научной библиотекой текущего чата."""
+        while True:
+            print(f"\n--- Научная библиотека чата: {self.current_chat.name} ---")
+            self._print_active_research_library()
+            print("Действия:")
+            print("1. Список библиотек")
+            print("2. Подключить существующую")
+            print("3. Создать новую")
+            print("4. Открепить от чата")
+            print("5. Удалить библиотеку")
+            print("6. Список статей активной библиотеки")
+            print("0. Назад")
+            print("-" * 40)
+            try:
+                choice = input("Выбор действия (0-6): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return
+            if choice == "1":
+                self._print_research_libraries()
+            elif choice == "2":
+                self._use_research_library("")
+            elif choice == "3":
+                self._create_research_library("")
+            elif choice == "4":
+                self._detach_research_library()
+            elif choice == "5":
+                self._delete_research_library("")
+            elif choice == "6":
+                self._list_research_articles("")
+            elif choice == "0":
+                return
+            else:
+                print("\n[WARN] Неверный выбор, попробуйте снова.")
+
+    @staticmethod
+    def _parse_article_filters(argument: str) -> dict:
+        """Разбирает параметры /library articles в фильтры для use case."""
+        filters: dict = {
+            "query": None,
+            "year_from": None,
+            "year_to": None,
+            "status": None,
+            "limit": 50,
+        }
+        try:
+            tokens = shlex.split(argument or "")
+        except ValueError:
+            tokens = (argument or "").split()
+        positional: list[str] = []
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
+            value = tokens[index + 1] if index + 1 < len(tokens) else ""
+            if token in ("--year", "-y") and value:
+                parts = value.replace("–", "-").split("-", 1)
+                if parts[0].strip().isdigit():
+                    filters["year_from"] = int(parts[0])
+                if len(parts) > 1 and parts[1].strip().isdigit():
+                    filters["year_to"] = int(parts[1])
+                index += 2
+                continue
+            if token in ("--status", "-s") and value:
+                filters["status"] = value.strip() or None
+                index += 2
+                continue
+            if token in ("--limit", "-n") and value.isdigit():
+                filters["limit"] = max(1, min(int(value), 200))
+                index += 2
+                continue
+            if token in ("--query", "-q") and value:
+                positional.append(value)
+                index += 2
+                continue
+            positional.append(token)
+            index += 1
+        if positional:
+            filters["query"] = " ".join(positional).strip() or None
+        return filters
+
+    def _list_research_articles(self, argument: str):
+        """Печатает список статей активной научной библиотеки."""
+        active = self.use_cases.research_get_active_library.execute(
+            self.current_chat_id
+        )
+        if active is None:
+            print(
+                "\n[WARN] У чата нет активной научной библиотеки. "
+                "Выполните поиск/импорт статей или подключите библиотеку."
+            )
+            return
+
+        filters = self._parse_article_filters(argument)
+        try:
+            result = self.use_cases.research_list_library_articles.execute(
+                active.id,
+                query=filters["query"],
+                year_from=filters["year_from"],
+                year_to=filters["year_to"],
+                status=filters["status"],
+                limit=filters["limit"],
+                offset=0,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"\n[ERROR] {exc}")
+            return
+
+        print(f"\n--- Статьи библиотеки: {result.library.name} ---")
+        if not result.articles:
+            print("  (статей по заданным условиям не найдено)")
+        for number, article in enumerate(result.articles, 1):
+            authors = ", ".join(article.authors[:3])
+            if len(article.authors) > 3:
+                authors += " et al."
+            if not authors:
+                authors = "авторы не указаны"
+            year = article.publication_year or "б.г."
+            doi = article.doi or "—"
+            print(f"{number}. {article.title}")
+            print(f"   {authors} ({year}). DOI: {doi} [{article.status}]")
+            if article.summary:
+                snippet = article.summary.strip().replace("\n", " ")
+                if len(snippet) > 200:
+                    snippet = snippet[:200].rstrip() + "…"
+                print(f"   Сводка: {snippet}")
+        print("-" * 40)
+        print(
+            f"Показано: {len(result.articles)} из {result.total}. "
+            "Фильтры: --year 2020-2026, --status indexed|abstract_only, "
+            "--query <текст>, --limit N."
+        )
+
+    def _knowledge_base_name(self, kb_id: int | None) -> str | None:
+        if kb_id is None:
+            return None
+        for kb in self.use_cases.list_knowledge_bases.execute():
+            if kb.id == kb_id:
+                return kb.name
+        return None
+
+    def _print_active_research_library(self):
+        active = self.use_cases.research_get_active_library.execute(
+            self.current_chat_id
+        )
+        if active is None:
+            print("Активная: не привязана")
+            return
+        kb_name = self._knowledge_base_name(active.knowledge_base_id)
+        field = f" | область: {active.field}" if active.field else ""
+        print(
+            f"Активная: {active.name} "
+            f"(статей: {active.article_count or 0}){field}"
+        )
+        if kb_name:
+            print(f"БЗ: {kb_name}")
+        else:
+            print("БЗ: не привязана")
+
+    def _print_research_libraries(self):
+        libraries = self.use_cases.research_list_libraries.execute()
+        if not libraries:
+            print("\n[INFO] Научных библиотек пока нет.")
+            return
+        active = self.use_cases.research_get_active_library.execute(
+            self.current_chat_id
+        )
+        active_id = active.id if active is not None else None
+        print("\n--- Научные библиотеки ---")
+        for index, library in enumerate(libraries, 1):
+            marker = " [активная]" if library.id == active_id else ""
+            field = f", область: {library.field}" if library.field else ""
+            print(
+                f"  {index}. {library.name} "
+                f"(статей: {library.article_count or 0}{field}){marker}"
+            )
+        print("-" * 40)
+
+    def _select_research_library(self, libraries: list):
+        if not libraries:
+            print("\n[INFO] Научных библиотек пока нет.")
+            return None
+        print("\n--- Выбор научной библиотеки ---")
+        for index, library in enumerate(libraries, 1):
+            print(
+                f"  {index}. {library.name} "
+                f"(статей: {library.article_count or 0})"
+            )
+        try:
+            raw = input(
+                "Выберите библиотеку (номер, 0 - отмена): "
+            ).strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
+        if not raw or raw == "0":
+            return None
+        if not raw.isdigit():
+            print("[WARN] Введите номер библиотеки.")
+            return None
+        number = int(raw)
+        if 1 <= number <= len(libraries):
+            return libraries[number - 1]
+        print("[WARN] Неверный номер библиотеки.")
+        return None
+
+    def _use_research_library(self, name: str):
+        libraries = self.use_cases.research_list_libraries.execute()
+        if name:
+            clean = name.strip().casefold()
+            matches = [
+                library
+                for library in libraries
+                if library.name.strip().casefold() == clean
+            ]
+            if not matches:
+                print(f"\n[ERROR] Научная библиотека '{name}' не найдена.")
+                return
+            library = matches[0]
+        else:
+            library = self._select_research_library(libraries)
+            if library is None:
+                print("[INFO] Подключение отменено.")
+                return
+
+        try:
+            binding = self.use_cases.research_bind_library.execute(
+                self.current_chat_id, library.id
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"\n[ERROR] {exc}")
+            return
+        for message in binding.messages:
+            print(f"[OK] {message}")
+
+    def _create_research_library(self, name: str):
+        library_name = (name or "").strip()
+        try:
+            if not library_name:
+                library_name = input("Имя научной библиотеки: ").strip()
+            if not library_name:
+                print("\n[ERROR] Имя научной библиотеки не может быть пустым.")
+                return
+            goal = input(
+                "Цель диссертации (Enter - пропустить): "
+            ).strip()
+            field = input(
+                "Научная область (Enter - пропустить): "
+            ).strip()
+            keywords_raw = input(
+                "Ключевые слова через запятую (Enter - пропустить): "
+            ).strip()
+            years_raw = input(
+                "Диапазон лет, например 2020-2026 (Enter - пропустить): "
+            ).strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+
+        year_from = year_to = None
+        if years_raw:
+            parts = years_raw.replace("–", "-").split("-", 1)
+            if len(parts) == 2 and parts[0].strip().isdigit():
+                year_from = int(parts[0].strip())
+                if parts[1].strip().isdigit():
+                    year_to = int(parts[1].strip())
+
+        keywords = [
+            item.strip() for item in keywords_raw.split(",") if item.strip()
+        ]
+        try:
+            library = self.use_cases.research_create_library.execute(
+                self.current_chat_id,
+                library_name,
+                goal=goal or None,
+                field=field or None,
+                keywords=keywords or None,
+                year_from=year_from,
+                year_to=year_to,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"\n[ERROR] {exc}")
+            return
+        print(
+            f"\n[OK] Научная библиотека '{library.name}' создана и подключена "
+            f"к чату (БЗ #{library.knowledge_base_id})."
+        )
+
+    def _detach_research_library(self):
+        try:
+            result = self.use_cases.research_detach_library.execute(
+                self.current_chat_id
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"\n[ERROR] {exc}")
+            return
+        prefix = "[OK]" if result.success else "[INFO]"
+        print(f"\n{prefix} {result.message}")
+
+    def _delete_research_library(self, name: str):
+        library_name = (name or "").strip()
+        try:
+            if not library_name:
+                library_name = input(
+                    "Имя научной библиотеки для удаления: "
+                ).strip()
+            if not library_name:
+                print("\n[ERROR] Имя библиотеки не может быть пустым.")
+                return
+            confirm = input(
+                f"Введите имя '{library_name}' для подтверждения удаления: "
+            ).strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        try:
+            result = self.use_cases.research_delete_library.execute(
+                library_name, confirm
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"\n[ERROR] {exc}")
+            return
+        print(f"\n[OK] {result.message}")
 
     def api_keys_menu(self):
         """Пункт главного меню: выпуск и отзыв API-ключей."""
@@ -1783,6 +2283,12 @@ class CLIChat:
 
                 if user_input.lower() == "/rag":
                     self.rag_menu()
+                    continue
+
+                if user_input.lower() == "/library" or user_input.lower().startswith(
+                    "/library "
+                ):
+                    self.library_command(user_input[len("/library") :])
                     continue
 
                 if user_input.lower().startswith("/rerank"):

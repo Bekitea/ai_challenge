@@ -15,6 +15,7 @@ def _task_profile_to_info(profile: TaskProfile) -> TaskProfileInfo:
         facts_count=len(profile.facts),
         preferences=profile.preferences or "",
         invariants_count=len(profile.invariants),
+        mcp_servers=list(profile.mcp_servers),
     )
 
 
@@ -28,4 +29,5 @@ def _task_profile_to_detail(profile: TaskProfile) -> TaskProfileDetailDTO:
         facts=list(profile.facts),
         preferences=profile.preferences or "",
         invariants=list(profile.invariants),
+        mcp_servers=list(profile.mcp_servers),
     )

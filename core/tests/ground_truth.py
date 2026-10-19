@@ -260,8 +260,43 @@ def get_chunks(document_id: int) -> list[sqlite3.Row]:
 
 
 def get_agent_knowledge_bases(agent_id: int) -> list[sqlite3.Row]:
-    """Связи агента с базами знаний."""
+    """Привязки агента к базам знаний."""
     return query(
         "SELECT * FROM agent_knowledge_bases WHERE agent_id = ? ORDER BY id",
         (agent_id,),
+    )
+
+
+# --- Научная библиотека (research) -------------------------------------------
+
+
+def get_research_libraries() -> list[sqlite3.Row]:
+    """Все научные библиотеки."""
+    return query("SELECT * FROM research_libraries ORDER BY id")
+
+
+def get_research_library_by_name(name: str) -> sqlite3.Row | None:
+    """Научная библиотека по имени."""
+    return query_one(
+        "SELECT * FROM research_libraries WHERE name = ? ORDER BY id DESC", (name,)
+    )
+
+
+def get_agent_research_library(agent_id: int) -> sqlite3.Row | None:
+    """Активная научная библиотека чата."""
+    link = query_one(
+        "SELECT * FROM agent_research_libraries WHERE agent_id = ?", (agent_id,)
+    )
+    if link is None:
+        return None
+    return query_one(
+        "SELECT * FROM research_libraries WHERE id = ?", (link["library_id"],)
+    )
+
+
+def get_research_articles(library_id: int) -> list[sqlite3.Row]:
+    """Статьи научной библиотеки."""
+    return query(
+        "SELECT * FROM research_articles WHERE library_id = ? ORDER BY id",
+        (library_id,),
     )

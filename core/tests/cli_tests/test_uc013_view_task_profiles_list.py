@@ -54,8 +54,9 @@ class TestUC013_ViewTaskProfilesList:
             "This is a test task description\n"  # Description
             "\n"  # Предпочтения (пропуск)
             "\n"  # Инварианты: пусто
+        "\n"  # MCP-серверы: пропуск
             "2\n"  # Просмотреть список профилей
-            "4\n"  # Назад к списку
+            "6\n"  # Назад к списку
             "3\n"  # Назад в главное меню
             "8\n"  # Exit
         )

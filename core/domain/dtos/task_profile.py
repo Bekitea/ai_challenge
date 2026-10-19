@@ -6,7 +6,7 @@ from datetime import datetime
 
 @dataclass
 class TaskProfile:
-    """Профиль задачи с памятью о фактах задачи."""
+    """Профиль задачи с фактами памяти и MCP-инструментами."""
 
     id: str
     name: str
@@ -15,3 +15,4 @@ class TaskProfile:
     facts: list[str] = field(default_factory=list)
     preferences: str = ""
     invariants: list[str] = field(default_factory=list)
+    mcp_servers: list[str] = field(default_factory=list)

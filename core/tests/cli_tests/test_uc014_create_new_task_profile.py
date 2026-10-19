@@ -36,6 +36,7 @@ class TestUC014_CreateNewTaskProfile:
             "Task description here\n"  # Valid description
             "\n"  # Предпочтения (пропуск)
             "\n"  # Инварианты: пустая строка завершает ввод
+            "\n"  # MCP-серверы: пропуск
             "3\n"  # Назад в главное меню
             "8\n"  # Exit
         )
@@ -67,6 +68,7 @@ class TestUC014_CreateNewTaskProfile:
             "Description\n"  # Description
             "\n"  # Предпочтения (пропуск)
             "\n"  # Инварианты: пустая строка завершает ввод
+            "\n"  # MCP-серверы: пропуск
             "3\n"  # Назад
             "8\n"  # Exit
         )
@@ -97,6 +99,7 @@ class TestUC014_CreateNewTaskProfile:
             "Valid Description\n"  # Valid description on retry
             "\n"  # Предпочтения (пропуск)
             "\n"  # Инварианты: пустая строка завершает ввод
+            "\n"  # MCP-серверы: пропуск
             "3\n"  # Назад
             "8\n"  # Exit
         )
@@ -126,6 +129,7 @@ class TestUC014_CreateNewTaskProfile:
             "Description\n"  # Description
             "\n"  # Предпочтения (пропуск)
             "\n"  # Инварианты: пустая строка завершает ввод
+            "\n"  # MCP-серверы: пропуск
             "3\n"  # Назад
             "8\n"  # Exit
         )
@@ -156,6 +160,7 @@ class TestUC014_CreateNewTaskProfile:
             "Task description here\n"  # Valid description
             "Be concise and formal\n"  # Preferences text
             "\n"  # Инварианты: пустая строка завершает ввод
+            "\n"  # MCP-серверы: пропуск
             "2\n"  # Просмотреть список профилей
             "1\n"  # Действие: просмотреть память профиля
             "1\n"  # Профиль №1
@@ -188,6 +193,7 @@ class TestUC014_CreateNewTaskProfile:
             "Task description here\n"  # Valid description
             "\n"  # Empty preferences (skip)
             "\n"  # Инварианты: пустая строка завершает ввод
+            "\n"  # MCP-серверы: пропуск
             "2\n"  # Просмотреть список профилей
             "1\n"  # Действие: просмотреть память профиля
             "1\n"  # Профиль №1

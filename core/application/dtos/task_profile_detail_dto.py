@@ -15,3 +15,4 @@ class TaskProfileDetailDTO:
     facts: list[str] = field(default_factory=list)
     preferences: str = ""
     invariants: list[str] = field(default_factory=list)
+    mcp_servers: list[str] = field(default_factory=list)

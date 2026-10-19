@@ -187,6 +187,97 @@ class RagService:
             below_threshold=not filtered and not was_empty,
         )
 
+    def retrieve_from_knowledge_base(
+        self,
+        knowledge_base_id: int,
+        query_text: str,
+        top_k: int | None = None,
+        reranker_enabled: bool | None = None,
+    ) -> RagRetrievalResult:
+        """Ищет чанки в одной конкретной базе знаний (research-библиотека).
+
+        В отличие от ``retrieve`` (по привязанным к агенту базам), работает с
+        явно указанной БЗ и применяет тот же реранкинг и порог релевантности.
+        """
+        if not query_text.strip():
+            return RagRetrievalResult(chunks=[], has_knowledge_bases=False)
+
+        metadata = self._kb_repository.get_embedding_metadata(knowledge_base_id)
+        if metadata is None:
+            return RagRetrievalResult(chunks=[], has_knowledge_bases=False)
+        _table, _model, dimension = metadata
+        if dimension != self._model_service.embedding_dimension:
+            raise EmbeddingDimensionMismatchError(
+                "Размерность эмбеддингов базы знаний не совпадает с "
+                "размерностью текущей модели."
+            )
+
+        final_top_k = top_k or self._final_top_k
+        query_vector = self._model_service.embed_query(query_text)
+        hits = self._vector_store.search(
+            knowledge_base_id, query_vector, self._vector_top_k_per_kb
+        )
+        if not hits:
+            return RagRetrievalResult(chunks=[], has_knowledge_bases=True)
+
+        distances = {hit.chunk_id: hit.distance for hit in hits}
+        rows = self._document_repository.fetch_for_search(
+            knowledge_base_id, [hit.chunk_id for hit in hits]
+        )
+        chunks = [
+            RagContextChunk(
+                chunk_id=row.chunk_id,
+                document_id=row.document_id,
+                knowledge_base_id=row.knowledge_base_id,
+                document_name=row.document_name,
+                chunk_index=row.chunk_index,
+                text=row.text,
+                vector_distance=distances.get(row.chunk_id),
+            )
+            for row in rows
+        ]
+        if not chunks:
+            return RagRetrievalResult(chunks=[], has_knowledge_bases=True)
+
+        use_reranker = (
+            self._reranker_enabled if reranker_enabled is None else reranker_enabled
+        )
+        if (
+            use_reranker
+            and not self._reranker_unavailable
+            and self._model_service.reranker_available
+        ):
+            try:
+                reranked = self._model_service.rerank(
+                    query_text,
+                    [chunk.text for chunk in chunks],
+                    top_n=final_top_k,
+                )
+                ordered: list[RagContextChunk] = []
+                for result in reranked:
+                    if 0 <= result.index < len(chunks):
+                        chunk = chunks[result.index]
+                        chunk.rerank_score = result.score
+                        ordered.append(chunk)
+                return self._finalize_result(
+                    ordered, was_empty=False, top_k=final_top_k
+                )
+            except RerankerProviderError:
+                self._reranker_unavailable = True
+                logger.warning(
+                    "Реранкинг недоступен, переходим к векторному порядку",
+                    exc_info=True,
+                )
+
+        chunks.sort(
+            key=lambda chunk: (
+                chunk.vector_distance
+                if chunk.vector_distance is not None
+                else math.inf
+            )
+        )
+        return self._finalize_result(chunks, was_empty=False, top_k=final_top_k)
+
     def search_knowledge_base(
         self,
         knowledge_base_id: int,

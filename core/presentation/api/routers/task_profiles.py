@@ -11,6 +11,7 @@ from core.presentation.api.schemas import (
     CreateTaskProfileRequest,
     DeleteProfileResult,
     Invariant,
+    SetProfileMcpServersRequest,
     TaskProfile,
     TaskProfileDetail,
 )
@@ -34,7 +35,19 @@ def create_task_profile(
         request.description,
         request.preferences,
         request.invariants,
+        request.mcp_servers,
     )
+
+
+@router.put(
+    "/task-profiles/{profile_id}/mcp-servers",
+    response_model=TaskProfileDetail,
+)
+def set_task_profile_mcp_servers(
+    profile_id: str, request: SetProfileMcpServersRequest, uc: UseCasesDep
+):
+    """Заменить список MCP-серверов профиля задачи."""
+    return uc.set_task_profile_mcp_servers.execute(profile_id, request.servers)
 
 
 @router.get("/task-profiles/{profile_id}", response_model=TaskProfileDetail)

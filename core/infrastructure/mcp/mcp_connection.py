@@ -46,14 +46,20 @@ class McpConnection:
     def tools(self) -> list[McpToolInfo]:
         return list(self._tools)
 
-    def _server_params(self) -> StdioServerParameters:
+    def _server_params(
+        self, extra_env: dict[str, str] | None = None
+    ) -> StdioServerParameters:
         command, args = self.server_info.build_command()
-        # Передаём окружение процесса целиком: по умолчанию SDK отдаёт
-        # дочернему процессу лишь «безопасный» поднабор переменных, из-за чего
-        # серверы не видели своих настроек (PROJECT_FILES_ROOT,
-        # SUPPORT_DATA_PATH, OPENALEX_* и т.п.).
+        # Передаём окружение текущего процесса: по умолчанию SDK отдаёт
+        # дочернему процессу только <переменные окружения>, но-за чего
+        # сервер не видит свои настройки (PROJECT_FILES_ROOT,
+        # SUPPORT_DATA_PATH, OPENALEX_* и т.п.). extra_env позволяет
+        # передать контекст конкретного вызова (например, AI_CHAT_AGENT_ID).
+        env = dict(os.environ)
+        if extra_env:
+            env.update(extra_env)
         return StdioServerParameters(
-            command=command, args=args, env=dict(os.environ)
+            command=command, args=args, env=env
         )
 
     @staticmethod
@@ -179,29 +185,44 @@ class McpConnection:
                 for tool in result.tools
             ]
 
-    def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> str:
-        """Вызывает инструмент сервера (по оригинальному имени) и возвращает текст.
+    def call_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        extra_env: dict[str, str] | None = None,
+    ) -> str:
+        """Вызывает инструмент сервера (по тривиальному имени) и возвращает текст.
 
         Args:
-            tool_name: Оригинальное имя инструмента (без префикса сервера).
-            arguments: Аргументы инструмента.
+            tool_name: тривиальное имя инструмента (без префикса сервера).
+            arguments: аргументы инструмента.
+            extra_env: дополнительные переменные окружения для дочернего
+                процесса (например, AI_CHAT_AGENT_ID).
 
         Returns:
-            Текстовый результат (или текст ошибки — исключения не пробрасываются,
-            чтобы агент мог продолжить диалог).
+            Строковый результат (или текст ошибки - исключения не пробрасываются,
+            чтобы агент мог продолжать работу).
         """
+        timeout = self.server_info.call_timeout or self.CALL_TIMEOUT
         result, error = submit_to_new_loop(
-            lambda: self._call_async(tool_name, arguments),
-            timeout=self.CALL_TIMEOUT,
+            lambda: self._call_async(tool_name, arguments, extra_env),
+            timeout=timeout,
         )
         if error is not None:
-            return f"[MCP:{self.name}] Ошибка вызова инструмента '{tool_name}': {error}"
+            return f"[MCP:{self.name}] ошибка вызова инструмента '{tool_name}': {error}"
         return result if result is not None else ""
 
-    async def _call_async(self, tool_name: str, arguments: dict[str, Any]) -> str:
-        # errlog — явно, см. комментарий в _connect_and_list_async.
+    async def _call_async(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        extra_env: dict[str, str] | None = None,
+    ) -> str:
+        # errlog - явно, см. комментарий в _connect_and_list_async.
         async with (
-            stdio_client(self._server_params(), errlog=_stderr_for_child()) as (
+            stdio_client(
+                self._server_params(extra_env), errlog=_stderr_for_child()
+            ) as (
                 read,
                 write,
             ),

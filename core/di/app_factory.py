@@ -17,6 +17,15 @@ from config import (
     RERANKER_MODEL_NAME,
     RERANKER_RETRY_COUNT,
     RERANKER_TIMEOUT,
+    RESEARCH_AUTO_ATTACH_KB,
+    RESEARCH_DATA_DIR,
+    RESEARCH_IMPORT_BATCH_LIMIT,
+    RESEARCH_KB_PREFIX,
+    RESEARCH_LIBRARY_AUTO_NAME,
+    RESEARCH_LLM_MODEL,
+    RESEARCH_LLM_PROVIDER,
+    RESEARCH_MAX_RESULTS,
+    RESEARCH_SUMMARY_MAX_CHARS,
     SUPPORT_DOCS_PATHS,
     SUPPORT_KB_NAME,
     YANDEX_API_KEY,
@@ -28,6 +37,9 @@ from core.application.use_cases import (
     AddDocumentToKnowledgeBaseUseCase,
     AddInvariantUseCase,
     AttachKnowledgeBaseToAgentUseCase,
+    BindResearchLibraryUseCase,
+    BuildHypothesisContextUseCase,
+    BuildReviewContextUseCase,
     ChangePhaseUseCase,
     ChangeSettingsUseCase,
     ConnectMcpUseCase,
@@ -35,14 +47,23 @@ from core.application.use_cases import (
     CreateBranchUseCase,
     CreateChatUseCase,
     CreateKnowledgeBaseUseCase,
+    CreateResearchLibraryUseCase,
     CreateTaskProfileUseCase,
     DeleteApiKeyUseCase,
     DeleteDocumentUseCase,
     DeleteKnowledgeBaseUseCase,
+    DeleteResearchLibraryUseCase,
     DeleteTaskProfileUseCase,
     DetachKnowledgeBaseFromAgentUseCase,
+    DetachResearchLibraryUseCase,
     DisconnectMcpUseCase,
+    EnsurePresetTaskProfilesUseCase,
+    EnsureResearchLibraryUseCase,
+    GetActiveResearchLibraryUseCase,
+    GetResearchArticleUseCase,
+    GetResearchLibraryStatsUseCase,
     GetTaskProfileMemoryUseCase,
+    ImportResearchArticlesUseCase,
     ListAgentKnowledgeBasesUseCase,
     ListApiKeysUseCase,
     ListAvailableMcpUseCase,
@@ -52,8 +73,12 @@ from core.application.use_cases import (
     ListInvariantsUseCase,
     ListKnowledgeBasesUseCase,
     ListModelsUseCase,
+    ListResearchArticlesUseCase,
+    ListResearchLibrariesUseCase,
+    ListResearchLibraryArticlesUseCase,
     ListTaskProfilesUseCase,
     PrepareAssistantContextUseCase,
+    RecommendResearchArticlesUseCase,
     RefreshAgentMemoryUseCase,
     RemoveInvariantUseCase,
     RetrieveRagContextUseCase,
@@ -62,14 +87,20 @@ from core.application.use_cases import (
     SaveAgentMemoryUseCase,
     SaveUnsavedMemoriesUseCase,
     SearchKnowledgeBaseUseCase,
+    SearchResearchArticlesUseCase,
+    SearchResearchLibraryUseCase,
     SeedProjectKnowledgeBaseUseCase,
     SelectChatUseCase,
     SelectContextStrategyUseCase,
     SendMessageUseCase,
     SetRerankerEnabledUseCase,
+    SetTaskProfileMcpServersUseCase,
     ShowChatInfoUseCase,
     ShowHistoryUseCase,
     ShowSummaryUseCase,
+    SummarizeResearchArticlesUseCase,
+    SwitchResearchLibraryUseCase,
+    UpdateResearchLibraryProfileUseCase,
     UseCasesBundle,
     VerifyApiKeyUseCase,
     ViewGlobalMemoryUseCase,
@@ -111,9 +142,19 @@ from core.infrastructure.persistence.sqlite_document_repository import (
 from core.infrastructure.persistence.sqlite_knowledge_base_repository import (
     SqliteKnowledgeBaseRepository,
 )
+from core.infrastructure.persistence.sqlite_research_article_repository import (
+    SqliteResearchArticleRepository,
+)
+from core.infrastructure.persistence.sqlite_research_library_repository import (
+    SqliteResearchLibraryRepository,
+)
 from core.infrastructure.persistence.sqlite_vec_vector_store import SqliteVecVectorStore
 from core.infrastructure.reranking.http_reranker_provider import HttpRerankerProvider
 from core.infrastructure.reranking.mock_reranker_provider import MockRerankerProvider
+from core.infrastructure.research.article_downloader import HttpArticleDownloader
+from core.infrastructure.research.openalex_client import OpenAlexClient
+from core.infrastructure.research.pdf_text_extractor import PdfTextExtractor
+from core.infrastructure.research.unpaywall_client import UnpaywallClient
 
 
 def initialize_application() -> UseCasesBundle:
@@ -245,16 +286,32 @@ def initialize_application() -> UseCasesBundle:
     file_extractor = LocalFileExtractor()
 
     # Create and return all use cases
-    create_chat = CreateChatUseCase(repository, task_profile_repository)
+    connect_mcp = ConnectMcpUseCase(repository, mcp_gateway)
+    list_available_mcp = ListAvailableMcpUseCase(repository, mcp_gateway)
+    create_chat = CreateChatUseCase(
+        repository, task_profile_repository, connect_mcp
+    )
     send_message = SendMessageUseCase(
         repository, provider_registry, rag_service, mcp_gateway
     )
-    connect_mcp = ConnectMcpUseCase(repository, mcp_gateway)
+    create_task_profile_use_case = CreateTaskProfileUseCase(
+        task_profile_repository, mcp_gateway
+    )
+    set_task_profile_mcp_servers = SetTaskProfileMcpServersUseCase(
+        task_profile_repository, mcp_gateway
+    )
+    ensure_preset_task_profiles = EnsurePresetTaskProfilesUseCase(
+        task_profile_repository, create_task_profile_use_case
+    )
 
     list_knowledge_bases = ListKnowledgeBasesUseCase(knowledge_base_repository)
     attach_knowledge_base = AttachKnowledgeBaseToAgentUseCase(
         knowledge_base_repository, agent_knowledge_base_repository
     )
+    detach_knowledge_base = DetachKnowledgeBaseFromAgentUseCase(
+        knowledge_base_repository, agent_knowledge_base_repository
+    )
+    delete_knowledge_base = DeleteKnowledgeBaseUseCase(knowledge_base_repository)
     list_agent_knowledge_bases = ListAgentKnowledgeBasesUseCase(
         agent_knowledge_base_repository
     )
@@ -303,6 +360,83 @@ def initialize_application() -> UseCasesBundle:
         file_extractor,
     )
 
+    research_library_repository = SqliteResearchLibraryRepository(
+        db_connection.get_session
+    )
+    research_article_repository = SqliteResearchArticleRepository(
+        db_connection.get_session
+    )
+    research_source = OpenAlexClient()
+    bind_research_library = BindResearchLibraryUseCase(
+        library_repository=research_library_repository,
+        attach_knowledge_base=attach_knowledge_base,
+        detach_knowledge_base=detach_knowledge_base,
+        auto_attach_kb=RESEARCH_AUTO_ATTACH_KB,
+    )
+    create_research_library = CreateResearchLibraryUseCase(
+        library_repository=research_library_repository,
+        knowledge_base_repository=knowledge_base_repository,
+        agent_repository=repository,
+        create_knowledge_base=create_knowledge_base,
+        bind_library=bind_research_library,
+        knowledge_base_prefix=RESEARCH_KB_PREFIX,
+    )
+    ensure_research_library = EnsureResearchLibraryUseCase(
+        library_repository=research_library_repository,
+        agent_repository=repository,
+        create_library=create_research_library,
+        bind_library=bind_research_library,
+        auto_name_prefix=RESEARCH_LIBRARY_AUTO_NAME,
+    )
+    detach_research_library = DetachResearchLibraryUseCase(
+        library_repository=research_library_repository,
+        detach_knowledge_base=detach_knowledge_base,
+    )
+    delete_research_library = DeleteResearchLibraryUseCase(
+        library_repository=research_library_repository,
+        article_repository=research_article_repository,
+        knowledge_base_repository=knowledge_base_repository,
+        detach_knowledge_base=detach_knowledge_base,
+        delete_knowledge_base=delete_knowledge_base,
+        data_dir=RESEARCH_DATA_DIR,
+    )
+    search_research_articles = SearchResearchArticlesUseCase(
+        ensure_library=ensure_research_library,
+        article_repository=research_article_repository,
+        source=research_source,
+        default_limit=RESEARCH_MAX_RESULTS,
+    )
+    import_research_articles = ImportResearchArticlesUseCase(
+        ensure_library=ensure_research_library,
+        article_repository=research_article_repository,
+        source=research_source,
+        pdf_locator=UnpaywallClient(),
+        downloader=HttpArticleDownloader(),
+        text_extractor=PdfTextExtractor(),
+        add_document=add_document,
+        delete_document=DeleteDocumentUseCase(document_repository),
+        data_dir=RESEARCH_DATA_DIR,
+        batch_limit=RESEARCH_IMPORT_BATCH_LIMIT,
+    )
+    search_research_library = SearchResearchLibraryUseCase(
+        ensure_library=ensure_research_library,
+        article_repository=research_article_repository,
+        rag_service=rag_service,
+    )
+    build_review_context = BuildReviewContextUseCase(
+        ensure_library=ensure_research_library,
+        article_repository=research_article_repository,
+    )
+    summarize_research_articles = SummarizeResearchArticlesUseCase(
+        ensure_library=ensure_research_library,
+        article_repository=research_article_repository,
+        document_repository=document_repository,
+        llm_registry=provider_registry,
+        provider_name=RESEARCH_LLM_PROVIDER,
+        model_id=RESEARCH_LLM_MODEL,
+        max_source_chars=RESEARCH_SUMMARY_MAX_CHARS,
+    )
+
     return UseCasesBundle(
         create_chat=create_chat,
         select_chat=SelectChatUseCase(repository),
@@ -315,7 +449,12 @@ def initialize_application() -> UseCasesBundle:
         show_history=ShowHistoryUseCase(repository),
         show_summary=ShowSummaryUseCase(repository),
         show_chat_info=ShowChatInfoUseCase(repository),
-        create_branch=CreateBranchUseCase(repository, mcp_gateway),
+        create_branch=CreateBranchUseCase(
+            repository,
+            mcp_gateway,
+            research_library_repository,
+            bind_research_library,
+        ),
         select_strategy=SelectContextStrategyUseCase(),
         view_global_memory=ViewGlobalMemoryUseCase(memory_repository),
         refresh_agent_memory=RefreshAgentMemoryUseCase(repository),
@@ -324,7 +463,9 @@ def initialize_application() -> UseCasesBundle:
             repository, provider_registry
         ),
         list_task_profiles=ListTaskProfilesUseCase(task_profile_repository),
-        create_task_profile=CreateTaskProfileUseCase(task_profile_repository),
+        create_task_profile=create_task_profile_use_case,
+        set_task_profile_mcp_servers=set_task_profile_mcp_servers,
+        ensure_preset_task_profiles=ensure_preset_task_profiles,
         get_task_profile_memory=GetTaskProfileMemoryUseCase(task_profile_repository),
         delete_task_profile=DeleteTaskProfileUseCase(task_profile_repository),
         add_invariant=AddInvariantUseCase(task_profile_repository),
@@ -333,16 +474,14 @@ def initialize_application() -> UseCasesBundle:
         connect_mcp=connect_mcp,
         disconnect_mcp=DisconnectMcpUseCase(repository, mcp_gateway),
         list_connected_mcp=ListConnectedMcpUseCase(repository, mcp_gateway),
-        list_available_mcp=ListAvailableMcpUseCase(repository, mcp_gateway),
+        list_available_mcp=list_available_mcp,
         run_scheduled_agent_task=RunScheduledAgentTaskUseCase(
             create_chat=create_chat,
             send_message=send_message,
             connect_mcp=connect_mcp,
         ),
         create_knowledge_base=create_knowledge_base,
-        delete_knowledge_base=DeleteKnowledgeBaseUseCase(
-            knowledge_base_repository
-        ),
+        delete_knowledge_base=delete_knowledge_base,
         list_knowledge_bases=list_knowledge_bases,
         add_document=add_document,
         list_documents=ListDocumentsUseCase(
@@ -351,9 +490,7 @@ def initialize_application() -> UseCasesBundle:
         list_document_chunks=ListDocumentChunksUseCase(document_repository),
         delete_document=DeleteDocumentUseCase(document_repository),
         attach_knowledge_base=attach_knowledge_base,
-        detach_knowledge_base=DetachKnowledgeBaseFromAgentUseCase(
-            knowledge_base_repository, agent_knowledge_base_repository
-        ),
+        detach_knowledge_base=detach_knowledge_base,
         list_agent_knowledge_bases=list_agent_knowledge_bases,
         retrieve_rag_context=RetrieveRagContextUseCase(rag_service),
         search_knowledge_base=SearchKnowledgeBaseUseCase(rag_service),
@@ -379,6 +516,50 @@ def initialize_application() -> UseCasesBundle:
             knowledge_base_name=SUPPORT_KB_NAME,
             source_paths=SUPPORT_DOCS_PATHS,
             knowledge_base_description="FAQ службы поддержки.",
+        ),
+        research_create_library=create_research_library,
+        research_ensure_library=ensure_research_library,
+        research_bind_library=bind_research_library,
+        research_detach_library=detach_research_library,
+        research_delete_library=delete_research_library,
+        research_get_active_library=GetActiveResearchLibraryUseCase(
+            research_library_repository
+        ),
+        research_list_libraries=ListResearchLibrariesUseCase(
+            research_library_repository
+        ),
+        research_switch_library=SwitchResearchLibraryUseCase(
+            research_library_repository, bind_research_library
+        ),
+        research_update_profile=UpdateResearchLibraryProfileUseCase(
+            research_library_repository
+        ),
+        research_search_articles=search_research_articles,
+        research_import_articles=import_research_articles,
+        research_list_articles=ListResearchArticlesUseCase(
+            ensure_research_library, research_article_repository
+        ),
+        research_list_library_articles=ListResearchLibraryArticlesUseCase(
+            research_library_repository, research_article_repository
+        ),
+        research_get_article=GetResearchArticleUseCase(
+            ensure_research_library, research_article_repository, research_source
+        ),
+        research_stats=GetResearchLibraryStatsUseCase(
+            ensure_research_library, research_article_repository
+        ),
+        research_summarize_articles=summarize_research_articles,
+        research_search_library=search_research_library,
+        research_recommend_articles=RecommendResearchArticlesUseCase(
+            ensure_library=ensure_research_library,
+            article_repository=research_article_repository,
+            rag_service=rag_service,
+        ),
+        research_review_context=build_review_context,
+        research_hypothesis_context=BuildHypothesisContextUseCase(
+            ensure_library=ensure_research_library,
+            build_review_context=build_review_context,
+            search_library=search_research_library,
         ),
         create_api_key=CreateApiKeyUseCase(api_key_repository),
         list_api_keys=ListApiKeysUseCase(api_key_repository),

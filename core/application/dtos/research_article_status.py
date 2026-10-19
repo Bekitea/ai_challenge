@@ -1,0 +1,17 @@
+"""Статусы статьи в научной библиотеке."""
+
+from __future__ import annotations
+
+ARTICLE_STATUS_CANDIDATE = "candidate"
+ARTICLE_STATUS_DOWNLOADED = "downloaded"
+ARTICLE_STATUS_INDEXED = "indexed"
+ARTICLE_STATUS_ABSTRACT_ONLY = "abstract_only"
+ARTICLE_STATUS_ERROR = "error"
+
+ARTICLE_STATUSES = (
+    ARTICLE_STATUS_CANDIDATE,
+    ARTICLE_STATUS_DOWNLOADED,
+    ARTICLE_STATUS_INDEXED,
+    ARTICLE_STATUS_ABSTRACT_ONLY,
+    ARTICLE_STATUS_ERROR,
+)

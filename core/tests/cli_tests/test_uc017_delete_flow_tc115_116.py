@@ -16,6 +16,7 @@ class TestUC017_DeleteFlow_TC115_116:
         "To be deleted\n"  # Описание
         "\n"  # Предпочтения
         "\n"  # Инварианты: пусто
+        "\n"  # MCP-серверы: пропуск
     )
 
     def test_tc_115_chat_loop_graceful_exit_on_eof(self):
@@ -51,7 +52,7 @@ class TestUC017_DeleteFlow_TC115_116:
 
         Steps:
         1. Open profiles list with at least one profile -> prompt
-           'Выберите действие (1-4):' displayed.
+           'Выберите действие (1-6):' displayed.
         2. Enter 'abc' (non-numeric) -> [WARN] Неверный выбор, попробуйте снова.,
            action prompt re-displayed.
         3. Enter '0' -> same warning; action prompt re-displayed.
@@ -62,14 +63,14 @@ class TestUC017_DeleteFlow_TC115_116:
             + "2\n"  # Просмотреть список профилей
             + "abc\n"  # Нечисловое действие
             "0\n"  # Некорректное действие
-            "4\n"  # Назад к списку -> возврат в меню профилей
+            "6\n"  # Назад к списку -> возврат в меню профилей
             "3\n"  # Назад в главное меню
             "8\n"  # Exit
         )
 
         stdout, _, _ = run_cli_command(test_input)
 
-        assert "Выберите действие (1-4):" in stdout
+        assert "Выберите действие (1-6):" in stdout
         # Предупреждения именно из подменю действий (после вывода списка профилей)
         after_list = stdout.split("--- СПИСОК ПРОФИЛЕЙ ЗАДАЧ ---", 1)[-1]
         assert after_list.count("[WARN] Неверный выбор, попробуйте снова.") >= 2, (
@@ -97,6 +98,7 @@ class TestUC017_DeleteFlow_TC115_116:
             "Profile with empty prefs\n"  # Описание
             "\n"  # Предпочтения: пустой ввод (пропуск)
             "\n"  # Инварианты: пустая строка завершает ввод
+            "\n"  # MCP-серверы: пропуск
             "2\n"  # Просмотреть список профилей
             "1\n"  # Действие: просмотреть память профиля
             "1\n"  # Профиль №1
@@ -125,7 +127,7 @@ class TestUC017_DeleteFlow_TC115_116:
             "abc\n"  # Нечисловой ввод
             "1\n"  # Профиль №1
             "n\n"  # Отменить удаление — профиль остаётся
-            "4\n"  # Назад к списку -> возврат в меню профилей
+            "6\n"  # Назад к списку -> возврат в меню профилей
             "0\n"  # Выход из подменю списка (см. _view_task_profiles_list)
             "3\n"  # Назад в главное меню
             "8\n"  # Exit

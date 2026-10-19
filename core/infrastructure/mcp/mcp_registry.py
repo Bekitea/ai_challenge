@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import config
 from core.infrastructure.mcp.mcp_server_info import McpServerInfo
 
 AVAILABLE_MCP_SERVERS: list[McpServerInfo] = [
@@ -11,6 +12,18 @@ AVAILABLE_MCP_SERVERS: list[McpServerInfo] = [
             "(инструмент search_articles)"
         ),
         script_path="mcp/open_alex_mcp.py",
+    ),
+    McpServerInfo(
+        name="research",
+        title="Research Library",
+        description=(
+            "Научная библиотека диссертации: поиск статей в OpenAlex, импорт "
+            "OA-полнотекстов и аннотаций, сводки, систематический обзор, "
+            "ответы по базе, рекомендации и гипотезы. У каждого чата своя "
+            "библиотека и своя база знаний"
+        ),
+        script_path="mcp/research_mcp.py",
+        call_timeout=config.RESEARCH_MCP_CALL_TIMEOUT,
     ),
     McpServerInfo(
         name="time",

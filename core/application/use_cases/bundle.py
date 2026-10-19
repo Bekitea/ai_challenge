@@ -11,6 +11,15 @@ if TYPE_CHECKING:
     from core.application.use_cases.attach_knowledge_base_to_agent import (
         AttachKnowledgeBaseToAgentUseCase,
     )
+    from core.application.use_cases.bind_research_library import (
+        BindResearchLibraryUseCase,
+    )
+    from core.application.use_cases.build_hypothesis_context import (
+        BuildHypothesisContextUseCase,
+    )
+    from core.application.use_cases.build_review_context import (
+        BuildReviewContextUseCase,
+    )
     from core.application.use_cases.change_phase import ChangePhaseUseCase
     from core.application.use_cases.change_settings import ChangeSettingsUseCase
     from core.application.use_cases.connect_mcp import ConnectMcpUseCase
@@ -20,6 +29,9 @@ if TYPE_CHECKING:
     from core.application.use_cases.create_knowledge_base import (
         CreateKnowledgeBaseUseCase,
     )
+    from core.application.use_cases.create_research_library import (
+        CreateResearchLibraryUseCase,
+    )
     from core.application.use_cases.create_task_profile import (
         CreateTaskProfileUseCase,
     )
@@ -28,15 +40,39 @@ if TYPE_CHECKING:
     from core.application.use_cases.delete_knowledge_base import (
         DeleteKnowledgeBaseUseCase,
     )
+    from core.application.use_cases.delete_research_library import (
+        DeleteResearchLibraryUseCase,
+    )
     from core.application.use_cases.delete_task_profile import (
         DeleteTaskProfileUseCase,
     )
     from core.application.use_cases.detach_knowledge_base_from_agent import (
         DetachKnowledgeBaseFromAgentUseCase,
     )
+    from core.application.use_cases.detach_research_library import (
+        DetachResearchLibraryUseCase,
+    )
     from core.application.use_cases.disconnect_mcp import DisconnectMcpUseCase
+    from core.application.use_cases.ensure_preset_task_profiles import (
+        EnsurePresetTaskProfilesUseCase,
+    )
+    from core.application.use_cases.ensure_research_library import (
+        EnsureResearchLibraryUseCase,
+    )
+    from core.application.use_cases.get_active_research_library import (
+        GetActiveResearchLibraryUseCase,
+    )
+    from core.application.use_cases.get_research_article import (
+        GetResearchArticleUseCase,
+    )
+    from core.application.use_cases.get_research_library_stats import (
+        GetResearchLibraryStatsUseCase,
+    )
     from core.application.use_cases.get_task_profile_memory import (
         GetTaskProfileMemoryUseCase,
+    )
+    from core.application.use_cases.import_research_articles import (
+        ImportResearchArticlesUseCase,
     )
     from core.application.use_cases.list_agent_knowledge_bases import (
         ListAgentKnowledgeBasesUseCase,
@@ -57,11 +93,23 @@ if TYPE_CHECKING:
         ListKnowledgeBasesUseCase,
     )
     from core.application.use_cases.list_models import ListModelsUseCase
+    from core.application.use_cases.list_research_articles import (
+        ListResearchArticlesUseCase,
+    )
+    from core.application.use_cases.list_research_libraries import (
+        ListResearchLibrariesUseCase,
+    )
+    from core.application.use_cases.list_research_library_articles import (
+        ListResearchLibraryArticlesUseCase,
+    )
     from core.application.use_cases.list_task_profiles import (
         ListTaskProfilesUseCase,
     )
     from core.application.use_cases.prepare_assistant_context import (
         PrepareAssistantContextUseCase,
+    )
+    from core.application.use_cases.recommend_research_articles import (
+        RecommendResearchArticlesUseCase,
     )
     from core.application.use_cases.refresh_agent_memory import (
         RefreshAgentMemoryUseCase,
@@ -83,6 +131,12 @@ if TYPE_CHECKING:
     from core.application.use_cases.search_knowledge_base import (
         SearchKnowledgeBaseUseCase,
     )
+    from core.application.use_cases.search_research_articles import (
+        SearchResearchArticlesUseCase,
+    )
+    from core.application.use_cases.search_research_library import (
+        SearchResearchLibraryUseCase,
+    )
     from core.application.use_cases.seed_project_knowledge_base import (
         SeedProjectKnowledgeBaseUseCase,
     )
@@ -94,9 +148,21 @@ if TYPE_CHECKING:
     from core.application.use_cases.set_reranker_enabled import (
         SetRerankerEnabledUseCase,
     )
+    from core.application.use_cases.set_task_profile_mcp_servers import (
+        SetTaskProfileMcpServersUseCase,
+    )
     from core.application.use_cases.show_chat_info import ShowChatInfoUseCase
     from core.application.use_cases.show_history import ShowHistoryUseCase
     from core.application.use_cases.show_summary import ShowSummaryUseCase
+    from core.application.use_cases.summarize_research_articles import (
+        SummarizeResearchArticlesUseCase,
+    )
+    from core.application.use_cases.switch_research_library import (
+        SwitchResearchLibraryUseCase,
+    )
+    from core.application.use_cases.update_research_library_profile import (
+        UpdateResearchLibraryProfileUseCase,
+    )
     from core.application.use_cases.verify_api_key import VerifyApiKeyUseCase
     from core.application.use_cases.view_global_memory import (
         ViewGlobalMemoryUseCase,
@@ -133,6 +199,8 @@ class UseCasesBundle:
     save_unsaved_memories: SaveUnsavedMemoriesUseCase
     list_task_profiles: ListTaskProfilesUseCase
     create_task_profile: CreateTaskProfileUseCase
+    set_task_profile_mcp_servers: SetTaskProfileMcpServersUseCase
+    ensure_preset_task_profiles: EnsurePresetTaskProfilesUseCase
     get_task_profile_memory: GetTaskProfileMemoryUseCase
     delete_task_profile: DeleteTaskProfileUseCase
     add_invariant: AddInvariantUseCase
@@ -160,6 +228,26 @@ class UseCasesBundle:
     prepare_support_context: PrepareAssistantContextUseCase
     run_file_assistant: RunFileAssistantUseCase
     seed_support_knowledge_base: SeedProjectKnowledgeBaseUseCase
+    research_create_library: CreateResearchLibraryUseCase
+    research_ensure_library: EnsureResearchLibraryUseCase
+    research_bind_library: BindResearchLibraryUseCase
+    research_detach_library: DetachResearchLibraryUseCase
+    research_delete_library: DeleteResearchLibraryUseCase
+    research_get_active_library: GetActiveResearchLibraryUseCase
+    research_list_libraries: ListResearchLibrariesUseCase
+    research_switch_library: SwitchResearchLibraryUseCase
+    research_update_profile: UpdateResearchLibraryProfileUseCase
+    research_search_articles: SearchResearchArticlesUseCase
+    research_import_articles: ImportResearchArticlesUseCase
+    research_list_articles: ListResearchArticlesUseCase
+    research_list_library_articles: ListResearchLibraryArticlesUseCase
+    research_get_article: GetResearchArticleUseCase
+    research_stats: GetResearchLibraryStatsUseCase
+    research_summarize_articles: SummarizeResearchArticlesUseCase
+    research_search_library: SearchResearchLibraryUseCase
+    research_recommend_articles: RecommendResearchArticlesUseCase
+    research_review_context: BuildReviewContextUseCase
+    research_hypothesis_context: BuildHypothesisContextUseCase
     create_api_key: CreateApiKeyUseCase
     list_api_keys: ListApiKeysUseCase
     delete_api_key: DeleteApiKeyUseCase

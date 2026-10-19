@@ -49,6 +49,7 @@ class TestUC004_TC064_065_MemoryIntegration:
             "For memory integration test\n"  # Description
             "\n"  # Предпочтения (пропуск)
             "\n"  # Инварианты: пустая строка завершает ввод
+            "\n"  # MCP-серверы: пропуск
             "3\n"  # Назад в главное меню (из меню профилей)
             # Create chat with task profile
             "1\n"  # Новый чат
@@ -101,6 +102,7 @@ class TestUC004_TC064_065_MemoryIntegration:
             "Profile for testing empty preferences\n"  # Description
             "\n"  # Empty preferences (skip)
             "\n"  # Инварианты: пустая строка завершает ввод
+            "\n"  # MCP-серверы: пропуск
             "3\n"  # Назад
             # Create chat with task profile
             "1\n"  # Новый чат

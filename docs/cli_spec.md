@@ -424,6 +424,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   /report - перейти в фазу отчета
   /mcp - показать подключённые к чату MCP и подключить новые
   /rag - базы знаний чата: подключить или отключить
+  /library - научная библиотека: список, подключить, открепить, удалить
   /rerank - включить или отключить реранкинг (on|off)
   /commands - показать этот список команд
   /help - задать вопрос о проекте (документация + git-контекст)
@@ -541,6 +542,7 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
      - Non-numeric text is treated as a server name and passed to the use case
   5. On selection: `[INFO] Подключаю MCP '{name}'...`, then result `[OK] {message}` or `[ERROR] {message}` from `connect_mcp` use case
 - **Side Effects**: Successful connection persists the server list on the agent; tools become available to the LLM in subsequent messages (tool-calling loop inside `continue_dialog`)
+- **Research server**: the `research` server (`Research Library`) exposes the per-chat scientific library: OpenAlex search, OA full-text/abstract import, summaries, RAG Q&A, reading advice, systematic review and hypothesis contexts. The current chat is passed to the MCP server via `AI_CHAT_AGENT_ID`, so each chat uses its own library and knowledge base (see [UC-031](uc/uc-031-research-libraries.md)).
 
 ##### `/rag`
 
@@ -572,6 +574,30 @@ All commands are matched case-insensitively. Unknown slash-commands are treated 
   ```
   If bases are attached but no chunk passed the threshold: `  [Источники] релевантных фрагментов не найдено (порог {threshold}).` See UC-021.
 - **Side Effects**: attachment is stored in the `agent_knowledge_bases` table; detach removes the link.
+
+##### `/library`
+
+- **Action**: Manage the chat's research library (`research_libraries`, UC-031)
+- **Forms**: bare `/library` opens a menu; shortcuts `/library list|info|articles|use <имя>|create <имя>|detach|delete <имя>`
+- **Menu**:
+  ```
+  --- Научная библиотека чата: {chat_name} ---
+  Активная: {name} (статей: N) | не привязана
+  БЗ: {kb_name} | не привязана
+  1. Список библиотек
+  2. Подключить существующую
+  3. Создать новую
+  4. Открепить от чата
+  5. Удалить библиотеку
+  6. Список статей активной библиотеки
+  0. Назад
+  ```
+- **Create**: prompts name, goal, field, comma-separated keywords and optional year range `2020-2026`; creates a knowledge base and binds the library (and its KB, when `RESEARCH_AUTO_ATTACH_KB=true`) to the chat
+- **Articles**: `/library articles [--year 2020-2026] [--status indexed|abstract_only] [--query TEXT] [--limit N]` prints the articles of the active library (title, authors, year, DOI, status, summary snippet) and `Показано: X из Y`; no active library → warning; empty result → `(статей по заданным условиям не найдено)`; menu item `6` calls the same listing
+- **Use**: lists all libraries; binding an existing library makes it active and detaches the previous library's KB (manually attached KBs are kept)
+- **Detach**: removes the chat binding and the library KB link; the library, its articles and KB are kept and reusable
+- **Delete**: irreversible; requires typing the exact library name to confirm; removes bindings in all chats, articles, the KB (documents, chunks, vectors) and files
+- **Side Effects**: changes `agent_research_libraries` (and `agent_knowledge_bases` for auto-attach); delete cascades `research_articles` and the knowledge base
 
 ##### `/rerank`
 
@@ -646,6 +672,7 @@ Empty list: prints `Нет доступных профилей задач.` and 
    Дата создания: {YYYY-MM-DD HH:MM}
    Фактов в памяти: {facts_count}
    Инвариантов: {invariants_count}
+   MCP-серверы: {comma-separated names | (нет)}
    Описание: {description truncated to 50 chars + "..." if longer, else full text}
 
 ----------------------------------------
@@ -653,10 +680,15 @@ Empty list: prints `Нет доступных профилей задач.` and 
 1. Просмотреть память профиля
 2. Управление инвариантами
 3. Удалить профиль
-4. Назад к списку
+4. Создать чат с этим профилем
+5. Настроить MCP-серверы
+6. Назад к списку
 ```
 
-Prompt: `Выберите действие (1-4):`. Invalid action: `[WARN] Неверный выбор, попробуйте снова.` and the action prompt is re-displayed. Actions 1–3 first require profile selection by index (`Выберите профиль (1-{n}):` / `Выберите профиль для удаления (1-{n}):`; out-of-range → `Введите число от 1 до {n}`, non-numeric → `Введите корректное число`). After an action completes, control returns to the Task Profiles menu.
+Prompt: `Выберите действие (1-6):`. Invalid action: `[WARN] Неверный выбор, попробуйте снова.` and the action prompt is re-displayed. Actions 1–5 first require profile selection by index (`Выберите профиль (1-{n}):` / `Выберите профиль для удаления (1-{n}):`; out-of-range → `Введите число от 1 до {n}`, non-numeric → `Введите корректное число`). After an action completes, control returns to the Task Profiles menu.
+
+- **4. Create chat with this profile**: prompts chat name (optional), model and reasoning effort, creates the chat with `task_profile_id`, prints `[OK] Чат '{name}' создан с профилем '{profile}'.`, connects the profile's MCP servers (printing `[OK]`/`[WARN]` for each) and enters the chat loop.
+- **5. Configure MCP servers**: shows the registry with the profile's current servers marked `[выбран]`; numbers are entered comma-separated (`Enter` — no MCP, `0` — keep current). The list is replaced via `set_task_profile_mcp_servers`.
 
 #### 4.7.2 Create Profile (`_create_task_profile`)
 
@@ -671,11 +703,20 @@ Prompt: `Выберите действие (1-4):`. Invalid action: `[WARN] Не
          'Стек: PostgreSQL + Redis', 'Пользователь — веган'
 Введите инварианты по одному. Пустая строка для завершения:
   >
+
+--- MCP-СЕРВЕРЫ ПРОФИЛЯ ---
+  1. OpenAlex (openalex)
+  2. Research Library (research)
+  3. Time (time)
+  ...
+Укажите номера через запятую (Enter - без MCP, 0 - оставить текущие):
+  >
 ```
 
 - Name and description are required: empty input re-prompts in place with `[ERROR] Название профиля не может быть пустым.` / `[ERROR] Описание задачи не может быть пустым.`; the CLI performs no length validation/truncation
 - Preferences: single line, optional (empty allowed)
 - Invariants: entered one per line until an empty line terminates input
+- MCP servers: optional multi-select from the registry; unknown names are rejected by the use case (`MCP-сервер '...' не найден в реестре.`); the profile stores the list and new chats connect these servers automatically
 - Success output:
   ```
   [OK] Профиль задачи '{name}' создан!
@@ -865,3 +906,4 @@ this document.
 | UC-028 | Seed Assistant Knowledge Bases (menu 7, option 9) | Rebuild the project and support knowledge bases from their sources, deleting stale documents first. | [uc-028-seed-project-knowledge-base.md](uc/uc-028-seed-project-knowledge-base.md) |
 | UC-029 | Support Assistant (/support) | Answer support questions via the support knowledge base (FAQ RAG) and the support MCP server (ticket/user context). | [uc-029-support-assistant.md](uc/uc-029-support-assistant.md) |
 | UC-030 | Project File Assistant (/files) | Perform real file operations (search/read/create/modify) via the files and git MCP servers, showing diffs and applying changes. | [uc-030-project-file-assistant.md](uc/uc-030-project-file-assistant.md) |
+| UC-031 | Research Libraries Per Chat (research MCP) | Per-chat scientific libraries: OpenAlex search, OA full-text/abstract import, summaries, RAG Q&A, reading advice, systematic review and hypothesis contexts. | [uc-031-research-libraries.md](uc/uc-031-research-libraries.md) |

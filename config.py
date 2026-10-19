@@ -187,6 +187,58 @@ def _support_docs_paths() -> list[str]:
 
 SUPPORT_DOCS_PATHS = _support_docs_paths()
 
+# --- Научная библиотека (research MCP) ---
+# Отдельная библиотека статей и БЗ создаётся на каждый чат (научную область).
+# Имя БЗ в меню /rag = RESEARCH_KB_PREFIX + имя библиотеки.
+RESEARCH_KB_PREFIX = os.getenv("RESEARCH_KB_PREFIX", "Научная библиотека")
+RESEARCH_LIBRARY_AUTO_NAME = os.getenv(
+    "RESEARCH_LIBRARY_AUTO_NAME", "Исследования"
+)
+RESEARCH_MAX_RESULTS = int(os.getenv("RESEARCH_MAX_RESULTS", "20"))
+RESEARCH_IMPORT_BATCH_LIMIT = int(os.getenv("RESEARCH_IMPORT_BATCH_LIMIT", "5"))
+RESEARCH_MAX_PDF_BYTES = int(
+    os.getenv("RESEARCH_MAX_PDF_BYTES", str(40 * 1024 * 1024))
+)
+RESEARCH_MAX_PDF_PAGES = int(os.getenv("RESEARCH_MAX_PDF_PAGES", "120"))
+RESEARCH_MAX_FULLTEXT_CHARS = int(
+    os.getenv("RESEARCH_MAX_FULLTEXT_CHARS", "400000")
+)
+RESEARCH_SUMMARY_MAX_CHARS = int(
+    os.getenv("RESEARCH_SUMMARY_MAX_CHARS", "40000")
+)
+RESEARCH_REVIEW_MAX_CHARS = int(
+    os.getenv("RESEARCH_REVIEW_MAX_CHARS", "60000")
+)
+RESEARCH_OUTPUT_LANGUAGE = os.getenv("RESEARCH_OUTPUT_LANGUAGE", "ru")
+RESEARCH_LLM_PROVIDER = os.getenv(
+    "RESEARCH_LLM_PROVIDER", DEFAULT_REPORT_PROVIDER
+)
+RESEARCH_LLM_MODEL = os.getenv("RESEARCH_LLM_MODEL", DEFAULT_REPORT_MODEL)
+RESEARCH_MCP_CALL_TIMEOUT = float(
+    os.getenv("RESEARCH_MCP_CALL_TIMEOUT", "900")
+)
+# Автоматически привязывать БЗ библиотеки к чату: тогда обычный RAG (/rag)
+# работает вместе с research-инструментами без ручного подключения.
+RESEARCH_AUTO_ATTACH_KB = os.getenv(
+    "RESEARCH_AUTO_ATTACH_KB", "true"
+).lower() in ("1", "true", "yes")
+
+# OpenAlex — вежливый пул требует mailto; без него лимиты жёстче.
+OPENALEX_API_URL = os.getenv("OPENALEX_API_URL", "https://api.openalex.org").rstrip(
+    "/"
+)
+OPENALEX_MAILTO = os.getenv("OPENALEX_MAILTO", "")
+OPENALEX_RPS = float(os.getenv("OPENALEX_RPS", "5"))
+OPENALEX_MAX_RETRIES = int(os.getenv("OPENALEX_MAX_RETRIES", "4"))
+OPENALEX_TIMEOUT = int(os.getenv("OPENALEX_TIMEOUT", "30"))
+
+# Unpaywall — fallback для поиска OA-PDF по DOI (нужен email).
+UNPAYWALL_API_URL = os.getenv(
+    "UNPAYWALL_API_URL", "https://api.unpaywall.org/v2"
+).rstrip("/")
+UNPAYWALL_EMAIL = os.getenv("UNPAYWALL_EMAIL", OPENALEX_MAILTO)
+UNPAYWALL_TIMEOUT = int(os.getenv("UNPAYWALL_TIMEOUT", "20"))
+
 # --- Ассистентские команды (/help, /support, /files) ---
 # По умолчанию ВЫКЛ: команды временно законсервированы — логику нужно
 # проанализировать и переработать (общий реестр команд, явная политика
@@ -220,6 +272,12 @@ DATABASE_PATH = f"{_STORAGE_BASE}/agents.db"
 FILE_STORAGE_DIR = f"{_STORAGE_BASE}/file_storage"
 GLOBAL_MEMORY_PATH = f"{_STORAGE_BASE}/global_memory.pkl"
 
+# Файлы научных статей хранятся отдельно по библиотекам:
+# <RESEARCH_DATA_DIR>/library_<id>/pdf и /text.
+RESEARCH_DATA_DIR = os.getenv(
+    "RESEARCH_DATA_DIR", f"{FILE_STORAGE_DIR}/research"
+)
+
 DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
@@ -229,3 +287,4 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:63
 Path(DATABASE_PATH).parent.mkdir(parents=True, exist_ok=True)
 Path(FILE_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
 Path(GLOBAL_MEMORY_PATH).parent.mkdir(parents=True, exist_ok=True)
+Path(RESEARCH_DATA_DIR).mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -15,3 +15,4 @@ class TaskProfileInfo:
     facts_count: int
     preferences: str = ""
     invariants_count: int = 0
+    mcp_servers: list[str] = field(default_factory=list)

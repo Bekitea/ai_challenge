@@ -26,6 +26,16 @@ from config import (
     RESEARCH_LLM_PROVIDER,
     RESEARCH_MAX_RESULTS,
     RESEARCH_SUMMARY_MAX_CHARS,
+    REVIEW_DOCS_PATHS,
+    REVIEW_FOLDER_MAX_FILES,
+    REVIEW_KB_DESCRIPTION,
+    REVIEW_KB_NAME,
+    REVIEW_LLM_MODEL,
+    REVIEW_LLM_PROVIDER,
+    REVIEW_LLM_TIMEOUT,
+    REVIEW_MAX_DIFF_CHARS,
+    REVIEW_MAX_TOKENS,
+    REVIEW_TOP_K,
     SUPPORT_DOCS_PATHS,
     SUPPORT_KB_NAME,
     YANDEX_API_KEY,
@@ -82,6 +92,7 @@ from core.application.use_cases import (
     RefreshAgentMemoryUseCase,
     RemoveInvariantUseCase,
     RetrieveRagContextUseCase,
+    ReviewPullRequestUseCase,
     RunFileAssistantUseCase,
     RunScheduledAgentTaskUseCase,
     SaveAgentMemoryUseCase,
@@ -359,6 +370,36 @@ def initialize_application() -> UseCasesBundle:
         rag_model_service,
         file_extractor,
     )
+    # Отдельный индексатор для review-БЗ: повышенный лимит файлов, чтобы
+    # исходный код проекта (core/*) не обрезался при обходе каталогов.
+    add_document_review = AddDocumentToKnowledgeBaseUseCase(
+        knowledge_base_repository,
+        document_repository,
+        rag_model_service,
+        file_extractor,
+        max_files=REVIEW_FOLDER_MAX_FILES,
+    )
+    seed_review_knowledge_base = SeedProjectKnowledgeBaseUseCase(
+        knowledge_base_repository=knowledge_base_repository,
+        document_repository=document_repository,
+        add_document_use_case=add_document_review,
+        create_knowledge_base_use_case=create_knowledge_base,
+        knowledge_base_name=REVIEW_KB_NAME,
+        source_paths=REVIEW_DOCS_PATHS,
+        knowledge_base_description=REVIEW_KB_DESCRIPTION,
+    )
+    review_pull_request = ReviewPullRequestUseCase(
+        rag_service=rag_service,
+        knowledge_base_repository=knowledge_base_repository,
+        llm_registry=provider_registry,
+        knowledge_base_name=REVIEW_KB_NAME,
+        provider_name=REVIEW_LLM_PROVIDER,
+        model_id=REVIEW_LLM_MODEL,
+        top_k=REVIEW_TOP_K,
+        max_diff_chars=REVIEW_MAX_DIFF_CHARS,
+        max_tokens=REVIEW_MAX_TOKENS,
+        timeout=REVIEW_LLM_TIMEOUT,
+    )
 
     research_library_repository = SqliteResearchLibraryRepository(
         db_connection.get_session
@@ -517,6 +558,8 @@ def initialize_application() -> UseCasesBundle:
             source_paths=SUPPORT_DOCS_PATHS,
             knowledge_base_description="FAQ службы поддержки.",
         ),
+        review_pull_request=review_pull_request,
+        seed_review_knowledge_base=seed_review_knowledge_base,
         research_create_library=create_research_library,
         research_ensure_library=ensure_research_library,
         research_bind_library=bind_research_library,

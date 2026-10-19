@@ -95,6 +95,9 @@ from core.application.use_cases.recommend_research_articles import (
 from core.application.use_cases.refresh_agent_memory import RefreshAgentMemoryUseCase
 from core.application.use_cases.remove_invariant import RemoveInvariantUseCase
 from core.application.use_cases.retrieve_rag_context import RetrieveRagContextUseCase
+from core.application.use_cases.review_pull_request import (
+    ReviewPullRequestUseCase,
+)
 from core.application.use_cases.run_file_assistant import RunFileAssistantUseCase
 from core.application.use_cases.run_scheduled_agent_task import (
     RunScheduledAgentTaskUseCase,
@@ -185,6 +188,7 @@ __all__ = [
     "RefreshAgentMemoryUseCase",
     "RemoveInvariantUseCase",
     "RetrieveRagContextUseCase",
+    "ReviewPullRequestUseCase",
     "RunFileAssistantUseCase",
     "RunScheduledAgentTaskUseCase",
     "SaveAgentMemoryUseCase",

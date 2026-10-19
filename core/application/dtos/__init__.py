@@ -9,6 +9,10 @@ from core.application.dtos.chat_info import ChatInfo
 from core.application.dtos.chat_preview_dto import ChatPreviewDTO
 from core.application.dtos.chunk_dto import ChunkDTO
 from core.application.dtos.chunk_ingest import ChunkIngest
+from core.application.dtos.code_review_dto import (
+    CodeReviewRequestDTO,
+    CodeReviewResultDTO,
+)
 from core.application.dtos.delete_api_key_result_dto import DeleteApiKeyResultDTO
 from core.application.dtos.delete_profile_result_dto import DeleteProfileResultDTO
 from core.application.dtos.document_dto import DocumentDTO
@@ -55,6 +59,8 @@ __all__ = [
     "ChatPreviewDTO",
     "ChunkDTO",
     "ChunkIngest",
+    "CodeReviewRequestDTO",
+    "CodeReviewResultDTO",
     "DeleteApiKeyResultDTO",
     "DeleteProfileResultDTO",
     "DocumentDTO",

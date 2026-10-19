@@ -253,7 +253,11 @@ class RedisQueue:
         pipe.rpush(reply_key, result.to_json())
         pipe.expire(reply_key, self._reply_ttl)
         if job.message_id is not None:
+            # XACK снимает сообщение с pending, а XDEL удаляет его из потока:
+            # иначе XLEN только растёт и `depth()`/backpressure навсегда
+            # упирается в MAX_QUEUE_DEPTH (после ~N запросов — вечные 503).
             pipe.xack(self._stream, self._group, job.message_id)
+            pipe.xdel(self._stream, job.message_id)
         pipe.execute()
 
     def wait(self, request_id: str, timeout: float) -> Result:

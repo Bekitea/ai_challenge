@@ -1,5 +1,6 @@
 import os
 import shlex
+import subprocess
 import sys
 import time
 
@@ -7,13 +8,17 @@ from config import (
     ASSISTANT_COMMANDS_ENABLED,
     DEFAULT_PROVIDER,
     PROJECT_KB_NAME,
+    PROJECT_ROOT,
     RAG_FILE_EXTENSIONS,
     RAG_RELEVANCE_THRESHOLD,
     REASONING_EFFORTS,
+    REVIEW_ENABLED,
+    REVIEW_KB_NAME,
     SUPPORT_KB_NAME,
 )
 from core.application.dtos import (
     ChatDTO,
+    CodeReviewRequestDTO,
     MemorySaveResult,
     MessageResponseDTO,
     SettingsDTO,
@@ -53,6 +58,12 @@ ASSISTANT_COMMAND_NAMES = ("/help", "/support", "/files")
 
 if ASSISTANT_COMMANDS_ENABLED:
     HELP_COMMANDS.extend(ASSISTANT_HELP_COMMANDS)
+
+if REVIEW_ENABLED:
+    HELP_COMMANDS.append(
+        "/review [base] - AI-ревью изменений (git diff против base, "
+        "по умолчанию origin/main)"
+    )
 
 
 class CLIChat:
@@ -1854,11 +1865,15 @@ class CLIChat:
                 "9. Засеять БЗ ассистентов "
                 f"('{PROJECT_KB_NAME}' + '{SUPPORT_KB_NAME}')"
             )
+            print(
+                "10. Засеять БЗ ревью "
+                f"('{REVIEW_KB_NAME}' — документация + исходный код)"
+            )
             print("0. Назад в главное меню")
             print("-" * 40)
 
             try:
-                choice = input("Ваш выбор (0-9): ").strip()
+                choice = input("Ваш выбор (0-10): ").strip()
             except (EOFError, KeyboardInterrupt):
                 print()
                 return
@@ -1881,6 +1896,8 @@ class CLIChat:
                 self._search_knowledge_base()
             elif choice == "9":
                 self._seed_assistant_knowledge_bases()
+            elif choice == "10":
+                self._seed_review_knowledge_base()
             elif choice == "0":
                 return
             else:
@@ -2144,6 +2161,30 @@ class CLIChat:
             SUPPORT_KB_NAME, self.use_cases.seed_support_knowledge_base
         )
 
+    def _seed_review_knowledge_base(self):
+        """Пункт меню: засеять БЗ ревью кода (документация + исходный код).
+
+        Используется AI-ревью PR (UC-032). Индексация кода заметно дольше
+        проектной БЗ, поэтому вынесена отдельным пунктом.
+        """
+        if not REVIEW_ENABLED:
+            print("\n[INFO] AI-ревью PR отключено (REVIEW_ENABLED=false).")
+            return
+
+        print(f"\n--- ЗАСЕВ БАЗЫ РЕВЬЮ '{REVIEW_KB_NAME}' ---")
+        print(
+            "[INFO] Прежние документы этой базы будут удалены, затем "
+            "документация и исходный код проекта проиндексируются заново."
+        )
+        confirm = input("Продолжить? (y/n): ").strip().lower()
+        if confirm != "y":
+            print("[INFO] Действие отменено.")
+            return
+
+        self._seed_one_knowledge_base(
+            REVIEW_KB_NAME, self.use_cases.seed_review_knowledge_base
+        )
+
     def _seed_one_knowledge_base(self, name: str, use_case) -> None:
         """Засевает одну базу знаний и печатает результат индексации."""
         print(f"\n--- ЗАСЕВ БАЗЫ '{name}' ---")
@@ -2242,6 +2283,12 @@ class CLIChat:
                     "/files "
                 ):
                     self.files_assistant(user_input[len("/files") :])
+                    continue
+
+                if user_input.lower() == "/review" or user_input.lower().startswith(
+                    "/review "
+                ):
+                    self.code_review(user_input[len("/review") :])
                     continue
 
                 # Обработка команд фаз
@@ -2461,6 +2508,90 @@ class CLIChat:
         self._print_assistant_context(result.messages)
         if result.response is not None:
             self._print_response(result.response)
+
+    def code_review(self, argument: str):
+        """Обрабатывает /review [base]: AI-ревью текущих изменений.
+
+        Собирает diff рабочей копии против указанной базы (по умолчанию
+        ``origin/main``) и передаёт его use case ревью вместе с RAG-контекстом.
+        """
+        if not REVIEW_ENABLED:
+            print("\n[INFO] AI-ревью PR отключено (REVIEW_ENABLED=false).")
+            return
+
+        base = argument.strip() or "origin/main"
+        print(f"\n[INFO] Собираю diff против '{base}'...", flush=True)
+        try:
+            diff = self._run_git(["diff", f"{base}...HEAD"])
+            changed = self._run_git(
+                ["diff", "--name-only", f"{base}...HEAD"]
+            )
+        except RuntimeError as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+
+        if not diff.strip():
+            print("[INFO] Изменений нет — ревью не требуется.")
+            return
+
+        changed_files = [
+            line.strip() for line in changed.splitlines() if line.strip()
+        ]
+        request = CodeReviewRequestDTO(
+            changed_files=changed_files,
+            diff=diff,
+            base_branch=base,
+        )
+
+        print("[AGENT] формирует ревью...", flush=True)
+        try:
+            result = self.use_cases.review_pull_request.execute(request)
+        except (RagError, ValueError) as exc:
+            print(f"\n[ERROR] {exc}")
+            return
+
+        print("\n" + "=" * 60)
+        print(result.review)
+        print("=" * 60)
+        if result.rag_sources:
+            print(
+                f"\n[INFO] Использовано RAG-фрагментов: {len(result.rag_sources)}"
+            )
+            for source in result.rag_sources:
+                print(
+                    f"  - {source.document_name} "
+                    f"(фрагмент {source.chunk_index})"
+                )
+        if result.model:
+            print(f"[INFO] Модель: {result.model}")
+
+    @staticmethod
+    def _run_git(args: list[str]) -> str:
+        """Запускает git в корне проекта и возвращает stdout.
+
+        Raises:
+            RuntimeError: Если git недоступен или завершился с ошибкой.
+        """
+        try:
+            completed = subprocess.run(
+                ["git", *args],
+                cwd=str(PROJECT_ROOT),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+        except OSError as exc:
+            raise RuntimeError(f"Не удалось запустить git: {exc}") from exc
+        if completed.returncode != 0:
+            raise RuntimeError(
+                "git "
+                + " ".join(args)
+                + " завершился с ошибкой: "
+                + (completed.stderr or "").strip()
+            )
+        return completed.stdout
 
     def _print_memory_save_start(self, chat_name: str) -> None:
         """Выводит уведомление о начале заполнения памяти чата."""

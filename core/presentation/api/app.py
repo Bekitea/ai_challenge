@@ -23,6 +23,7 @@ from core.presentation.api.routers import (
     memory,
     models,
     research_libraries,
+    reviews,
     task_profiles,
 )
 from core.presentation.api.security import require_api_key
@@ -59,6 +60,7 @@ def build_app(use_cases: UseCasesBundle) -> FastAPI:
     api.include_router(mcp.router)
     api.include_router(knowledge_bases.router)
     api.include_router(research_libraries.router)
+    api.include_router(reviews.router)
     api.include_router(task_profiles.router)
     api.include_router(memory.router)
     app.include_router(

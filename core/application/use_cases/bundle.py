@@ -118,6 +118,9 @@ if TYPE_CHECKING:
     from core.application.use_cases.retrieve_rag_context import (
         RetrieveRagContextUseCase,
     )
+    from core.application.use_cases.review_pull_request import (
+        ReviewPullRequestUseCase,
+    )
     from core.application.use_cases.run_file_assistant import (
         RunFileAssistantUseCase,
     )
@@ -228,6 +231,8 @@ class UseCasesBundle:
     prepare_support_context: PrepareAssistantContextUseCase
     run_file_assistant: RunFileAssistantUseCase
     seed_support_knowledge_base: SeedProjectKnowledgeBaseUseCase
+    review_pull_request: ReviewPullRequestUseCase
+    seed_review_knowledge_base: SeedProjectKnowledgeBaseUseCase
     research_create_library: CreateResearchLibraryUseCase
     research_ensure_library: EnsureResearchLibraryUseCase
     research_bind_library: BindResearchLibraryUseCase

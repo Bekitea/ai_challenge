@@ -1,0 +1,38 @@
+# Self-hosted GitHub Actions runner для AI-ревью PR (UC-032).
+#
+# Запуск (сначала должен быть поднят основной стек: `docker compose up -d`):
+#   RUNNER_TOKEN=<registration-token> docker compose -f docker-compose.runner.yml up -d --build
+#
+# Токен регистрации нужен только при ПЕРВОМ старте: состояние агента
+# сохраняется в volume `runner_data`, дальше контейнер переиспользует его.
+# Свежий токен берётся в GitHub: Settings → Actions → Runners → New runner.
+#
+# Раннер подключается к сети основного стека (ai-chat_default), поэтому
+# видит сервис `web` по имени и workflow ходит на http://web:8080. Никаких
+# LLM-ключей и доступов к БД на раннере не хранится.
+
+services:
+  runner:
+    build:
+      context: ./runner
+      dockerfile: Dockerfile
+    image: ai-chat-runner:latest
+    container_name: ai_chat_runner
+    restart: unless-stopped
+    environment:
+      REPO_URL: ${RUNNER_REPO_URL:-https://github.com/Bekitea/ai_challenge}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      RUNNER_NAME: ${RUNNER_NAME:-ai-challenge-runner}
+      LABELS: ${RUNNER_LABELS:-self-hosted,linux,x64}
+    volumes:
+      - runner_data:/home/runner
+    networks:
+      - ai-chat
+
+volumes:
+  runner_data:
+
+networks:
+  ai-chat:
+    external: true
+    name: ai-chat_default

@@ -361,6 +361,16 @@ class ResearchLibraryOperationResult(_Base):
     deleted_documents: int = 0
 
 
+class CodeReviewResponse(_Base):
+    """Результат AI-ревью pull request."""
+
+    review: str
+    rag_sources: list[RagSource] = Field(default_factory=list)
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    model: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Входные тела запросов
 # ---------------------------------------------------------------------------
@@ -486,3 +496,16 @@ class RerankResult(BaseModel):
     """Результат переключения реранкинга."""
 
     enabled: bool
+
+
+class CodeReviewRequest(BaseModel):
+    """Тело запроса AI-ревью pull request (diff + метаданные от раннера CI)."""
+
+    diff: str = Field(min_length=1)
+    changed_files: list[str] = Field(default_factory=list)
+    repo: str = ""
+    pr_number: int | None = None
+    pr_title: str = ""
+    author: str = ""
+    base_branch: str = ""
+    head_branch: str = ""

@@ -20,6 +20,29 @@ logger = logging.getLogger("rag.file_extractor")
 
 _ENCODINGS = ("utf-8", "utf-8-sig", "cp1251")
 
+# Каталоги, которые не нужно обходить при индексации папки: кэши, артефакты
+# сборки и служебные директории. Фильтр по частям относительного пути, а не
+# по расширению, — чтобы не индексировать мусор и не тратить лимит файлов.
+_IGNORED_DIRS = frozenset(
+    {
+        "__pycache__",
+        ".git",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".venv",
+        "venv",
+        "env",
+        "node_modules",
+        ".idea",
+        ".vscode",
+        "dist",
+        "build",
+        "htmlcov",
+        ".tox",
+    }
+)
+
 
 class LocalFileExtractor:
     """Извлекает текст из локальных файлов и папок."""
@@ -81,6 +104,9 @@ class LocalFileExtractor:
             if not candidate.is_file():
                 continue
             if candidate.suffix.lower() not in extensions:
+                continue
+            rel_parts = candidate.relative_to(directory).parts[:-1]
+            if any(part in _IGNORED_DIRS for part in rel_parts):
                 continue
             files.append(candidate)
             if len(files) >= max_files:

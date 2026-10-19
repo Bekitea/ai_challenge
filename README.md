@@ -386,6 +386,40 @@ git-контекст. Использование:
 [`docs/uc/uc-029`](docs/uc/uc-029-support-assistant.md) и
 [`docs/uc/uc-030`](docs/uc/uc-030-project-file-assistant.md).
 
+### AI-ревью pull request (GitHub Actions + review API)
+
+Автоматическое ревью PR: лёгкий self-hosted раннер GitHub Actions собирает
+diff и метаданные и отправляет их одним HTTP-запросом на бэкенд; бэкенд делает
+RAG по базе знаний «Ревью кода» (документация + исходный код) и возвращает
+Markdown-ревью (потенциальные баги, архитектурные проблемы, рекомендации),
+которое раннер публикует комментарием к PR. Раннер не хранит LLM-ключей и
+доступов к БД — только токен регистрации GitHub.
+
+1. Подготовьте базы знаний: в CLI меню «Базы знаний» → пункт `9` (проектная и
+   поддержки), затем пункт `10` (review БЗ `REVIEW_KB_NAME` из
+   `REVIEW_DOCS_PATHS`).
+2. Выпустите API-ключ: CLI меню `6. API-ключи` (UC-025).
+3. Поднимите бэкенд (`docker compose up -d`) и self-hosted раннер в той же
+   сети:
+   ```bash
+   RUNNER_TOKEN=<registration-token> \
+     docker compose -f docker-compose.runner.yml up -d --build
+   ```
+   Токен нужен только при первой регистрации (состояние — в volume
+   `runner_data`); обновить его можно в GitHub → Settings → Actions → Runners.
+4. Добавьте секреты репозитория: `REVIEW_API_KEY` (выпущенный ключ) и
+   (опционально) переменную `REVIEW_API_URL` (по умолчанию `http://web:8080`).
+
+Workflow [`.github/workflows/ai-review.yml`](.github/workflows/ai-review.yml)
+запускается на `pull_request` (opened/synchronize/reopened) и публикует
+комментарий через `GITHUB_TOKEN`. Эндпоинт — `POST /api/review-pr`
+(`{review, rag_sources, ...}`). Локально то же ревью можно получить командой
+`/review [base]` в CLI (по умолчанию `origin/main`). Переключатели:
+`REVIEW_ENABLED`, `REVIEW_KB_NAME`, `REVIEW_DOCS_PATHS`,
+`REVIEW_LLM_PROVIDER`/`REVIEW_LLM_MODEL`, `REVIEW_MAX_DIFF_CHARS`,
+`REVIEW_TOP_K`. Подробности — в
+[`docs/uc/uc-032`](docs/uc/uc-032-code-review-assistant.md).
+
 ### Научный ассистент для диссертации (research MCP)
 
 Отдельный MCP-сервер `research` (`Research Library`) превращает чат в рабочее

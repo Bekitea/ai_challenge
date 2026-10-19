@@ -171,6 +171,56 @@ def _project_docs_paths() -> list[str]:
 
 PROJECT_DOCS_PATHS = _project_docs_paths()
 
+# --- Ассистент ревью кода (UC-032) ---
+# Отдельная база знаний «Ревью кода»: эмбеддинги документации и исходного кода
+# проекта. Бэкенд получает diff из CI, делает RAG-поиск по этой БЗ и формирует
+# промпт для LLM. Лёгкий раннер GitHub Actions не имеет доступа к БЗ и LLM —
+# только к REST API бэкенда.
+REVIEW_ENABLED = os.getenv("REVIEW_ENABLED", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+REVIEW_KB_NAME = os.getenv("REVIEW_KB_NAME", "Ревью кода")
+REVIEW_KB_DESCRIPTION = os.getenv(
+    "REVIEW_KB_DESCRIPTION",
+    "Документация и исходный код проекта для AI-ревью PR.",
+)
+
+
+def _review_docs_paths() -> list[str]:
+    override = os.getenv("REVIEW_DOCS_PATHS", "")
+    paths = [item.strip() for item in override.split(",") if item.strip()]
+    if paths:
+        return paths
+    docs = [str(PROJECT_ROOT / name) for name in ("README.md", "docs", "AGENTS.md")]
+    code = [
+        str(PROJECT_ROOT / name)
+        for name in (
+            "core/domain",
+            "core/application",
+            "core/infrastructure",
+            "mcp",
+        )
+    ]
+    return docs + code
+
+
+REVIEW_DOCS_PATHS = _review_docs_paths()
+REVIEW_LLM_PROVIDER = os.getenv("REVIEW_LLM_PROVIDER", DEFAULT_REPORT_PROVIDER)
+REVIEW_LLM_MODEL = os.getenv("REVIEW_LLM_MODEL", DEFAULT_REPORT_MODEL)
+# Сколько RAG-фрагментов документации/кода подмешивать в промпт ревью.
+REVIEW_TOP_K = int(os.getenv("REVIEW_TOP_K", "8"))
+# Максимальный размер diff, попадающего в промпт (защита от переполнения
+# контекстного окна LLM). При превышении diff обрезается.
+REVIEW_MAX_DIFF_CHARS = int(os.getenv("REVIEW_MAX_DIFF_CHARS", "60000"))
+REVIEW_MAX_TOKENS = int(os.getenv("REVIEW_MAX_TOKENS", "2000"))
+REVIEW_LLM_TIMEOUT = int(os.getenv("REVIEW_LLM_TIMEOUT", "300"))
+# Лимит файлов при обходе одного пути (каталога) во время засева review-БЗ.
+# В core/application более 100 .py, поэтому лимит выше стандартного
+# RAG_FOLDER_MAX_FILES, чтобы код не обрезался.
+REVIEW_FOLDER_MAX_FILES = int(os.getenv("REVIEW_FOLDER_MAX_FILES", "5000"))
+
 # --- База знаний поддержки пользователей (ассистент поддержки) ---
 # Пункт меню «Засеять БЗ ассистентов» индексирует FAQ поддержки в отдельную
 # базу знаний, к которой привязана команда /support.

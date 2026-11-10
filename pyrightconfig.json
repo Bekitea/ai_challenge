@@ -1,0 +1,16 @@
+{
+    "executionEnvironments": [
+        {
+            "root": "llm_gateway"
+        },
+        {
+            "root": "reranker_service"
+        },
+        {
+            "root": "mcp"
+        },
+        {
+            "root": "core"
+        }
+    ]
+}

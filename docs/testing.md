@@ -11,7 +11,7 @@
   (`[tool.pytest.ini_options]`):
   - `addopts = "-n auto"` — полный прогон параллельный по умолчанию;
   - `testpaths = ["core/tests", "llm_gateway/tests", "reranker_service/tests",
-    "mcp/tests"]` — что собирается дефолтным `poetry run pytest`.
+    "mcp/tests"]` — что собирается дефолтным `poetry run python -m pytest`.
 - **ruff** — линт: `poetry run ruff check --fix`.
 - Все тесты, затрагивающие основное приложение, работают в
   `APPLICATION_MODE=TEST` (моки LLM/реранкера, изолированное хранилище
@@ -69,22 +69,22 @@ unit-тест не добавляем.
 
 ```bash
 # Полный прогон (параллельно, все testpaths)
-poetry run pytest
+poetry run python -m pytest
 
 # По наборам
-poetry run pytest core/tests/cli_tests        # CLI e2e
-poetry run pytest core/tests/core_tests       # core unit/integration
-poetry run pytest core/tests/api_tests        # REST API
-poetry run pytest llm_gateway/tests           # LLM Gateway
-poetry run pytest reranker_service/tests      # Reranker
-poetry run pytest mcp/tests                   # MCP-серверы
+poetry run python -m pytest core/tests/cli_tests        # CLI e2e
+poetry run python -m pytest core/tests/core_tests       # core unit/integration
+poetry run python -m pytest core/tests/api_tests        # REST API
+poetry run python -m pytest llm_gateway/tests           # LLM Gateway
+poetry run python -m pytest reranker_service/tests      # Reranker
+poetry run python -m pytest mcp/tests                   # MCP-серверы
 
 # Последовательно (отладка одного кейса)
-poetry run pytest core/tests/cli_tests -n0 -v
+poetry run python -m pytest core/tests/cli_tests -n0 -v
 
 # Конкретный Use Case / тест
-poetry run pytest core/tests/cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings -n0 -v
-poetry run pytest core/tests/cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -n0 -v
+poetry run python -m pytest core/tests/cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings -n0 -v
+poetry run python -m pytest core/tests/cli_tests/test_uc001_create_chat_with_all_settings.py::TestUC001_CreateChatWithAllSettings::test_tc_001_quick_chat_creation_with_defaults -n0 -v
 
 # Smoke (standalone-обёртка над ключевыми e2e)
 poetry run python core/tests/cli_tests/smoke_test.py

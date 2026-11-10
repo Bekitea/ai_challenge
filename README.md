@@ -34,10 +34,10 @@ YANDEX_CLOUD_FOLDER=your_folder_id_here
 
 ```bash
 # Создать начальную миграцию (автоматически по моделям)
-alembic revision --autogenerate -m "Initial migration"
+poetry run python -m alembic revision --autogenerate -m "Initial migration"
 
 # Применить миграции (создать таблицы)
-alembic upgrade head
+poetry run python -m alembic upgrade head
 ```
 
 ### 4. Запуск приложения
@@ -113,7 +113,7 @@ APPLICATION_MODE=PROD API_HOST=0.0.0.0 python main_api.py
 ### Тесты API
 
 ```bash
-poetry run pytest core/tests/api_tests -v
+poetry run python -m pytest core/tests/api_tests -v
 ```
 
 ## Запуск всего проекта через Docker Compose
@@ -202,7 +202,7 @@ docker run -d --name redis-celery -p 6379:6379 redis:alpine
 В отдельном терминале из корня проекта:
 
 ```bash
-celery -A core.presentation.celery.celery_app worker --loglevel=info --pool=solo
+poetry run python -m celery -A core.presentation.celery.celery_app worker --loglevel=info --pool=solo
 ```
 
 > Флаг `--pool=solo` обязателен на Windows, так как Celery не поддерживает там пулы `prefork`/`gevent`.
@@ -212,7 +212,7 @@ celery -A core.presentation.celery.celery_app worker --loglevel=info --pool=solo
 В ещё одном отдельном терминале:
 
 ```bash
-celery -A core.presentation.celery.celery_app beat --loglevel=info
+poetry run python -m celery -A core.presentation.celery.celery_app beat --loglevel=info
 ```
 
 После запуска всех процессов периодические задачи будут выполняться по расписанию, заданному в `core/presentation/celery/celery_app.py`.
@@ -465,10 +465,10 @@ git-контекст. Использование:
 
 ```bash
 # Полный прогон (параллельно, все наборы)
-poetry run pytest
+poetry run python -m pytest
 
 # Последовательно, для отладки одного кейса
-poetry run pytest core/tests/cli_tests -n0 -v
+poetry run python -m pytest core/tests/cli_tests -n0 -v
 
 # Smoke (standalone-обёртка над ключевыми e2e)
 poetry run python core/tests/cli_tests/smoke_test.py

@@ -269,8 +269,8 @@ assert "Chat A" in stdout and "Chat B" in stdout
 - RAG-тесты делают реальные эмбеддинги через Ollama и **сами** скипаются, если Ollama недоступна (`pytestmark = pytest.mark.skipif(not ollama_available(), ...)`).
 
 ```bash
-poetry run pytest core/tests/cli_tests -q --durations=20   # профиль медленных
-poetry run pytest core/tests/cli_tests/test_uc004_send_message_and_receive_response.py -n0 -v
+poetry run python -m pytest core/tests/cli_tests -q --durations=20   # профиль медленных
+poetry run python -m pytest core/tests/cli_tests/test_uc004_send_message_and_receive_response.py -n0 -v
 ```
 
 ## Windows / cp1251
@@ -307,7 +307,7 @@ xdist использует приватный `test-data-<worker>/`. Если о
 
 ```powershell
 Get-ChildItem -Directory -Filter 'test-data*' | Remove-Item -Recurse -Force
-poetry run pytest core/tests/cli_tests -v
+poetry run python -m pytest core/tests/cli_tests -v
 ```
 
 **Профилактика:** не держите долгоживущие SQLite-соединения в тестах; читайте

@@ -12,16 +12,22 @@ AI Chat CLI — консольное приложение для взаимод�
 
 ## Setup & commands
 
-- `poetry install` — mandatory first step. Poetry's env is NOT in-project (configured `virtualenvs.in-project false`); the `.venv/` directory in the repo root is a stale artifact, ignore it. Run everything via `poetry run ...`.
+- `poetry install` — mandatory first step. Both setups are **dev-only, not prod**:
+
+  - **Windows/local**: Poetry uses the **in-project** venv — `.venv/` in the repo root (`virtualenvs.in-project = true`). It is a real, usable environment, not a stale artifact.
+  - **Docker**: `Dockerfile` sets `POETRY_VIRTUALENVS_CREATE=false`, so dependencies are installed into the image's system Python (external environment, no `.venv`).
+
+  Run everything via `poetry run ...`.
+- **Why raw console scripts fail on Windows when the repo path has non-ASCII (e.g. Cyrillic) chars**: `pytest`, `alembic`, `celery`, `uvicorn` are installed as tiny `.exe` launchers (distlib). The launcher stub does not decode the embedded UTF-8 shebang path correctly, so Windows tries to start a mangled path (e.g. `...\Documents\????\...`) and dies with `Fatal error in launcher: Unable to create process using '...'` (exit code 1, often no output). Native binaries (`ruff.exe`) and `python.exe` are unaffected. **Workaround**: run modules explicitly — `poetry run python -m pytest ...`, `poetry run python -m alembic ...`, `poetry run python -m celery ...`, `poetry run python -m uvicorn ...`.
 - Run app: `poetry run python main_cli.py`
 - Run web (REST API + built React) on :8080: `python main_api.py` — defaults to `APPLICATION_MODE=LOCAL` (override via env), serves both `/api/*` and `frontend/dist`. Single worker only (MCP state is in-process). Frontend build: `cd frontend && npm install && npm run build`.
 - Run everything via Docker Compose: `docker compose up --build` — services `frontend` (nginx :3000, proxies `/api` → `web:8080`), `web` (:8080), `llm_gateway` (:18081, serializes access to Ollama), `reranker` (:18080), `redis`, `worker`, `beat`. Mode `PROD`, data `./data`, Ollama — on the host (`host.docker.internal:11434`). The opencode dev container compose was renamed to `docker-compose.opencode.yml`. The web image is `python:3.14-alpine` (musl, for the vendored `vec0.so`) and deps are installed with Poetry.
 - Lint: `poetry run ruff check --fix` (only `target-version = "py313"` configured).
 - Tests (details & policy: `docs/testing.md`):
-  - Full suite: `poetry run pytest` — parallel by default (`pytest-xdist`, `-n auto` in `pyproject.toml [tool.pytest.ini_options]`). `testpaths` covers `core/tests`, `llm_gateway/tests`, `reranker_service/tests`, `mcp/tests`. Debug serially with `-n0`.
-  - CLI e2e: `poetry run pytest core/tests/cli_tests`. One file per test class; shared helpers in `core/tests/e2e_helpers.py`, ground-truth accessors in `core/tests/ground_truth.py`, autouse cleanup fixture in `core/tests/cli_tests/conftest.py`. `run_cli_command` itself asserts `returncode == 0` and empty `stderr`, so tests must not duplicate those checks and should discard unused tuple parts with `_` (avoids Ruff `RUF059`).
+  - Full suite: `poetry run python -m pytest` — parallel by default (`pytest-xdist`, `-n auto` in `pyproject.toml [tool.pytest.ini_options]`). `testpaths` covers `core/tests`, `llm_gateway/tests`, `reranker_service/tests`, `mcp/tests`. Debug serially with `-n0`.
+  - CLI e2e: `poetry run python -m pytest core/tests/cli_tests`. One file per test class; shared helpers in `core/tests/e2e_helpers.py`, ground-truth accessors in `core/tests/ground_truth.py`, autouse cleanup fixture in `core/tests/cli_tests/conftest.py`. `run_cli_command` itself asserts `returncode == 0` and empty `stderr`, so tests must not duplicate those checks and should discard unused tuple parts with `_` (avoids Ruff `RUF059`).
   - **Assertions must prefer ground truth** (`ground_truth.py`: reads `agents.db` + pickles) over CLI-output substrings. `run_cli_command(input, mock=...)` injects a per-test scenario via `MOCK_LLM_SCENARIO` (see `core/infrastructure/llm/mock_scenario.py` / `e2e_helpers.mock_llm`); without it the default echo mock is used.
-  - Core unit/integration: `poetry run pytest core/tests/core_tests`; REST API: `poetry run pytest core/tests/api_tests`; LLM Gateway: `poetry run pytest llm_gateway/tests`; Reranker: `poetry run pytest reranker_service/tests`; MCP: `poetry run pytest mcp/tests`.
+  - Core unit/integration: `poetry run python -m pytest core/tests/core_tests`; REST API: `poetry run python -m pytest core/tests/api_tests`; LLM Gateway: `poetry run python -m pytest llm_gateway/tests`; Reranker: `poetry run python -m pytest reranker_service/tests`; MCP: `poetry run python -m pytest mcp/tests`.
   - Smoke: `poetry run python core/tests/cli_tests/smoke_test.py`
   - **Policy**: unit/integration tests are normally NOT written; when a behavior is too hard/impossible to verify via e2e, they are required. Such tests live in `core/tests/core_tests/` or next to the service.
   - `test-data*` dirs: cleaned/recreated before each test, orphaned ones removed at session start, all removed on a successful session (`pytest_sessionfinish` with exit code 0), kept on failure for debugging. `test-data*/` and `local-data*/` are in `.gitignore`.
@@ -50,7 +56,7 @@ New feature flow (пошагово — `docs/architecture.md` §6): add use case
 ## Celery (periodic agent reports)
 
 - Requires Redis: `docker run -d --name redis-celery -p 6379:6379 redis:alpine` (override via `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND`).
-- Worker: `celery -A core.presentation.celery.celery_app worker --loglevel=info --pool=solo` (`--pool=solo` is required on Windows). Beat: `celery -A core.presentation.celery.celery_app beat --loglevel=info`.
+- Worker: `poetry run python -m celery -A core.presentation.celery.celery_app worker --loglevel=info --pool=solo` (`--pool=solo` is required on Windows). Beat: `poetry run python -m celery -A core.presentation.celery.celery_app beat --loglevel=info`.
 - Reports are declared in `SCHEDULED_REPORTS` in `core/presentation/celery/celery_app.py`; every entry is auto-scheduled to run once per minute.
 
 ## REST API / Web UI (FastAPI + React)
@@ -86,7 +92,7 @@ New feature flow (пошагово — `docs/architecture.md` §6): add use case
 - **Ровно одна реплика gateway.** Гарантия «один запрос в Ollama» держится на единственном потребителе очереди; несколько реплик/потребителей её ломают (это же правило зафиксировано в README DON'T).
 - При недоступности gateway/Redis — **fail fast** (503/504), без обхода в Ollama. Backpressure — `MAX_QUEUE_DEPTH`; таймауты: gateway `QUEUE_WAIT_TIMEOUT`/`LLM_UPSTREAM_TIMEOUT`, бэкенд `LLM_REQUEST_TIMEOUT`/`MEMORY_LLM_TIMEOUT`/`EMBEDDING_TIMEOUT` (должны перекрывать ожидание в очереди).
 - Gateway использует Redis DB `2` (`LLM_GATEWAY_REDIS_URL`), Celery — `0/1`.
-- Тесты: `poetry run pytest llm_gateway/tests -v` (in-process очередь + стаб upstream, без сети). Локальный запуск без Docker: `python -m llm_gateway.main`.
+- Тесты: `poetry run python -m pytest llm_gateway/tests -v` (in-process очередь + стаб upstream, без сети). Локальный запуск без Docker: `python -m llm_gateway.main`.
 
 ## Misc
 

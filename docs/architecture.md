@@ -445,7 +445,7 @@ gateway (`OLLAMA_NATIVE_BASE_URL`, `OLLAMA_OPENAI_BASE_URL`,
    и test cases) и зарегистрируйте в таблице-индексе `docs/cli_spec.md`.
 2. **Тесты** — добавьте test case в файл use case, реализуйте e2e-тест в
    `core/tests/cli_tests/` (отдельный файл на класс), запустите
-   `poetry run pytest core/tests/cli_tests` (все тесты, кроме нового, должны
+   `poetry run python -m pytest core/tests/cli_tests` (все тесты, кроме нового, должны
    проходить).
 3. **Use case** — новый класс в `core/application/use_cases/<snake_case>.py` (один
    use case на файл) + реэкспорт в `__init__.py`. Зависимости — только протоколы
@@ -457,5 +457,5 @@ gateway (`OLLAMA_NATIVE_BASE_URL`, `OLLAMA_OPENAI_BASE_URL`,
    зависимости — из `core.infrastructure`) и передайте в bundle.
 6. **CLI** — вызовите `self.use_cases.<new_use_case>.execute(...)` в
    `core/presentation/cli/cli_app.py`, обработайте и отобразите результат.
-7. **Проверка** — `poetry run pytest core/tests/cli_tests`; все тесты должны
+7. **Проверка** — `poetry run python -m pytest core/tests/cli_tests`; все тесты должны
    пройти.
